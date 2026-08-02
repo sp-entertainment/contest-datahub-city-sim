@@ -7,7 +7,7 @@ it is actively misleading. These tests drive the real predicate logic so a const
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Self
 
 from blindcity.catalog.assertions import (
     AssertionResult,
@@ -30,10 +30,10 @@ class _FakeCursor:
     def fetchone(self) -> dict[str, Any]:
         return self._row
 
-    def __enter__(self) -> _FakeCursor:
+    def __enter__(self) -> Self:
         return self
 
-    def __exit__(self, *args: Any) -> None:
+    def __exit__(self, *args: object) -> None:
         return None
 
 

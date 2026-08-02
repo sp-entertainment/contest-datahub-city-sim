@@ -8,8 +8,9 @@ against — so emit paths call `evaluate_assertions` and attach the results.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
-from typing import Any, Callable
+from typing import Any
 
 import psycopg
 
