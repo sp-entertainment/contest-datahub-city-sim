@@ -125,3 +125,41 @@ Scaffolding the Python project forced the question of whether those are importab
 
 **Consequences.** The project map in `AGENTS.md` was updated to match, with both renames explained
 inline so neither gets "corrected" back.
+
+## 2026-08-01 — Close the Postgres warehouse question
+
+**Context.** The earlier Postgres decision left an open worry: one DataHub docs page appeared to
+describe Postgres as only the Analytics Agent's conversation store, contradicting the repository
+README. It was recorded as a gate to settle before building further.
+
+**Decision.** Postgres stands as the warehouse. The question is closed as an architectural gate and
+demoted to a hands-on check when the Analytics Agent is wired up.
+
+**Rationale.** The Analytics Agent README lists PostgreSQL among its queryable sources alongside
+Snowflake, BigQuery, MySQL, and SQLAlchemy-compatible databases generally. The apparent contradiction
+was Postgres playing two unrelated roles: the Analytics Agent's own quickstart also uses a Postgres
+instance for persistence. Both are real and they are separate databases. Separately, the gate never
+had the blocking weight first assigned to it — our auto-mode agent, which carries the originality of
+the submission, reaches Postgres through SQLAlchemy in our own code and does not depend on the
+upstream agent's connector support at all.
+
+**Consequences.** The simulation can start immediately rather than waiting on an external
+verification. DuckDB is no longer on the table. If the hands-on check in Slice 4 surprises us, it
+costs manual mode, not the architecture.
+
+## 2026-08-01 — Plan in vertical slices; humans own a named set of tasks
+
+**Context.** The plan was laid out as nine numbered days. Work is now being handed to an agent
+expected to run through it largely unattended.
+
+**Decision.** Replace the day structure with dependency-ordered vertical slices, and collect
+everything a human must do into a single `Human tasks` section, H1 through H6.
+
+**Rationale.** Day numbers encode a schedule that was already wrong the moment the work started, and
+they invite an agent to measure itself against a calendar rather than against working software. Each
+slice instead names what "done" looks like. The human tasks were previously scattered as asides
+inside the plan, which is exactly how an unattended agent ends up improvising around a missing API
+key or spending real money on an evaluation run.
+
+**Consequences.** `TASKS.md` is restructured and every "Day N" reference in the codebase and docs was
+updated to point at a slice. The A/B evaluation is explicitly built-but-not-run by agents.

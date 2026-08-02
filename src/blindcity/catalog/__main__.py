@@ -25,7 +25,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> int:
     args = build_parser().parse_args()
     print(f"datahub-emit: not implemented (gms={args.gms}, baseline={args.baseline})")
-    print("Next step: TASKS.md Day 4 — schema ingestion, glossary, generated lineage, assertions.")
+    print("Next step: TASKS.md Slice 3 — schema ingestion, glossary, generated lineage, assertions.")
     return 1
 
 

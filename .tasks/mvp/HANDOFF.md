@@ -2,7 +2,7 @@
 
 **The entry point for anyone picking this up.** Read this first, then follow it.
 
-**Last updated.** 2026-08-01, after Day 1 environment work.
+**Last updated.** 2026-08-01, after the foundations were in place.
 
 ## How this file relates to TASKS.md
 
@@ -33,30 +33,39 @@ without DataHub context — to measure whether metadata actually improves decisi
 
 ## Where things stand
 
-Day 1 is complete except one blocking item. Details and checkboxes live in `TASKS.md`; the short
-version:
+Foundations are complete. Details and checkboxes live in `TASKS.md`; the short version:
 
 - DataHub Core is up. `localhost:9002`, GraphQL on `localhost:8080/api/graphql`, unauthenticated.
 - Warehouse Postgres 16 is up on `5432`, container `blindcity-postgres`.
 - The Python project is scaffolded. uv, Python 3.11, src layout, four CLI entry points that parse
-  their flags and exit 1 pointing at the day that implements them. Nine tests pass, ruff clean.
-- **No simulation code exists.** Days 2 onward are unstarted.
+  their flags and exit 1 pointing at the slice that implements them. Nine tests pass, ruff clean.
+- **No simulation code exists.** Slice 1 onward is unstarted.
 
-## Your first task, and it blocks everything else
+## How the work is organised
 
-Determine empirically whether the DataHub Analytics Agent will query our Postgres **as a warehouse**,
-or whether it only uses Postgres as its own conversation store. DataHub's own documentation
-contradicts itself: the repository README lists Postgres as a supported warehouse, one docs page
-implies otherwise.
+Vertical slices, not days — see `TASKS.md`. Each slice is a coherent piece of the product that can be
+finished and verified on its own, and they are ordered by dependency. The deadline is the schedule.
 
-Install the Analytics Agent, point it at
-`postgresql://blindcity:blindcity@localhost:5432/blindcity`, and settle it by observing whether it
-actually issues SQL against that database.
+Work through them in order. **Your first task is Slice 1, the simulation core.** Everything it needs
+is already running, and it depends on no external service and no credential.
 
-- **If yes.** Check the item off in `TASKS.md` and proceed to Day 2.
-- **If no.** DuckDB is the recorded fallback. Write a `docs/DECISIONS.md` entry, then revise the
-  plan — this weakens the Day 4 automated-ingestion items, and several later steps assume Postgres.
-  Revising the plan is the work. Do not check the box and carry on as though nothing changed.
+Slices 4 and 5 need an LLM API key, which is a human task (H1 in `TASKS.md`). If it is not there when
+you arrive, say so and keep going with what is unblocked — Slice 6, the viewer, needs no key.
+
+## Postgres is settled
+
+Do not relitigate it. The warehouse is Postgres, and the simulation writes to it.
+
+Earlier notes in this repository treated "will the Analytics Agent query Postgres as a warehouse?" as
+a blocking architectural gate, because DataHub's documentation appeared to contradict itself. It does
+not: the Analytics Agent's README lists PostgreSQL among its queryable sources, alongside Snowflake,
+BigQuery, MySQL, and SQLAlchemy-compatible databases generally. The confusion came from Postgres
+playing two unrelated roles — the Analytics Agent's own quickstart also uses a Postgres instance for
+its persistence. Both are real, and they are separate databases.
+
+Still confirm hands-on during Slice 4, when the Analytics Agent is actually wired up. But it is not
+blocking, and it does not gate the simulation: auto mode reaches Postgres through SQLAlchemy, which
+is our own code.
 
 ## Hard rules
 
@@ -77,19 +86,18 @@ Violating any of these is expensive and often silent.
 
 ## Stop and ask the human
 
-These cannot be done by an agent, or should not be done without a decision. Do not improvise around
-them — surface them and continue with whatever else is unblocked.
+`TASKS.md` has a **Human tasks** section at the end, H1 through H6: the API key, making the
+repository public, running the A/B evaluation, the demo video, the Devpost submission, and any scope
+cut. They are not agent work — either an agent cannot do them, or it should not.
 
-- **API credentials.** The Analytics Agent and auto mode both need an LLM API key. Never enter,
-  generate, or commit one. Ask.
-- **Making the repository public.** Required for submission, but it is an outward-facing,
-  effectively irreversible action. The human's call.
-- **The demo video.** Under three minutes, and part of the submission. A human makes it.
-- **Submitting on Devpost.** A human does this.
-- **Cutting scope.** The cut line in `TASKS.md` was decided deliberately while calm. If you are
-  behind, say so and propose the cut. Do not quietly drop things.
-- **Spending real money.** Any evaluation run costs LLM tokens. Say what a run will cost before
-  running many of them.
+Hitting one is not a reason to stop working. Say so plainly, then continue with whatever else is
+unblocked. Do not improvise around them, and never create, enter, or commit a credential.
+
+Two worth repeating because the failure is expensive:
+
+- **Do not run the A/B evaluation.** Build the harness in Slice 7, hand it over with a cost estimate.
+  The runs spend real money and produce the number the whole submission rests on.
+- **Do not quietly drop scope.** If you are behind, say so and propose a cut from the cut line.
 
 ## Research findings worth not rediscovering
 

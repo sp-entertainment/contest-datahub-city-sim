@@ -17,7 +17,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> int:
     args = build_parser().parse_args()
     print(f"sim: not implemented (seed={args.seed}, years={args.years}, serve={args.serve})")
-    print("Next step: TASKS.md Day 2 — deterministic tick loop, citizens, budget, Postgres writes.")
+    print("Next step: TASKS.md Slice 1 — tick loop, citizens, budget, Postgres writes.")
     return 1
 
 

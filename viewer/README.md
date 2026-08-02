@@ -13,4 +13,4 @@ run-down is the city; a number next to it is instrumentation.
 Lever names, ranges, and defaults come from `blindcity.levers` — do not restate them here.
 
 Deliberately left unbuilt: no framework has been chosen, and viewer polish is second on the cut line
-in TASKS.md. Plan: Day 7.
+in TASKS.md. Plan: Slice 6.

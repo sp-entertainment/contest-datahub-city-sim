@@ -5,5 +5,5 @@ installed `acryl-datahub` module and break every import of the DataHub SDK.
 
 Lineage is generated from the simulation's equations, never hand-authored (docs/DECISIONS.md).
 
-Plan: TASKS.md Day 4.
+Plan: TASKS.md, Slice 3.
 """

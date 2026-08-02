@@ -9,5 +9,5 @@ Do not ship only that — originality is judged (AGENTS.md).
 Requires `TOOLS_IS_MUTATION_ENABLED=true` in the MCP config or mutation tools are silently absent
 (docs/ERRORS.md).
 
-Plan: TASKS.md Day 6.
+Plan: TASKS.md, Slice 5.
 """

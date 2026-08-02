@@ -23,7 +23,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> int:
     args = build_parser().parse_args()
     print(f"agent: not implemented (mode={args.mode}, years={args.years}, context={args.context})")
-    print("Next step: TASKS.md Day 6 — the closed loop.")
+    print("Next step: TASKS.md Slice 5 — the closed loop.")
     return 1
 
 

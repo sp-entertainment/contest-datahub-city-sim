@@ -6,5 +6,5 @@ budget, same full SQL access. Only the metadata context differs.
 
 Named `evaluation` while the command stays `eval`, to avoid a module named after a builtin.
 
-Plan: TASKS.md Day 7.
+Plan: TASKS.md, Slice 7. Build the harness; a human runs the evaluation (task H3).
 """

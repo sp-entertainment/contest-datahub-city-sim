@@ -60,7 +60,7 @@ Resolved to quickstart plan `v1.5.0.6`. Pull plus startup took roughly four minu
 
 ### 6. Verify DataHub
 
-Both of these are the Day 1 gate in `.tasks/mvp/TASKS.md`. Both passed.
+Both passed.
 
 ```powershell
 Invoke-WebRequest -Uri "http://localhost:9002" -UseBasicParsing
@@ -114,8 +114,9 @@ Verified: PostgreSQL 16.14 on 5432, container `blindcity-postgres`, healthcheck 
 Credentials `blindcity` / `blindcity`, database `blindcity`. Data persists in the
 `blindcity_blindcity_pgdata` volume; `down -v` destroys it.
 
-Standing up Postgres is *not* the Day 1 gate. The gate is whether the Analytics Agent will query it
-as a warehouse, and that is still open.
+This is the warehouse the simulation writes to and the agent queries. Whether the upstream Analytics
+Agent issues SQL against it gets confirmed hands-on in Slice 4; the README lists PostgreSQL as a
+supported source, and it does not gate the simulation either way.
 
 ## Python project
 
@@ -126,7 +127,7 @@ uv run ruff check .
 ```
 
 The four commands in `AGENTS.md` — `sim`, `datahub-emit`, `agent`, `eval` — all resolve, parse their
-flags, and exit 1 with a pointer to the day that implements them. That exit code is intentional: an
+flags, and exit 1 with a pointer to the slice that implements them. That exit code is intentional: an
 unimplemented command should fail, not look like a success.
 
 ## Credentials

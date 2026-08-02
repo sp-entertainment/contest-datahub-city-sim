@@ -16,7 +16,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> int:
     args = build_parser().parse_args()
     print(f"eval: not implemented (seeds={args.seeds}, years={args.years})")
-    print("Next step: TASKS.md Day 7 — A/B harness across seeds.")
+    print("Next step: TASKS.md Slice 7 — build the harness. A human runs the evaluation (H3).")
     return 1
 
 
