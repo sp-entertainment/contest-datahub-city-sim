@@ -31,7 +31,30 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="With --dump-lineage, skip GMS emission entirely.",
     )
+    parser.add_argument(
+        "--evaluate-assertions",
+        action="store_true",
+        help="Run each catalog assertion as SQL against the warehouse and emit pass/fail. "
+        "Also usable alone with --evaluate-only (no GMS write).",
+    )
+    parser.add_argument(
+        "--evaluate-only",
+        action="store_true",
+        help="Evaluate assertions against Postgres and print results; do not call GMS.",
+    )
     return parser
+
+
+def _evaluate_warehouse():
+    from blindcity.catalog.assertions import evaluate_assertions
+    from blindcity.sim.warehouse import connect, ensure_schema
+
+    conn = connect()
+    try:
+        ensure_schema(conn)
+        return evaluate_assertions(conn)
+    finally:
+        conn.close()
 
 
 def main() -> int:
@@ -47,8 +70,33 @@ def main() -> int:
         if args.dump_only:
             return 0
 
+    assertion_results = None
+    if args.evaluate_assertions or args.evaluate_only:
+        try:
+            assertion_results = _evaluate_warehouse()
+        except Exception as exc:  # noqa: BLE001
+            print(f"datahub-emit: assertion evaluation failed: {exc}", file=sys.stderr)
+            return 1
+        n_pass = sum(1 for r in assertion_results if r.passed)
+        print(
+            f"datahub-emit: assertions evaluated {n_pass}/{len(assertion_results)} passed"
+        )
+        for r in assertion_results:
+            flag = "PASS" if r.passed else "FAIL"
+            print(f"  [{flag}] {r.table}.{r.column}: {r.detail}")
+        if args.evaluate_only:
+            # Non-zero exit when any assertion fails so CI can gate on honesty.
+            return 0 if all(r.passed for r in assertion_results) else 2
+
+    if args.evaluate_only:
+        return 0
+
     try:
-        result = emit_all(args.gms, baseline=args.baseline)
+        result = emit_all(
+            args.gms,
+            baseline=args.baseline,
+            assertion_results=assertion_results if not args.baseline else None,
+        )
     except Exception as exc:  # noqa: BLE001
         print(f"datahub-emit: failed: {exc}", file=sys.stderr)
         return 1
@@ -60,9 +108,6 @@ def main() -> int:
     )
     print(f"datahub-emit: tables={', '.join(result.tables)}")
     if result.mode == "full":
-        ui = args.gms.replace(":8080", ":9002").rstrip("/")
-        if ui.endswith("8080"):
-            ui = ui[:-4] + "9002"
         print(
             "datahub-emit: view lineage in the DataHub UI at http://localhost:9002 — "
             "search dataset 'budget_monthly', open the Lineage tab. "

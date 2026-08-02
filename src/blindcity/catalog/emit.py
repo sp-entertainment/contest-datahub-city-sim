@@ -244,24 +244,38 @@ def emit_lineage(gms: str) -> int:
     return edge_count
 
 
-def emit_assertions(gms: str) -> int:
-    """Emit assertion-like dataset properties / tags for range and volume expectations.
+def emit_assertions(
+    gms: str,
+    *,
+    results: list[Any] | None = None,
+) -> int:
+    """Emit assertion metadata and, when provided, SQL evaluation pass/fail results.
 
-    Full Assertion entities need more GMS scaffolding; we attach structured custom properties
-    and a documentation aspect so the agent and UI can still discover them. The generation is
-    driven by ASSERTIONS in schema_spec.
+    Declarations alone are not enough — a catalog that never runs its assertions can report
+    success while the warehouse is out of range. Pass `results` from
+    `blindcity.catalog.assertions.evaluate_assertions` so FAIL is reportable.
     """
+    from blindcity.catalog.assertions import AssertionResult, results_as_custom_properties
+
     count = 0
     by_table: dict[str, list[tuple[str, str]]] = {}
     for table, column, desc in ASSERTIONS:
         by_table.setdefault(table, []).append((column, desc))
 
+    eval_props: dict[str, str] = {}
+    if results is not None:
+        typed = [r for r in results if isinstance(r, AssertionResult)]
+        eval_props = results_as_custom_properties(typed)
+
     for table, items in by_table.items():
         urn = dataset_urn(table)
+        custom = {f"assertion.{i}.{col}": desc for i, (col, desc) in enumerate(items)}
+        # Attach evaluation outcomes that mention this table (and the global summary once).
+        for k, v in eval_props.items():
+            if f".{table}." in k or k.startswith("assertion_results."):
+                custom[k] = v
         props = {
-            "customProperties": {
-                f"assertion.{i}.{col}": desc for i, (col, desc) in enumerate(items)
-            },
+            "customProperties": custom,
             "name": table,
             "description": f"Blind City assertions for {table}",
         }
@@ -269,6 +283,17 @@ def emit_assertions(gms: str) -> int:
         # Also emit an AssertionInfo-style separate entity when possible
         for i, (col, desc) in enumerate(items):
             assertion_urn = f"urn:li:assertion:blindcity.{table}.{col}.{i}"
+            # Look up pass/fail for this assertion if we have results
+            run_status = None
+            if results is not None:
+                for r in results:
+                    if (
+                        isinstance(r, AssertionResult)
+                        and r.table == table
+                        and r.column == col
+                    ):
+                        run_status = "SUCCESS" if r.passed else "FAILURE"
+                        break
             info = {
                 "type": "DATASET",
                 "datasetAssertion": {
@@ -277,16 +302,35 @@ def emit_assertions(gms: str) -> int:
                     "aggregation": "IDENTITY",
                     "operator": "BETWEEN" if col != "*" else "GREATER_THAN_OR_EQUAL_TO",
                     "nativeType": "BLINDCITY_RANGE",
-                    "nativeParameters": {"description": desc, "column": col},
+                    "nativeParameters": {
+                        "description": desc,
+                        "column": col,
+                        **({"lastResult": run_status} if run_status else {}),
+                    },
                     "fields": (
                         [f"urn:li:schemaField:({urn},{col})"] if col != "*" else []
                     ),
                 },
-                "description": desc,
+                "description": desc
+                + (f" [{run_status}]" if run_status else ""),
             }
             try:
                 _emit_mcp(gms, assertion_urn, "assertionInfo", info)
                 _emit_mcp(gms, assertion_urn, "status", _status_aspect())
+                if run_status is not None:
+                    # AssertionRunEvent-style property so FAIL is visible without GraphQL.
+                    run_props = {
+                        "customProperties": {
+                            "result": run_status,
+                            "evaluated": "true",
+                        },
+                        "name": f"{table}.{col}",
+                        "description": desc,
+                    }
+                    try:
+                        _emit_mcp(gms, assertion_urn, "datasetProperties", run_props)
+                    except RuntimeError:
+                        pass
                 count += 1
             except RuntimeError:
                 # Assertion entity type may be picky on some GMS versions; properties still land.
@@ -294,7 +338,12 @@ def emit_assertions(gms: str) -> int:
     return count
 
 
-def emit_all(gms: str, *, baseline: bool = False) -> EmitResult:
+def emit_all(
+    gms: str,
+    *,
+    baseline: bool = False,
+    assertion_results: list[Any] | None = None,
+) -> EmitResult:
     tables = emit_tables(gms, baseline=baseline)
     glossary = 0
     lineage = 0
@@ -302,7 +351,7 @@ def emit_all(gms: str, *, baseline: bool = False) -> EmitResult:
     if not baseline:
         glossary = emit_glossary(gms)
         lineage = emit_lineage(gms)
-        assertions = emit_assertions(gms)
+        assertions = emit_assertions(gms, results=assertion_results)
 
     entities = len(tables) + glossary + (assertions if not baseline else 0)
     return EmitResult(
