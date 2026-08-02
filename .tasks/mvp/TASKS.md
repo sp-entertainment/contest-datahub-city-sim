@@ -2,7 +2,8 @@
 
 **Objective.** Ship a working Blind City entry by 2026-08-10, 5:00pm EDT.
 
-**Status.** Updated 2026-08-02. Slices 1–3 complete (sim core, city systems + levers, metadata).
+**Status.** Updated 2026-08-02. Slices 1–3 built and reviewed; four items reopened by that review
+(two in Slice 1, two in Slice 3) and marked unchecked below. Slice 4 has not started.
 Slice 4+ not started.
 
 ## Start here
@@ -39,7 +40,17 @@ warehouse schema, the tick loop, any lineage code, and the viewer's framework �
 design decisions that should be made by whoever makes them, not inherited from a stub. The lever
 bounds in `blindcity/levers.py` are plausible placeholders, not calibrated numbers.
 
-**Next action:** Slice 4 — FastAPI control surface and manual mode (blocked on wiring, not on H1).
+**Next action:** clear the four reopened items in Slices 1 and 3, then Slice 4 — FastAPI control
+surface and manual mode.
+
+Slices 1–3 were built and reviewed on 2026-08-02. The review added per-edge lineage validation and
+found a dead column: road congestion was pinned at 1.0 on every segment for the entire run, which
+silently severed wear → congestion → commute time → satisfaction → migration (`docs/ERRORS.md`).
+
+**A slice marked done is not therefore correct.** That bug passed the whole suite, because a test
+asserting a value is within range is perfectly satisfied by a constant. When you check something
+off, prefer a test that requires the value to *move* — the pattern in `tests/test_lever_effects.py`
+and `blindcity.sim.causal_check`.
 
 ## Bootstrap
 
@@ -89,13 +100,22 @@ The tick loop and the economy. Nothing else can be verified until rows exist.
 - [x] Municipal budget with revenue and expenditure lines.
 - [x] Warehouse schema designed and created, carrying the spatial columns.
 - [x] Writes rows to Postgres.
+- [ ] **Guard determinism across processes.** Reopened 2026-08-02 in review. The current test runs
+      both simulations in one interpreter, so it cannot catch a regression that depends on
+      `PYTHONHASHSEED` — iteration over a set or a string-keyed dict that affects a draw. Shell out
+      twice with different hash seeds and compare fingerprints. Cross-process identity was checked
+      by hand once; nothing protects it going forward, and the A/B evaluation depends on it.
+- [ ] **Re-record the warehouse numbers.** The `SEGMENT_CAPACITY` fix changed simulation behaviour,
+      so the row counts and fingerprints below are stale. Re-run and update here and in
+      `docs/ENVIRONMENT.md` once Docker is up.
 
 **Verified when:** `uv run sim --seed 42 --years 20` completes twice with byte-identical output, the
 row counts in Postgres are in the millions, and the city's state at any tick can be reconstructed
 into a map — tiles, buildings, and where every citizen is.
 
-**Verified 2026-08-02.** `uv run sim --seed 42 --years 20` → 2,118,197 rows in ~29s. In-memory
-fingerprints identical for same seed. Tests: `tests/test_sim_determinism.py`.
+**Verified 2026-08-02, now stale.** `uv run sim --seed 42 --years 20` → 2,118,197 rows in ~29s.
+In-memory fingerprints identical for same seed. Tests: `tests/test_sim_determinism.py`. These
+numbers predate the congestion fix — see the re-record item above.
 
 ### Slice 2 — City systems and levers
 
@@ -140,9 +160,19 @@ never hand-writes an edge. `uv run datahub-emit` / `--baseline` implemented. Tax
 via `--dump-lineage`. All 29 edges pass validation. Live GMS emit requires DataHub containers up
 (see ENVIRONMENT).
 
-**Still open here:** the range and volume assertions are *declared* and emitted, but nothing ever
-evaluates them against Postgres — an assertion that has never been run could be false. Worth wiring
-into a later slice.
+**Reopened 2026-08-02 in review — two items below are unchecked. Do them before Slice 4.**
+
+- [ ] **Evaluate the assertions against Postgres.** They are currently declared and emitted as
+      metadata, but nothing ever runs them, so an assertion in the catalog could simply be false —
+      exactly the kind of stale metadata this entry argues against. Run each as SQL after a sim
+      write and emit the pass/fail result alongside the assertion. A catalog that reports a failing
+      assertion honestly is a better demo than one that only ever claims success.
+- [ ] **Document the baseline naming in the README.** The control arm uses opaque names
+      (`t_person_m`, `t_budg_m`) with no descriptions. That is realistic for a legacy warehouse, but
+      undocumented it reads as rigging the A/B evaluation in our favour. State plainly what the
+      control has and does not have, and why that is a fair representation of an uncatalogued
+      warehouse. This is a fairness requirement, not polish — `AGENTS.md` calls for it and the
+      evaluation's credibility rests on it.
 
 ### Slice 4 — Control surface and manual mode
 
