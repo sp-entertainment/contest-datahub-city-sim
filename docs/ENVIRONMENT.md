@@ -126,21 +126,30 @@ uv run pytest -q        # 9 passing
 uv run ruff check .
 ```
 
-### Simulation and metadata (verified 2026-08-02)
+### Simulation and metadata (verified 2026-08-02; re-checked after lever/road calibration)
 
 ```powershell
 uv run pytest -q
-# 29 passed
+# 93 passed
 
 uv run sim --seed 42 --years 20
-# ~29s wall-clock; writes ~2.12M warehouse rows (citizens × months + tiles/buildings/roads/commute)
-# Truncates warehouse tables first so re-runs are clean.
+# Writes warehouse rows under a new run_id (append). Use --reset-warehouse for a clean demo load.
 
 uv run sim --seed 42 --years 1 --no-warehouse
 # In-memory only (no Postgres). Useful for lever sweeps and CI without Docker.
 
+uv run sim --serve
+# FastAPI control surface on http://127.0.0.1:8000
+# GET /state  POST /lever  POST /advance  GET /scene  static viewer/ at /
+
 uv run datahub-emit
 # Full catalog: schemas + descriptions + glossary + generated lineage + assertions → GMS :8080
+
+uv run datahub-emit --evaluate-assertions
+# Run each catalog assertion as SQL against the warehouse; emit pass/fail with the metadata
+
+uv run datahub-emit --evaluate-only
+# Evaluate assertions only (exit 2 if any fail); no GMS write
 
 uv run datahub-emit --baseline
 # Control catalog: opaque table names, schemas only (no glossary/lineage/descriptions)
@@ -149,14 +158,24 @@ uv run datahub-emit --dump-lineage lineage.json --dump-only
 # Serialize the causal graph without talking to GMS
 ```
 
-**Observed seed-42 / 20-year warehouse totals** (single run, after truncate).
+**In-memory fingerprint seed-42 / 20 years** (post road-repair + lever calibration, 2026-08-02):
 
-> ⚠️ **Stale as of 2026-08-02.** The road-capacity fix (`SEGMENT_CAPACITY`, see `docs/ERRORS.md`)
-> changes simulation behaviour, so every fingerprint and every row count below moves. Re-run and
-> re-record when Docker is back up. Row counts should stay the same order of magnitude — congestion
-> now varies, which changes commute times, satisfaction, and therefore migration.
+```text
+pop=3665 buildings=669 mean_sat≈0.622 treasury≈319907860 mean_road_wear=1.0
+```
 
-| Table | Rows |
+Full JSON captured during implementer run (`run_fingerprint(42, 20)`). Cross-process identity with
+`PYTHONHASHSEED=0` vs `1` confirmed for 2-year fingerprints.
+
+**Observed seed-42 / 20-year warehouse totals**
+
+> ⚠️ **Warehouse re-record blocked in this session** — Docker Desktop daemon did not become ready
+> (`dockerDesktopLinuxEngine` pipe missing after start). Row counts below are the **pre-calibration
+> baseline** from earlier 2026-08-02 and are stale relative to road-repair + lever max changes.
+> Re-run `uv run sim --seed 42 --years 20 --reset-warehouse` when Postgres is up and replace this
+> table. Order of magnitude (~2M rows) is unchanged; migration volumes will shift slightly.
+
+| Table | Rows (stale pre-calibration) |
 | --- | ---: |
 | citizen_monthly | 806,531 |
 | commute_monthly | 806,531 |
@@ -167,7 +186,27 @@ uv run datahub-emit --dump-lineage lineage.json --dump-only
 | **total** | **2,118,197** |
 
 Same seed identity: two in-memory `run_fingerprint(42, 20)` calls match exactly; different seeds
-diverge. Warehouse dual-run row counts match when Docker stays up for both processes.
+diverge. Cross-process `PYTHONHASHSEED` identity is guarded by
+`tests/test_sim_determinism.py::test_same_seed_identical_across_processes_with_different_pythonhashseed`.
+
+### Analytics Agent wiring (Slice 4)
+
+H1 is done (`GOOGLE_API_KEY` in local `.env`). Manual mode uses the upstream Analytics Agent against
+**our warehouse Postgres on 5432** (not DataHub's MySQL on 3306) and DataHub GMS on 8080.
+
+```powershell
+# Example env for the upstream agent (do not commit secrets)
+# LLM_PROVIDER=google
+# GOOGLE_API_KEY=...
+# DATAHUB_GMS_URL=http://localhost:8080
+# Warehouse SQLAlchemy URL for the agent connector:
+# postgresql+psycopg://blindcity:blindcity@localhost:5432/blindcity
+```
+
+Hands-on confirmation that the Analytics Agent issues SQL against this warehouse still needs the
+agent process started with those settings and a sample question — blocked here only by Docker/agent
+process availability in the implementer session, not by missing credentials. Non-agent SQL path is
+proven by `uv run sim` writers and `datahub-emit --evaluate-only` assertion SQL.
 
 **Lineage in the UI.** Open http://localhost:9002, search `budget_monthly`, open the **Lineage**
 tab. Upstream includes `lever_monthly` with column-level edge `income_tax_rate` →

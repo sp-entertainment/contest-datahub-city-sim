@@ -350,3 +350,82 @@ gibberish and not the full semantic names. Documented in README when the control
 **Rationale.** Fair control: an agent with SQL alone can still query, but without glossary or lineage
 it must rediscover meaning. Names that look like a rushed ETL dump are more honest than
 `table_01`.
+
+## 2026-08-02 — Composite health index weights and green threshold
+
+**Context.** Slice 5 needs one comparable score per run with a component breakdown. The four
+required components are solvency, citizen satisfaction, service coverage, and population retention.
+
+**Decision.**
+
+| Component | Weight | What it measures |
+| --- | ---: | --- |
+| solvency | 0.20 | Treasury months-of-cover vs operating spend, debt per capita, monthly balance |
+| satisfaction | 0.30 | Mean citizen satisfaction (0–1) |
+| service | 0.30 | Equal thirds: power coverage×reliability, water headroom, road wear/congestion |
+| population | 0.20 | Retention vs founding population at scenario seed (tick 0) |
+
+Green threshold: **0.62**. "Recovered" means the composite crossed 0.62 at least once within the
+turn budget.
+
+**Rationale.**
+- **Service and satisfaction carry the thesis.** Metadata helps an agent find *why* the city is
+  sick (roads, water, power, tax pressure). Weighting those at 0.30 each keeps the score sensitive
+  to the causal chains the catalog exposes. Solvency at 0.20 prevents a pure tax-and-hoard policy
+  from winning without fixing services; population at 0.20 rewards retaining people without letting
+  a single migration blip dominate.
+- **Solvency uses months-of-cover, not raw treasury.** Extractive neglect can stockpile cash while
+  infrastructure dies; measuring buffer against operating spend stops that from looking "perfectly
+  solvent."
+- **0.62 is calibrated against `infrastructure_neglect`.** Crisis onset scores ~0.38. A deliberate
+  bad policy never crosses green (final ~0.42). A hand-tuned recovery policy crosses at turn ~31 of
+  36 and finishes ~0.65. The threshold is high enough that recovery is non-trivial and low enough
+  that a competent policy wins inside the budget.
+
+**Consequences.** Weights and threshold live in `blindcity.benchmark.health`. Changing them is a
+design change, not a silent tweak — update this entry if they move.
+
+## 2026-08-02 — Scenario: infrastructure_neglect
+
+**Context.** The benchmark needs one crisis that is seedable, recoverable, and losable.
+
+**Decision.** Scenario `infrastructure_neglect` (seed 42): 60 months of underfunded services and
+high utility costs, then a fiscal/capacity shock (thin treasury, elevated debt, water capacity cut,
+road wear floor, satisfaction cap). Controllers get 36 monthly turns to recover.
+
+**Rationale.** Pure multi-year neglect with any positive tax rate left the treasury enormous and the
+composite above green, measuring nothing. The shock represents a debt reckoning on top of worn
+infrastructure without inventing a second simulation. Hand-played good policy (fund roads/water,
+hedge power, moderate taxes, open zoning) recovers; continued neglect fails.
+
+**Consequences.** Implemented in `blindcity.benchmark.scenario`. Additional scenarios can share the
+same harness.
+
+## 2026-08-02 — Lever bound calibration for recovery
+
+**Context.** Lever bounds were placeholders. Road repair math divided maintenance by segment count
+in a way that made net wear reduction impossible at any budget inside the old 5M max.
+
+**Decision.**
+- Fix road repair to citywide scaling: `$1M/year ≈ 0.01 wear reduction per segment per month`.
+- Raise `road_maintenance_budget` max 5M → **8M**, default 500k → **600k**.
+- Raise `water_sewer_capex` max 5M → **8M**, default 400k → **500k**.
+
+**Rationale.** Calibration runs showed good policy stuck with service ~0.23 because roads could not
+heal. After the formula fix and higher caps, good recovery reaches green; bad still fails. Defaults
+nudge slightly toward sustainability so a no-op controller is not as catastrophic as pure zero.
+
+**Consequences.** In-memory fingerprints and warehouse row counts from earlier 2026-08-02 runs are
+stale again (alongside the `SEGMENT_CAPACITY` change). Re-record when Postgres is available.
+
+## 2026-08-02 — Warehouse append-by-run_id (no default truncate)
+
+**Context.** Arms write history in parallel; global truncate made multi-arm runs impossible.
+
+**Decision.** Default `uv run sim` calls `ensure_schema` and `start_run` only. Truncate is opt-in
+via `--reset-warehouse` for clean demo loads.
+
+**Rationale.** Every table already carries `run_id`. Truncating was a convenience that became a
+correctness bug under the benchmark framing.
+
+**Consequences.** Repeated CLI demos accumulate runs unless `--reset-warehouse` is passed.

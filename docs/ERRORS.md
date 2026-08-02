@@ -115,3 +115,15 @@ is now ~0.76 with no saturated segments. Guarded by
 **Found by** validating each declared lineage edge against the simulation — wear → congestion was
 the one edge that could not be demonstrated. A dead column is invisible to tests that only assert a
 value is within range; it is obvious the moment you require the edge to actually move.
+
+### Road maintenance could never reduce wear
+
+**Symptom.** Recovery policies in the benchmark spent millions on roads and service score stayed
+flat; mean wear still climbed.
+
+**Cause.** `wear_repair = (monthly_budget / n_segments) / 500_000` effectively divided by segment
+count twice. At any legal budget, repair was ~0.001/month while traffic-driven wear was ~0.01+/month.
+
+**Fix.** Citywide scaling: `wear_repair = (annual_budget / 1_000_000) * 0.01`, and raise the lever
+max to 8M so aggressive recovery can reverse neglect inside a 36-month turn budget. Recorded in
+`docs/DECISIONS.md` (lever calibration).

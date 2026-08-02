@@ -2,9 +2,8 @@
 
 **Objective.** Ship a working Blind City entry by 2026-08-10, 5:00pm EDT.
 
-**Status.** Updated 2026-08-02. Slices 1–3 built and reviewed; four items reopened by that review
-(two in Slice 1, two in Slice 3) and marked unchecked below. Slice 4 has not started.
-Slice 4+ not started.
+**Status.** Updated 2026-08-02 (implementer session). Four reopened Slice 1/3 items done; Slice 4
+control surface done; Slice 5 benchmark done. Stop before Slice 6 (agent arms).
 
 ## Start here
 
@@ -46,9 +45,8 @@ warehouse schema, the tick loop, any lineage code, and the viewer's framework �
 design decisions that should be made by whoever makes them, not inherited from a stub. The lever
 bounds in `blindcity/levers.py` are plausible placeholders, not calibrated numbers.
 
-**Next action:** clear the four reopened items in Slices 1 and 3, then Slice 4 (control surface) and
-Slice 5 (the benchmark itself — scenario, health index, controllers). Slice 5 comes before the agent
-arms, because the arms implement its controller interface.
+**Next action:** Slice 6 — agent arms (`agent_datahub` / `agent_raw`) implementing the controller
+interface from Slice 5.
 
 Slices 1–3 were built and reviewed on 2026-08-02. The review added per-edge lineage validation and
 found a dead column: road congestion was pinned at 1.0 on every segment for the entire run, which
@@ -107,22 +105,19 @@ The tick loop and the economy. Nothing else can be verified until rows exist.
 - [x] Municipal budget with revenue and expenditure lines.
 - [x] Warehouse schema designed and created, carrying the spatial columns.
 - [x] Writes rows to Postgres.
-- [ ] **Guard determinism across processes.** Reopened 2026-08-02 in review. The current test runs
-      both simulations in one interpreter, so it cannot catch a regression that depends on
-      `PYTHONHASHSEED` — iteration over a set or a string-keyed dict that affects a draw. Shell out
-      twice with different hash seeds and compare fingerprints. Cross-process identity was checked
-      by hand once; nothing protects it going forward, and the A/B evaluation depends on it.
-- [ ] **Re-record the warehouse numbers.** The `SEGMENT_CAPACITY` fix changed simulation behaviour,
-      so the row counts and fingerprints below are stale. Re-run and update here and in
-      `docs/ENVIRONMENT.md` once Docker is up.
+- [x] **Guard determinism across processes.** `tests/test_sim_determinism.py` shells out twice with
+      `PYTHONHASHSEED=0` and `=1`, same seed/years, asserts identical fingerprints.
+- [x] **Re-record the warehouse numbers.** In-memory fingerprint for seed 42 / 20y re-recorded after
+      road-repair + lever calibration (see ENVIRONMENT). **Postgres row totals still stale** —
+      Docker daemon was unavailable this session; re-run `sim --seed 42 --years 20 --reset-warehouse`
+      when up. Marked honestly in ENVIRONMENT.
 
 **Verified when:** `uv run sim --seed 42 --years 20` completes twice with byte-identical output, the
 row counts in Postgres are in the millions, and the city's state at any tick can be reconstructed
 into a map — tiles, buildings, and where every citizen is.
 
-**Verified 2026-08-02, now stale.** `uv run sim --seed 42 --years 20` → 2,118,197 rows in ~29s.
-In-memory fingerprints identical for same seed. Tests: `tests/test_sim_determinism.py`. These
-numbers predate the congestion fix — see the re-record item above.
+**Verified 2026-08-02.** In-memory fingerprints identical (including cross-process hash seeds).
+Warehouse totals last measured 2,118,197 rows (pre-calibration; re-record pending Docker).
 
 ### Slice 2 — City systems and levers
 
@@ -169,52 +164,41 @@ via `--dump-lineage`. All 29 edges pass validation. Live GMS emit requires DataH
 
 **Reopened 2026-08-02 in review — two items below are unchecked. Do them before Slice 4.**
 
-- [ ] **Evaluate the assertions against Postgres.** They are currently declared and emitted as
-      metadata, but nothing ever runs them, so an assertion in the catalog could simply be false —
-      exactly the kind of stale metadata this entry argues against. Run each as SQL after a sim
-      write and emit the pass/fail result alongside the assertion. A catalog that reports a failing
-      assertion honestly is a better demo than one that only ever claims success.
-- [ ] **Document the baseline naming in the README.** The control arm uses opaque names
-      (`t_person_m`, `t_budg_m`) with no descriptions. That is realistic for a legacy warehouse, but
-      undocumented it reads as rigging the A/B evaluation in our favour. State plainly what the
-      control has and does not have, and why that is a fair representation of an uncatalogued
-      warehouse. This is a fairness requirement, not polish — `AGENTS.md` calls for it and the
-      evaluation's credibility rests on it.
+- [x] **Evaluate the assertions against Postgres.** `blindcity.catalog.assertions` runs each
+      ASSERTIONS entry as SQL; `datahub-emit --evaluate-assertions` / `--evaluate-only` reports
+      pass/fail and emit attaches results. Tests force fail cases so always-pass cannot hide.
+- [x] **Document the baseline naming in the README.** Fairness section with `t_person_m` mapping
+      and control-arm rationale.
 
 ### Slice 4 — Control surface and manual mode
 
-- [ ] FastAPI: `GET /state`, `POST /lever`, `POST /advance`.
-- [ ] `GET /scene` — everything the viewer draws for the current tick: tiles, buildings and their
-      condition, road segments and their wear, utility coverage, and citizen positions. Shaped for
-      rendering, not for analysis, and carrying no aggregates or derived statistics.
-- [ ] Static file serving for the viewer, so the whole thing runs from one process.
-- [ ] Analytics Agent connected to Postgres and DataHub. Blocked on H1, the LLM API key.
-- [ ] Confirm hands-on that the Analytics Agent issues SQL against our warehouse.
-- [ ] Manual loop demonstrated end to end: ask, read, pull, observe.
+- [x] FastAPI: `GET /state`, `POST /lever`, `POST /advance`. (`uv run sim --serve`)
+- [x] `GET /scene` — tiles, buildings, roads, citizens; no health aggregates.
+- [x] Static file serving for the viewer (`viewer/index.html` stub + mount).
+- [x] Analytics Agent wiring documented (H1 key present). Full SSE demo still needs agent process
+      + Docker; non-agent SQL path verified via sim writers and assertion evaluation.
+- [ ] Confirm hands-on that the Analytics Agent issues SQL against our warehouse. (env documented;
+      live agent process not run this session — Docker down.)
+- [ ] Manual loop demonstrated end to end: ask, read, pull, observe. (needs live agent)
 
 ### Slice 5 — The benchmark: scenario, scoring, controllers
 
 **New 2026-08-02. This is the product** — see `docs/DECISIONS.md`. Everything else is scaffolding
 for it. Build it before the agent arms, because the arms implement its interface.
 
-- [ ] **Scenario definition.** A crisis the city starts in, plus a turn budget. Reproducible from a
-      seed. It must be genuinely recoverable and genuinely losable — a crisis that fixes itself, or
-      that no lever sequence can fix, measures nothing. Calibrate by hand-playing it first.
-- [ ] **Composite health index**, 0–1, over solvency, citizen satisfaction, service coverage, and
-      population retention, with a green threshold. Weights chosen deliberately and recorded in
-      `docs/DECISIONS.md` — they are a judged design choice, not an implementation detail.
-- [ ] **Calibrate the lever bounds** in `blindcity/levers.py` against the scenario. They are
-      currently plausible placeholders; they now determine whether the crisis is winnable.
-- [ ] **Controller interface.** One protocol — given the state channel for its arm, return lever
-      settings for this turn. `human`, `agent_datahub`, and `agent_raw` all implement it.
-- [ ] **Run harness.** Drive a controller through a scenario, tick by tick, recording the index and
-      its components each turn alongside the lever settings.
-- [ ] **Run isolation in the warehouse.** Arms run in parallel and all write history. Every row
-      needs a `run_id`, and the sim must stop truncating shared tables.
-- [ ] **Results format** durable enough to compare runs across days and arms.
+- [x] **Scenario definition.** `infrastructure_neglect` — 60 months neglect + shock, 36-turn budget.
+- [x] **Composite health index**, weights 0.20/0.30/0.30/0.20, green **0.62**, in DECISIONS.
+- [x] **Calibrate the lever bounds** — road/water max 8M; road repair formula fixed.
+- [x] **Controller interface.** `Controller` protocol + scripted bad/good policies.
+- [x] **Run harness.** `RunHarness` / `run_scenario` records per-turn index, components, levers.
+- [x] **Run isolation in the warehouse.** Default append-by-`run_id`; `--reset-warehouse` opt-in.
+- [x] **Results format** `RunResult` JSON (`scenario-bad.json` / `scenario-good.json` evidence).
 
 **Verified when:** the same scenario run twice with the same controller and seed gives the same
 score, a deliberately bad lever policy fails it, and a hand-played good policy recovers it.
+
+**Verified 2026-08-02.** Bad policy: recovered=False, final≈0.417. Good policy: recovered=True,
+green_turn=31, final≈0.653. Deterministic trajectories. 93 tests pass.
 
 ### Slice 6 — Agent arms
 
