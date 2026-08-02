@@ -26,9 +26,25 @@ The player's entire control surface. Eight scalars, no other input.
 
 ## Viewer
 
-- **Tile map.** Canvas rendering of the city. Shows the city, not its statistics.
-- **Lever panel.** The eight controls.
-- **No instrumentation.** No charts, no trend lines, no counters, no alerts. Deliberate.
+The player's whole window onto the city. It must look like a city — a place, populated and alive —
+not a debug view of a data structure.
+
+- **Rendered city scene.** Zoning and buildings drawn as buildings, roads as roads, the power grid
+  and water and sewer network visible as infrastructure. The city grows, densifies, and decays
+  visibly as the simulation runs.
+- **Visible inhabitants.** Citizens rendered in the scene, moving between homes and workplaces on
+  the road network. The city is populated, and the population is something you watch rather than
+  something you read.
+- **Visible condition.** Road wear shows as damaged road. A power shortfall shows as dark buildings.
+  Abandonment shows as derelict lots. Congestion shows as congestion. The player perceives the
+  city's state the way they would looking out a window.
+- **Lever panel.** The eight controls as real GUI inputs in manual mode — sliders and selectors the
+  player manipulates directly, showing the current position of each lever.
+- **No instrumentation.** No charts, no trend lines, no counters, no gauges, no alerts, no numeric
+  readouts of city state. Deliberate, and the line is sharp: **showing the city is the product;
+  showing measurements of the city is the thing we removed.** A visibly potholed road is the city.
+  A "road quality: 34%" label is instrumentation. Lever positions are the exception — those are the
+  player's own inputs, not the simulation's state.
 
 ## Metadata layer
 

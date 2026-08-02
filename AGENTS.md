@@ -43,7 +43,8 @@ src/blindcity/
   levers.py    The eight levers. Single source of truth for ranges and defaults.
   rng.py       Seeded randomness. Determinism is a hard rule.
   config.py    Connection settings.
-viewer/        Canvas tile map and lever panel. No numbers, no charts, no trends.
+viewer/        Rendered city scene with visible inhabitants, plus the lever panel.
+               No numbers, no charts, no trends.
 infra/         Docker compose for the warehouse Postgres.
 tests/         pytest.
 docs/          See document map below.
@@ -122,6 +123,11 @@ uv run eval --seeds 5
   all without it, so they never appear in the tool list.
 - **Do keep the baseline honest.** The no-DataHub control gets the same model, prompt, seed, tool
   budget, and full SQL access. Only the metadata context differs.
-- **Don't build a dashboard.** Any chart or trend line in the viewer defeats the premise.
+- **Do make the viewer look like a city.** A rendered scene with visible buildings, infrastructure,
+  and inhabitants. The player should perceive the city's condition by looking at it, the way they
+  would out a window — a potholed road, a dark building, a derelict lot.
+- **Don't build a dashboard.** Any chart, trend line, gauge, or numeric readout of city state in the
+  viewer defeats the premise. The line: showing the city is the product; showing *measurements of*
+  the city is what we removed. Lever positions are the player's own input and are exempt.
 - **Don't ship only the upstream Analytics Agent.** Originality is a judged criterion; the closed
   loop is ours.

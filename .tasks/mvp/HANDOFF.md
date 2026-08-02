@@ -76,8 +76,15 @@ Violating any of these is expensive and often silent.
   A/B evaluation is meaningless otherwise.
 - **No GPL code.** Apache 2.0 is a submission requirement. This is why OpenTTD and Micropolis were
   rejected.
-- **No instrumentation in the viewer.** No charts, counters, trend lines, or warning states. Showing
-  the city is the point; showing statistics about it defeats the premise.
+- **The viewer must look like a city sim.** A rendered 2.5D isometric scene with visible buildings,
+  infrastructure, and inhabitants, plus the eight levers as GUI inputs. Low fidelity is fine and is
+  the target — it has to read as a city at a glance, not be pretty.
+- **No instrumentation in the viewer.** No charts, counters, gauges, trend lines, or numeric
+  readouts of city state. The boundary: showing the city is the product, showing *measurements of*
+  the city is what we removed. A potholed road is the city; a "road quality: 34%" label is
+  instrumentation. Lever positions are the player's own input and are exempt.
+- **The simulation is spatial.** Tiles, buildings on tiles, citizens with homes, workplaces, and
+  positions. The viewer is downstream of this — without it there is nothing to draw.
 - **Keep the baseline honest.** The no-DataHub control arm gets the same model, prompt, seed, tool
   budget, and full SQL access. Only the metadata context differs.
 - **Do not ship only the upstream Analytics Agent.** Originality is judged. The closed loop in auto

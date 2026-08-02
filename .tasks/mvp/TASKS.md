@@ -80,26 +80,33 @@ bounds in `blindcity/levers.py` are plausible placeholders, not calibrated numbe
 The tick loop and the economy. Nothing else can be verified until rows exist.
 
 - [ ] Deterministic tick loop, seeded. Two runs on one seed must be identical.
-- [ ] Citizens, households, jobs, income, satisfaction.
+- [ ] **A spatial city grid.** Tiles with terrain and zoning. The city occupies a map, not a
+      spreadsheet — the viewer renders this, so it is a Slice 1 requirement, not a viewer concern.
+- [ ] Citizens and households, each **located**: a home tile, a workplace tile, and a position.
+      Jobs, income, satisfaction.
+- [ ] Buildings with a type, a tile, and a visible condition (new, worn, derelict).
 - [ ] Municipal budget with revenue and expenditure lines.
-- [ ] Warehouse schema designed and created.
+- [ ] Warehouse schema designed and created, carrying the spatial columns.
 - [ ] Writes rows to Postgres.
 
-**Verified when:** `uv run sim --seed 42 --years 20` completes twice with byte-identical output, and
-the row counts in Postgres are in the millions.
+**Verified when:** `uv run sim --seed 42 --years 20` completes twice with byte-identical output, the
+row counts in Postgres are in the millions, and the city's state at any tick can be reconstructed
+into a map — tiles, buildings, and where every citizen is.
 
 ### Slice 2 — City systems and levers
 
 The domains the vision names, and the player's control surface wired into the model.
 
-- [ ] Roads with traffic and wear.
-- [ ] Power grid with demand, contracts, tariffs.
+- [ ] Roads as network segments on the grid, with traffic and wear.
+- [ ] Power grid with demand, contracts, tariffs — and which buildings are served.
 - [ ] Water and sewer capacity and load.
-- [ ] Migration responding to conditions.
+- [ ] Migration responding to conditions: households arrive, occupy tiles, and leave.
+- [ ] Citizens commute along the road network between home and work.
 - [ ] All eight levers actually affecting the simulation.
 
 **Verified when:** moving each lever produces a measurable, directionally sensible change in the
-data. A lever nothing responds to is a bug, not a feature.
+data. A lever nothing responds to is a bug, not a feature. Every system that the viewer must show —
+wear, outages, congestion, abandonment — is queryable per tile.
 
 ### Slice 3 — Metadata layer
 
@@ -118,6 +125,10 @@ revenue, and the graph was generated from the simulation rather than hand-author
 ### Slice 4 — Control surface and manual mode
 
 - [ ] FastAPI: `GET /state`, `POST /lever`, `POST /advance`.
+- [ ] `GET /scene` — everything the viewer draws for the current tick: tiles, buildings and their
+      condition, road segments and their wear, utility coverage, and citizen positions. Shaped for
+      rendering, not for analysis, and carrying no aggregates or derived statistics.
+- [ ] Static file serving for the viewer, so the whole thing runs from one process.
 - [ ] Analytics Agent connected to Postgres and DataHub. Blocked on H1, the LLM API key.
 - [ ] Confirm hands-on that the Analytics Agent issues SQL against our warehouse.
 - [ ] Manual loop demonstrated end to end: ask, read, pull, observe.
@@ -133,7 +144,25 @@ The original contribution. Do not cut.
 
 ### Slice 6 — Viewer
 
-- [ ] Canvas tile map and lever panel. No charts, no counters, no trends.
+The player's window onto the city, and the thing the demo video shows for three minutes. It must
+read as a city, not as a debug view.
+
+- [ ] Rendered city scene on a canvas: terrain, zoning, buildings, roads, utility infrastructure.
+- [ ] Visible inhabitants moving between homes and workplaces along the roads.
+- [ ] Condition shown visually, never numerically — worn roads look worn, unpowered buildings go
+      dark, abandoned lots look derelict, congested roads look congested.
+- [ ] Lever panel: the eight controls as real GUI inputs in manual mode, each showing its current
+      position, each `POST`ing to `/lever`.
+- [ ] Advance control, so the player can step the simulation and watch the consequence.
+- [ ] No charts, counters, gauges, trend lines, or numeric readouts of city state.
+
+**Verified when:** someone who has never seen the project can watch the city for thirty seconds,
+say something true about how it is doing, and not be able to point at a single number on screen.
+
+**Approach, decided** (`docs/DECISIONS.md`): plain HTML, 2D canvas, 2.5D isometric tiles, no build
+step, served as static files by the FastAPI process. **Low fidelity is the target** — flat-shaded
+isometric blocks and simple citizen sprites. It must read as a city sim at a glance; silhouette,
+density, and condition carry that, not texture detail.
 
 ### Slice 7 — Evaluation harness
 
@@ -163,11 +192,16 @@ Everything a judge reads, minus the parts a human owns.
 Decided in advance, so it is not decided in panic. Sacrifice in this order:
 
 1. **Water and sewer.** Power and roads carry the same story.
-2. **Viewer polish.** A crude map still communicates the premise.
+2. **Viewer polish** — *the polish, not the scene.* Revised 2026-08-01, when the viewer became a
+   headline deliverable rather than a proof of concept. What is cuttable: animation smoothness,
+   sprite variety, isometric depth, weather, day/night, decorative detail. What is **not**
+   cuttable: a recognisable city, visible inhabitants, visible condition, and working lever inputs.
+   Fall back to simpler tiles and static citizens before cutting the scene itself.
 3. **Agent write-back to the catalog.** A bonus, not the thesis.
 4. **Multiple evaluation seeds.** One seed with an honest caveat beats none.
 
-Never cut: generated lineage, the A/B evaluation, the three-minute video. Those are the submission.
+Never cut: generated lineage, the A/B evaluation, a viewer that reads as a city, the three-minute
+video. Those are the submission.
 
 ## Open questions
 

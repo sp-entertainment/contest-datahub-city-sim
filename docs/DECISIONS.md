@@ -163,3 +163,38 @@ key or spending real money on an evaluation run.
 
 **Consequences.** `TASKS.md` is restructured and every "Day N" reference in the codebase and docs was
 updated to point at a slice. The A/B evaluation is explicitly built-but-not-run by agents.
+
+## 2026-08-01 — The viewer renders an actual city, and the simulation becomes spatial
+
+**Context.** The viewer was scoped as a crude tile map — enough to communicate the premise, and
+second on the cut line. The intent is stronger than that: it should look like a city simulation, with
+the city, its infrastructure, and its inhabitants visible on screen, and the levers as GUI inputs.
+
+**Decision.** The viewer renders a recognisable city scene with visible inhabitants and visibly
+degrading infrastructure. To make that possible, **the simulation gains a spatial model**: a tile
+grid, buildings placed on tiles, and citizens with home tiles, workplace tiles, and positions.
+Rendering is plain HTML and a 2D canvas drawing 2.5D isometric tiles — no framework, no build step,
+served as static files by the sim's FastAPI process. Low fidelity is the target: flat-shaded blocks
+and simple sprites.
+
+**Rationale.**
+- **The premise reads better, not worse.** Removing the UI only means something if there is a city
+  there to look at. A crude map makes the entry look unfinished; a city makes the absence of charts
+  look deliberate.
+- **It is what the demo video shows.** Three minutes of judged material is mostly this screen.
+- **Space was the missing prerequisite.** Citizens had jobs and income but no location, so there was
+  literally nothing to draw. This is the substantive change — the viewer is downstream of it.
+- **No framework and no build step** keeps the repo clone-and-run for a judge, and keeps a day of
+  toolchain work out of a nine-day schedule. Isometric tiles read as a city for far less effort
+  than 3D.
+
+**Consequences.** Slice 1 grows a spatial grid and located citizens; Slice 2 puts roads, utilities,
+and commuting on that grid; Slice 4 adds `GET /scene` and static file serving. The schema carries
+spatial columns, which also gives the metadata layer and the agent a richer, more realistic catalog
+to reason over. The cut line was revised: viewer *polish* stays cuttable, but a recognisable city,
+visible inhabitants, visible condition, and working levers are not.
+
+The instrumentation rule is unchanged and now has a stated boundary: showing the city is the
+product, showing measurements of the city is what we removed. A potholed road is the city; a
+"road quality: 34%" label is instrumentation. Lever positions are the player's own input and are
+exempt.
