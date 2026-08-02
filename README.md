@@ -41,10 +41,12 @@ can run that experiment. Their history only happened once.
 datahub docker quickstart
 ```
 
-DataHub Core comes up on `localhost:9002`, with its GraphQL API on `localhost:8080/api/graphql`.
-Authentication is off by default, so no token is required.
+DataHub Core comes up on `localhost:9002` (login `datahub` / `datahub`), with its GraphQL API on
+`localhost:8080/api/graphql`. Authentication is off by default, so no token is required.
 
-Further commands land in `AGENTS.md` as the toolchain settles.
+Full setup — installing `uv` and the DataHub CLI, starting Docker, and the checks that confirm it all
+works — is in `docs/ENVIRONMENT.md`. Further application commands land in `AGENTS.md` as the
+toolchain settles.
 
 ## Architecture
 
@@ -66,7 +68,9 @@ about consequences before it answers.
 - `AGENTS.md` — vision, constraints, conventions
 - `docs/FEATURES.md` — what it does
 - `docs/DECISIONS.md` — why it is built this way
+- `docs/ENVIRONMENT.md` — verified setup, running topology, credentials
 - `docs/ERRORS.md` — problems and resolutions
+- `.tasks/mvp/TASKS.md` — current state and the remaining plan
 
 ## License
 

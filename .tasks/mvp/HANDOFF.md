@@ -1,4 +1,11 @@
-# Handoff
+# Handoff — superseded
+
+> **Superseded 2026-08-01.** This was a one-time snapshot written to cross a machine boundary. The
+> move happened and the bootstrap it describes is done. Current state lives in `TASKS.md`; the
+> running environment is documented in `docs/ENVIRONMENT.md`. Kept for background only.
+>
+> Known stale in here: the fourteen-container quickstart figure (it is six), the environment section
+> (the target machine has 63 GB), and "Where to pick up" step 1 (done and verified).
 
 **Written.** 2026-08-01, at the end of the design session.
 
