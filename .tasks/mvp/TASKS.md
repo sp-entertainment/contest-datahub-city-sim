@@ -164,6 +164,12 @@ step, served as static files by the FastAPI process. **Low fidelity is the targe
 isometric blocks and simple citizen sprites. It must read as a city sim at a glance; silhouette,
 density, and condition carry that, not texture detail.
 
+**Build the first version deliberately plain, then stop and move on.** `viewer/README.md` has the
+concrete spec: extruded boxes where height is density, colour is type and shade is condition; dots
+for citizens; full canvas redraw each tick; native HTML inputs for the levers. Roughly a day.
+Sprite art, animation, day/night, camera controls, and building variety are explicitly out until
+the submission is otherwise complete. If it looks flat and schematic, it is correct.
+
 ### Slice 7 — Evaluation harness
 
 **Build the harness. Do not run the evaluation — that is H3.**

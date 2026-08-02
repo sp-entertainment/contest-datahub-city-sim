@@ -52,3 +52,27 @@ isometric tile scene. No build step, no framework, served as static files by the
 sprites or dots for citizens. It has to read as a city sim at a glance — silhouette, density, and
 condition are what carry that, not texture detail. Spend effort on making state legible, not on
 making buildings pretty.
+
+### Build this first, and stop
+
+The first version is deliberately plain. Get it working, then leave it alone until everything else
+in `TASKS.md` is done.
+
+- Isometric grid of flat-coloured tiles. Colour by zoning; that is the whole terrain treatment.
+- Buildings as extruded boxes. **Height encodes density, colour encodes type, shade encodes
+  condition.** No textures, no windows, no roofs, no per-building art.
+- Citizens as 2–3px dots that move along roads. No sprites, no animation frames, no pathing
+  finesse — interpolating between endpoints is enough.
+- Roads as lines that get visibly darker and more broken as they wear.
+- Redraw the whole canvas on each tick. No dirty-rect optimisation, no interpolation between ticks.
+- Lever panel as plain HTML `<input type="range">` and `<select>`. No custom controls.
+
+That is a city sim. Three shades of grey on a street grid with moving dots reads as one instantly,
+and it is maybe a day of work.
+
+**Explicitly not in the first version**, and not worth arguing about until the submission is
+otherwise complete: sprite art, animation, day/night, weather, camera pan and zoom, particle
+effects, building variety, shadows, tile bevels, smooth movement between ticks.
+
+If the first version looks flat and schematic, it is correct. The judged claim is that a catalog and
+an agent can replace a game UI — not that we can draw.
