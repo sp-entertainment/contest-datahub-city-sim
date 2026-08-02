@@ -1,0 +1,37 @@
+[project]
+name = "blindcity"
+version = "0.1.0"
+description = "A city simulation with no interface. DataHub and an agent replace the UI."
+readme = "README.md"
+license = { text = "Apache-2.0" }
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    "psycopg[binary]>=3.2",
+    "sqlalchemy>=2.0",
+]
+
+[project.scripts]
+sim = "blindcity.sim.__main__:main"
+datahub-emit = "blindcity.catalog.__main__:main"
+agent = "blindcity.agent.__main__:main"
+eval = "blindcity.evaluation.__main__:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/blindcity"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

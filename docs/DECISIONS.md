@@ -104,3 +104,24 @@ to a sales demo form. Not viable on a nine-day critical path.
 
 **Consequences.** Development moved to a higher-memory machine. Quickstart needs 8 GB for itself plus
 2 GB swap and 13 GB disk, across 14 containers. Auth stays off, so no access token is needed.
+
+## 2026-08-01 — Single `blindcity` package under `src/`, and the `catalog` rename
+
+**Context.** The project map in `AGENTS.md` named five top-level directories, one of them `datahub/`.
+Scaffolding the Python project forced the question of whether those are importable packages.
+
+**Options.** Five top-level packages as mapped; one distribution with subpackages under `src/`.
+
+**Decision.** One `blindcity` distribution, src layout, with `sim`, `catalog`, `agent`, and
+`evaluation` as subpackages. `viewer/` and `infra/` stay top-level and are not Python.
+
+**Rationale.**
+- **`datahub/` as a top-level package is a landmine.** It shadows the installed `acryl-datahub`
+  module, so `import datahub` inside our own code silently resolves to us instead of the SDK. Renamed
+  to `catalog`.
+- `eval` as a module name shadows a builtin. Renamed to `evaluation`; the command stays `uv run eval`.
+- src layout means tests run against the installed package, so a packaging mistake fails locally
+  rather than after the submission is cloned by a judge.
+
+**Consequences.** The project map in `AGENTS.md` was updated to match, with both renames explained
+inline so neither gets "corrected" back.

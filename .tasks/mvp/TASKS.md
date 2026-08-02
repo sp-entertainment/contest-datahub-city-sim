@@ -2,17 +2,56 @@
 
 **Objective.** Ship a working Blind City entry by 2026-08-10, 5:00pm EDT.
 
-**Status.** Design settled. No code written. Development moving to a higher-memory machine.
+**Status.** Updated 2026-08-01. Bootstrap complete, DataHub Core verified running. No application
+code written yet.
+
+## Start here
+
+This file is the live state of the work. It is the handoff — read it, do the next unchecked thing,
+check it off, and record what you learned in the document it belongs in.
+
+**Read first, in order:** `AGENTS.md` (vision and constraints), `docs/DECISIONS.md` (seven settled
+decisions — do not relitigate without cause), this file, `docs/ENVIRONMENT.md` (what is running and
+how to reach it), `docs/ERRORS.md` (traps).
+
+`HANDOFF.md` in this directory is a historical snapshot from the design session, superseded on
+2026-08-01. Read it for background if you want; do not treat it as current.
+
+**Where each thing gets written down:**
+
+| What you learned | Where it goes |
+| --- | --- |
+| A choice with alternatives and consequences | `docs/DECISIONS.md`, appended, never edited |
+| A command that works, and what it produced | `docs/ENVIRONMENT.md` |
+| Something that broke and how it was fixed | `docs/ERRORS.md` |
+| Behaviour a player or judge can see | `docs/FEATURES.md` |
+| Progress, and what is next | this file |
+
+**What the skeleton does and does not give you.** The package layout, the four commands, the eight
+levers, the seeded RNG, and the warehouse container are real and tested. Everything else is a
+docstring saying which day builds it. Deliberately absent: the warehouse schema, the tick loop, any
+lineage code, and the viewer's framework — all of those are design decisions that should be made
+by whoever makes them, not inherited from a stub. The lever bounds in `blindcity/levers.py` are
+plausible placeholders, not calibrated numbers.
+
+**Next action:** Day 1, the Postgres warehouse gate. It is the last thing that can invalidate the
+architecture, so it comes before any simulation code. Concretely: bring up Postgres in its own
+container on 5432, install the Analytics Agent, point it at Postgres as a warehouse, and confirm it
+actually issues queries against it. If it will not, DuckDB is the recorded fallback and that is a
+`docs/DECISIONS.md` entry.
 
 ## Bootstrap on the new machine
 
-1. Copy or clone this directory.
-2. Confirm 16 GB RAM, 25 GB free disk, Docker installed.
-3. Install `uv` and Python 3.11+.
-4. Run `datahub docker quickstart`. Confirm `localhost:9002` loads and
-   `localhost:8080/api/graphql` answers unauthenticated.
-5. Register on Devpost if not already: https://datahub.devpost.com/register
-6. Join the DataHub Slack, channel `#agent-hackathon`, for live help from DataHub staff.
+1. [x] Copy or clone this directory.
+2. [x] Confirm 16 GB RAM, 25 GB free disk, Docker installed. — 63 GB RAM, 531 GB free,
+   Docker 29.2.1.
+3. [x] Install `uv` and Python 3.11+. — `uv` 0.11.32; `acryl-datahub` 1.6.0.17 installed as a uv
+   tool pinned to Python 3.11. System Python is 3.14, too new for the DataHub dependency set;
+   pin the project to 3.11.
+4. [x] Run `datahub docker quickstart`. Confirm `localhost:9002` loads and
+   `localhost:8080/api/graphql` answers unauthenticated. — both confirmed, see Day 1.
+5. [x] Register on Devpost: https://datahub.devpost.com/register
+6. [x] Join the DataHub Slack, channel `#agent-hackathon`, for live help from DataHub staff.
 
 Read `AGENTS.md` and `docs/DECISIONS.md` first. Everything already settled is recorded there.
 
@@ -20,11 +59,17 @@ Read `AGENTS.md` and `docs/DECISIONS.md` first. Everything already settled is re
 
 ### Day 1 — Foundations
 
-- [ ] DataHub Core running and reachable.
-- [ ] Postgres running. **Verify it works as an Analytics Agent warehouse**, not only as its
-      conversation store. Documentation is contradictory on this point; settle it before building on
-      it.
-- [ ] Repository scaffolded, Apache 2.0 `LICENSE` file added.
+- [x] DataHub Core running and reachable. Quickstart plan `v1.5.0.6`. `localhost:9002` returns 200;
+      `localhost:8080/api/graphql` answers unauthenticated as `__datahub_system` with no token.
+      Note: the current quickstart profile is six containers, not fourteen, and DataHub's own
+      metadata store is MySQL on `:3306` — our warehouse Postgres needs its own container on 5432.
+- [x] Postgres running. PostgreSQL 16.14 in `blindcity-postgres` on 5432, healthy.
+      Definition in `infra/postgres/docker-compose.yml`.
+- [ ] **Verify Postgres works as an Analytics Agent warehouse**, not only as its conversation store.
+      Documentation is contradictory on this point; settle it before building on it.
+      **This is the gate. Nothing below it should start until it is answered.**
+- [x] Repository scaffolded, Apache 2.0 `LICENSE` file added. uv project on Python 3.11, src layout,
+      four CLI entry points wired, 9 tests passing, ruff clean.
 
 ### Day 2 — Simulation core
 

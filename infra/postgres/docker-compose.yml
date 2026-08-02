@@ -1,0 +1,42 @@
+# The warehouse. Separate from DataHub's own MySQL store on 3306 — see docs/ENVIRONMENT.md.
+#
+#   docker compose -f infra/postgres/docker-compose.yml up -d
+#   docker compose -f infra/postgres/docker-compose.yml down        # keeps data
+#   docker compose -f infra/postgres/docker-compose.yml down -v     # destroys data
+#
+# Credentials are local-only and deliberately trivial. Auth stays off across this project
+# (docs/DECISIONS.md). Do not promote these to anything reachable.
+
+name: blindcity
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: blindcity-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: blindcity
+      POSTGRES_PASSWORD: blindcity
+      POSTGRES_DB: blindcity
+    ports:
+      - "5432:5432"
+    volumes:
+      - blindcity_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U blindcity -d blindcity"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    # The sim writes millions of rows in bulk and the agent reads them back analytically.
+    # Modest bumps over the stock defaults; revisit if ingestion turns out to be the bottleneck.
+    command:
+      - "postgres"
+      - "-c"
+      - "shared_buffers=512MB"
+      - "-c"
+      - "work_mem=32MB"
+      - "-c"
+      - "max_wal_size=4GB"
+
+volumes:
+  blindcity_pgdata:
