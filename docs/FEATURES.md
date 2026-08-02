@@ -24,27 +24,40 @@ The player's entire control surface. Eight scalars, no other input.
 - `zoning_release`
 - `power_contract_mode`
 
+## Benchmark
+
+The point of the project. See `docs/DECISIONS.md`, 2026-08-02.
+
+- **Scenario.** A defined crisis: the city starts in an unhealthy state with a fixed turn budget to
+  recover. Same seed, same crisis, same budget for every arm.
+- **Health index.** A composite 0–1 score over solvency, citizen satisfaction, service coverage, and
+  population retention. "Green" is a threshold on the index; a run succeeds if it crosses green
+  within the budget.
+- **Control modes.** Three controllers implement one interface and face identical conditions:
+  - `human` — a person, with the city render, the levers, and the Analytics Agent to ask questions.
+  - `agent_datahub` — our auto-mode agent with DataHub over MCP plus SQL.
+  - `agent_raw` — the same agent with SQL only and no catalog context.
+- **Results.** Per-run health trajectory, turn at which green was reached (if ever), lever history,
+  and the component breakdown. `agent_datahub` vs `agent_raw` measures the metadata;
+  `human` vs `agent_datahub` measures the automation.
+- **Run isolation.** Arms run in parallel and all write history, so every row carries a run
+  identifier and no arm truncates another's data.
+
 ## Viewer
 
-The player's whole window onto the city. It must look like a city — a place, populated and alive —
-not a debug view of a data structure.
+Cosmetic, and the human arm's control surface. It is not a faithful representation of the city and
+does not need to be.
 
-- **Rendered city scene.** Zoning and buildings drawn as buildings, roads as roads, the power grid
-  and water and sewer network visible as infrastructure. The city grows, densifies, and decays
-  visibly as the simulation runs.
-- **Visible inhabitants.** Citizens rendered in the scene, moving between homes and workplaces on
-  the road network. The city is populated, and the population is something you watch rather than
-  something you read.
-- **Visible condition.** Road wear shows as damaged road. A power shortfall shows as dark buildings.
-  Abandonment shows as derelict lots. Congestion shows as congestion. The player perceives the
-  city's state the way they would looking out a window.
-- **Lever panel.** The eight controls as real GUI inputs in manual mode — sliders and selectors the
-  player manipulates directly, showing the current position of each lever.
-- **No instrumentation.** No charts, no trend lines, no counters, no gauges, no alerts, no numeric
-  readouts of city state. Deliberate, and the line is sharp: **showing the city is the product;
-  showing measurements of the city is the thing we removed.** A visibly potholed road is the city.
-  A "road quality: 34%" label is instrumentation. Lever positions are the exception — those are the
-  player's own inputs, not the simulation's state.
+- **City scene.** Enough to read as a city: an isometric grid, buildings as blocks, roads, citizens
+  as dots. Low fidelity by design — see `viewer/README.md`.
+- **Lever panel.** The eight controls as real GUI inputs — sliders and selectors showing each
+  lever's current position. This part is functional, not cosmetic: without it the human arm cannot
+  play.
+- **Advance control.** Step the simulation a turn and see what happened.
+- **No instrumentation.** No charts, trend lines, counters, gauges, alerts, or numeric readouts of
+  city state. This is an experimental control, not a style rule: a number on screen gives the human
+  arm an information channel the agent arms do not have and invalidates the comparison. Lever
+  positions are the controller's own input and are exempt.
 
 ## Metadata layer
 
@@ -56,14 +69,17 @@ not a debug view of a data structure.
 
 ## Agents
 
-- **Manual mode.** Upstream Analytics Agent answers the player's questions. The player decides and
-  pulls levers.
-- **Auto mode.** Closed loop — read state, gather context from DataHub, query Postgres, decide,
-  actuate a lever, advance the simulation, observe the consequence.
+- **Manual mode.** Upstream Analytics Agent answers questions. This is the tooling the `human` arm
+  gets — it does not pull levers itself.
+- **Auto mode.** Closed loop — read state, gather context, query Postgres, decide, actuate a lever,
+  advance, observe. Runs as `agent_datahub` (with catalog context) and `agent_raw` (without); the
+  two arms differ only in that context.
 - **Write-back.** The agent records findings into the catalog rather than working around gaps.
 
 ## Evaluation
 
-- **Context A/B.** Identical agent, identical seed, with and without DataHub context.
-- **Outcome comparison.** Population, solvency, and citizen satisfaction after twenty simulated
-  years.
+- **Three-arm comparison** on identical seed, crisis, and turn budget.
+- **Reported per arm:** health index trajectory, turn green was reached, whether it was reached at
+  all, lever history, and the index components.
+- **Future, not now.** Seed the simulation from real historical city data so the benchmark runs
+  against real conditions.

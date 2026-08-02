@@ -21,6 +21,32 @@ guidance.
 DataHub is essentially a stand-in for what the normal game UI would be. It would do what it would
 signal to the user.
 
+## What this project is
+
+> The vision statement above is immutable and still describes the premise. This section describes
+> the shape the work actually takes — see `docs/DECISIONS.md`, 2026-08-02.
+
+**Blind City is a benchmark for whether catalog metadata improves agent decisions.** It is not a
+game, and the city is not the deliverable — it is the substrate that makes the measurement mean
+something.
+
+A **scenario** puts the city into a defined crisis. A **controller** pulls levers over a fixed turn
+budget. A run is scored by a **composite health index**; "recovered" means the index crossed the
+green threshold within the budget. Three controllers face the identical seed, crisis, and budget:
+
+| Arm | Controller | Sees |
+| --- | --- | --- |
+| `human` | A person | The city render, the levers, and the Analytics Agent to ask questions |
+| `agent_datahub` | Our auto-mode agent | DataHub over MCP, plus SQL against the warehouse |
+| `agent_raw` | Our auto-mode agent | SQL only, no catalog context |
+
+Two comparisons fall out: `agent_datahub` vs `agent_raw` measures the metadata; `human` vs
+`agent_datahub` measures the automation.
+
+**What follows from this.** Simulation fidelity is where effort belongs. The viewer is cosmetic —
+it must look like a city and carry the levers, nothing more. Information parity across arms is an
+experimental control, so a number on screen is not a style violation, it is a corrupted experiment.
+
 ## Contest context
 
 - **Event:** Build with DataHub: The Agent Hackathon (Devpost).
@@ -36,14 +62,17 @@ signal to the user.
 ```
 src/blindcity/
   sim/         Headless deterministic city simulation. Writes rows to Postgres.
-               Also emits its own causal graph as a lineage artifact.
+               Also declares its causal graph, validated per edge (causal_check.py).
   catalog/     Metadata ingestion: schemas, glossary terms, lineage, assertions.
   agent/       Auto-mode agent. DataHub MCP + SQL + lever actuation, closed loop.
-  evaluation/  A/B harness: agent with DataHub context vs without, same seed.
+               Runs as both the agent_datahub and agent_raw arms.
+  benchmark/   Scenario definition, health index, turn budget, controller interface,
+               run harness, results. The measurement, and the point of the project.
+  evaluation/  Runs the arms and compares them. `uv run eval`.
   levers.py    The eight levers. Single source of truth for ranges and defaults.
   rng.py       Seeded randomness. Determinism is a hard rule.
   config.py    Connection settings.
-viewer/        Rendered city scene with visible inhabitants, plus the lever panel.
+viewer/        Cosmetic city scene plus the lever panel — the human arm's control surface.
                No numbers, no charts, no trends.
 infra/         Docker compose for the warehouse Postgres.
 tests/         pytest.
@@ -127,11 +156,13 @@ uv run eval --seeds 5
   all without it, so they never appear in the tool list.
 - **Do keep the baseline honest.** The no-DataHub control gets the same model, prompt, seed, tool
   budget, and full SQL access. Only the metadata context differs.
-- **Do make the viewer look like a city.** A rendered scene with visible buildings, infrastructure,
-  and inhabitants. The player should perceive the city's condition by looking at it, the way they
-  would out a window — a potholed road, a dark building, a derelict lot.
+- **Do spend effort on simulation fidelity, not on rendering.** The sim is the substrate the whole
+  measurement rests on. The viewer is cosmetic: it should look like a city and carry the levers.
+  Time spent making it pretty is time not spent on the thing being judged.
+- **Do hold information parity across arms.** Every controller gets the same channel to the city's
+  state; only the metadata differs. This is the experiment's control, not a preference.
 - **Don't build a dashboard.** Any chart, trend line, gauge, or numeric readout of city state in the
-  viewer defeats the premise. The line: showing the city is the product; showing *measurements of*
-  the city is what we removed. Lever positions are the player's own input and are exempt.
+  viewer breaks parity — it hands the human arm information the agent arms do not have and
+  invalidates the comparison. Lever positions are the controller's own input and are exempt.
 - **Don't ship only the upstream Analytics Agent.** Originality is a judged criterion; the closed
   loop is ours.

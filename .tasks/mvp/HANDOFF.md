@@ -12,7 +12,23 @@ only a human can do. `TASKS.md` holds what does change: the checkboxes and the d
 **When they disagree, `TASKS.md` wins on status.** Do not copy progress into this file — that is the
 drift that made the previous version of this document dangerous.
 
-## What the project is, in one paragraph
+## What the project is
+
+**A benchmark for whether catalog metadata improves agent decisions.** Not a game. A scenario puts
+the city into a defined crisis; a controller pulls levers over a fixed turn budget; a composite
+health index scores whether the city got back into the green in time. Three controllers face the
+identical seed, crisis, and budget: a `human` (with the city render, the levers, and the Analytics
+Agent to ask questions), `agent_datahub` (our agent with DataHub over MCP plus SQL), and
+`agent_raw` (the same agent with SQL only). `agent_datahub` vs `agent_raw` measures the metadata;
+`human` vs `agent_datahub` measures the automation.
+
+The simulation is the substrate, and its fidelity is what makes the results mean anything — that is
+where effort belongs. The viewer is cosmetic. Recorded 2026-08-02 in `docs/DECISIONS.md`.
+
+Later sections of this file, and the original premise below, still describe the city and the
+catalog accurately. The framing above is what the work is measured against.
+
+## The original premise, in one paragraph
 
 A city simulation with no interface. It writes enormous volumes of data to Postgres. The player sees
 the city and eight levers, and nothing else — no charts, no counters, no trends. To learn what is
@@ -50,7 +66,8 @@ Work through them in order. **Your first task is Slice 1, the simulation core.**
 is already running, and it depends on no external service and no credential.
 
 Slices 4 and 5 need an LLM API key, which is a human task (H1 in `TASKS.md`). If it is not there when
-you arrive, say so and keep going with what is unblocked — Slice 6, the viewer, needs no key.
+you arrive, say so and keep going with what is unblocked — Slice 5 (the benchmark itself) and Slice
+7 (the viewer) need no key.
 
 ## Postgres is settled
 
@@ -76,13 +93,17 @@ Violating any of these is expensive and often silent.
   A/B evaluation is meaningless otherwise.
 - **No GPL code.** Apache 2.0 is a submission requirement. This is why OpenTTD and Micropolis were
   rejected.
-- **The viewer must look like a city sim.** A rendered 2.5D isometric scene with visible buildings,
-  infrastructure, and inhabitants, plus the eight levers as GUI inputs. Low fidelity is fine and is
-  the target — it has to read as a city at a glance, not be pretty.
-- **No instrumentation in the viewer.** No charts, counters, gauges, trend lines, or numeric
-  readouts of city state. The boundary: showing the city is the product, showing *measurements of*
-  the city is what we removed. A potholed road is the city; a "road quality: 34%" label is
-  instrumentation. Lever positions are the player's own input and are exempt.
+- **Simulation fidelity is where effort goes; the viewer is cosmetic.** The sim is the substrate the
+  measurement rests on. The scene needs to read as a city at a glance and nothing more. The lever
+  panel is the exception — it is functional, because the `human` arm cannot play without it.
+- **Information parity across arms is an experimental control.** Every controller gets the same
+  channel to the city's state; only the metadata differs. No charts, counters, gauges, or numeric
+  readouts of city state in the viewer — a number on screen hands the human arm information the
+  agent arms lack and invalidates the comparison. Lever positions are the controller's own input
+  and are exempt.
+- **`agent_datahub` and `agent_raw` must differ in exactly one thing.** Same model, prompt, seed,
+  turn budget, tool budget, and SQL access; only the catalog context differs. Any other difference
+  invalidates the headline result.
 - **The simulation is spatial.** Tiles, buildings on tiles, citizens with homes, workplaces, and
   positions. The viewer is downstream of this — without it there is nothing to draw.
 - **Keep the baseline honest.** The no-DataHub control arm gets the same model, prompt, seed, tool
@@ -102,7 +123,8 @@ unblocked. Do not improvise around them, and never create, enter, or commit a cr
 
 Two worth repeating because the failure is expensive:
 
-- **Do not run the A/B evaluation.** Build the harness in Slice 7, hand it over with a cost estimate.
+- **Do not run the scored evaluation.** Build the harness in Slice 8, hand it over with a cost
+  estimate.
   The runs spend real money and produce the number the whole submission rests on.
 - **Do not quietly drop scope.** If you are behind, say so and propose a cut from the cut line.
 

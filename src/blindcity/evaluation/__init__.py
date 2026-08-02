@@ -1,10 +1,13 @@
-"""A/B harness: the same agent, the same seed, with and without DataHub context.
+"""Run the three benchmark arms and compare them.
 
-This is the spine of the submission (docs/DECISIONS.md). It produces the one number the entry is
-built around, so the control has to be defensible: same model, same prompt, same seed, same tool
-budget, same full SQL access. Only the metadata context differs.
+The project is a benchmark (docs/DECISIONS.md, 2026-08-02): a scenario puts the city into a crisis,
+a controller pulls levers over a fixed turn budget, and a composite health index scores whether it
+recovered. Three arms face identical conditions — `human`, `agent_datahub`, `agent_raw`.
+
+`agent_datahub` vs `agent_raw` is the headline and its control has to be defensible: same model,
+prompt, seed, turn budget, tool budget, and SQL access. Only the catalog context differs.
 
 Named `evaluation` while the command stays `eval`, to avoid a module named after a builtin.
 
-Plan: TASKS.md, Slice 7. Build the harness; a human runs the evaluation (task H3).
+Plan: TASKS.md, Slice 8. Build the harness; a human runs the scored evaluation (task H3).
 """

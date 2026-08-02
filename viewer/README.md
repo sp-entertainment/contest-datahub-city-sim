@@ -1,6 +1,12 @@
 # Viewer
 
-A rendered city and eight levers. The player's entire window onto the simulation.
+Cosmetic city scene plus the lever panel. The `human` arm's control surface.
+
+**Read this first: the scene is cosmetic, the controls are not.** This project is a benchmark, not
+a game (`docs/DECISIONS.md`, 2026-08-02). The render does not have to represent the city faithfully
+— it has to look like a city so the human arm is playing something legible. The lever panel and the
+advance control are functional: without them the human arm cannot play at all. Under time pressure
+the scene is the **first** thing cut; the controls are not cut.
 
 ## What it shows
 
@@ -9,13 +15,16 @@ carrying traffic, utility infrastructure, and inhabitants moving between homes a
 manual mode, the eight levers appear as real GUI inputs — sliders and selectors the player
 manipulates directly — plus a control to advance the simulation and watch what happens.
 
-## The hard constraint, and where the line actually falls
+## The hard constraint, and why it is not a style rule
 
 No charts, counters, gauges, trend lines, alerts, or numeric readouts of city state.
 
+**This is the experiment's control.** Every arm — human, agent-with-DataHub, agent-without — must
+get the same channel to the city's state, so that the only difference between them is the metadata.
+A number on screen gives the human arm information the agent arms do not have, and the comparison
+stops meaning anything. Breaking this does not make the viewer ugly; it invalidates the result.
+
 The line is not "no detail" — it is **showing the city versus showing measurements of the city.**
-The first is the product. The second is the thing this entry deliberately removed, because a
-metadata catalog and an agent are supposed to replace it.
 
 | This is the city | This is instrumentation |
 | --- | --- |
@@ -27,7 +36,8 @@ metadata catalog and an agent are supposed to replace it.
 
 The player should be able to watch for thirty seconds, say something true about how the city is
 doing, and not be able to point at a single number on screen. Anything more precise than that, they
-ask the agent — that is the entire premise.
+ask the Analytics Agent — which is exactly the channel the `agent_datahub` arm has, which is what
+makes the two comparable.
 
 **Lever positions are exempt.** Those are the player's own inputs, not the simulation's state. A
 slider has to show where it is set.
@@ -43,7 +53,7 @@ restate them here or hard-code them in the frontend.
 
 ## Not yet built
 
-Plan: Slice 6 in `.tasks/mvp/TASKS.md`.
+Plan: Slice 7 in `.tasks/mvp/TASKS.md`.
 
 **Approach, decided** (see `docs/DECISIONS.md`): plain HTML with a 2D canvas, drawing a 2.5D
 isometric tile scene. No build step, no framework, served as static files by the FastAPI process.

@@ -164,6 +164,58 @@ key or spending real money on an evaluation run.
 **Consequences.** `TASKS.md` is restructured and every "Day N" reference in the codebase and docs was
 updated to point at a slice. The A/B evaluation is explicitly built-but-not-run by agents.
 
+## 2026-08-02 — The project is an agent benchmark, not a game
+
+**Context.** The entry had been shaped as a city simulation whose UI was replaced by a catalog and an
+agent. That framing made the viewer a headline deliverable and left the A/B evaluation as the last
+slice. The intent is the other way round: the evaluation *is* the product, and the city is the
+substrate that makes it meaningful.
+
+**Decision.** Blind City is a benchmark for whether catalog metadata improves agent decisions. A
+**scenario** puts the city into a defined crisis. A **controller** pulls levers over a fixed turn
+budget. A run is scored by a **composite health index**, and "recovered" means the index crossed a
+green threshold within the budget. Three controllers face the identical seed, crisis, and budget:
+
+| Arm | Controller | Sees |
+| --- | --- | --- |
+| `human` | A person | The city render, the levers, and the upstream Analytics Agent to ask questions |
+| `agent_datahub` | Our auto-mode agent | DataHub over MCP, plus SQL against the warehouse |
+| `agent_raw` | Our auto-mode agent | SQL against the warehouse only, no catalog context |
+
+**Rationale.**
+- **Simulation fidelity is what makes the result mean anything**, so effort belongs there. A crisis
+  that is trivially recoverable, or unrecoverable regardless of skill, measures nothing.
+- **Three arms separate two different questions.** `agent_datahub` vs `agent_raw` isolates the value
+  of the metadata. `human` vs `agent_datahub` says whether the automation is worth having at all.
+  Giving the human the Analytics Agent makes them a realistic operator-with-tooling baseline rather
+  than a strawman.
+- **A composite index gives one comparable number** with a component breakdown for the writeup, and
+  a trajectory that plots well in a three-minute video.
+- We wrote the simulation, so ground truth exists and the experiment is repeatable — which no real
+  data team can do with their own history.
+
+**Consequences.**
+- **The viewer is demoted to cosmetic.** It does not need to represent the city faithfully. It needs
+  to look like a city and carry the lever controls for the human arm. This reverses the 2026-08-01
+  decision that made a recognisable city never-cut; the levers stay required because the human arm
+  cannot exist without them, but scene fidelity is now the first thing to cut.
+- **Information parity becomes an experimental control, not an aesthetic rule.** Every arm must get
+  the same channel to the city's state; only the metadata differs. The existing "no charts, no
+  counters" rule now has a stronger justification than the original one: a numeric readout in the
+  viewer would hand the human arm an information channel the agent arms do not have, and invalidate
+  the comparison.
+- **Lever bounds stop being placeholders.** They determine whether a crisis is recoverable, so they
+  need calibrating against an actual scenario.
+- **Runs must be isolated in the warehouse.** Arms run in parallel and all write history; without a
+  run identifier they overwrite each other. The schema needs a `run_id`, and the sim must stop
+  truncating shared tables.
+- New work that existed in no slice: scenario definition, health index and green threshold, turn
+  budget, a controller interface the three arms implement, a run harness, and a results format.
+
+**Future, explicitly not now.** Seeding the simulation from real historical city data, so the
+benchmark runs against real conditions rather than generated ones. Recorded so it is not
+rediscovered as a new idea; out of scope before the deadline.
+
 ## 2026-08-02 — Validate every lineage edge instead of claiming it was derived
 
 **Context.** Review of Slice 3 found that `CAUSAL_EDGES` is a hand-written list. `systems.py` never

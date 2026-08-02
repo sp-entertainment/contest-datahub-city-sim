@@ -18,15 +18,26 @@ Every game interface does two jobs: it finds the relevant numbers among everythi
 and it explains what they mean. That is precisely what a metadata catalog does. So we removed the
 interface and pointed an agent at the catalog instead.
 
-The simulation is also, quietly, a laboratory. Because we wrote it, we have ground truth. So we can
-run the same agent twice on the same seed — once with DataHub context, once with nothing but raw
-schemas — and measure whether metadata context actually produces better decisions. No real data team
-can run that experiment. Their history only happened once.
+The simulation is also, and mainly, a laboratory. Because we wrote it, we have ground truth. So we
+can put a city into the same crisis repeatedly and measure who gets it out — an agent with catalog
+context, the same agent without, or a person. No real data team can run that experiment. Their
+history only happened once.
 
-## Modes
+## It is a benchmark
 
-- **Manual.** You ask questions, you read answers, you pull the levers.
-- **Auto.** The agent reads the city, decides, pulls a lever, and lives with the consequence.
+The city is the substrate, not the deliverable. A **scenario** puts it into a crisis; a
+**controller** pulls levers over a fixed turn budget; a **composite health index** scores whether it
+got back into the green in time. Three controllers face the identical seed, crisis, and budget:
+
+| Arm | Who is deciding | What they can see |
+| --- | --- | --- |
+| `human` | You | The city, the levers, and the Analytics Agent to ask questions |
+| `agent_datahub` | Our agent | DataHub over MCP, plus SQL |
+| `agent_raw` | Our agent | SQL only — no catalog |
+
+`agent_datahub` vs `agent_raw` measures what the metadata is worth. `human` vs `agent_datahub`
+measures what the automation is worth. Every arm gets the same view of the city, so the metadata is
+the only thing that varies — which is why there are no numbers on the screen.
 
 ## Requirements
 

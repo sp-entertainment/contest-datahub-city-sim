@@ -29,6 +29,12 @@ is running and how to reach it), `docs/ERRORS.md` (traps).
 | Behaviour a player or judge can see | `docs/FEATURES.md` |
 | Progress, and what is next | this file |
 
+**What this project is.** A benchmark for whether catalog metadata improves agent decisions — not a
+game. A scenario puts the city in a crisis; three controllers (`human`, `agent_datahub`,
+`agent_raw`) pull levers over a fixed turn budget; a composite health index scores each run. The
+simulation is the substrate and its fidelity is what makes results mean anything. The viewer is
+cosmetic. See `AGENTS.md` and `docs/DECISIONS.md`, 2026-08-02.
+
 **How the work is organised.** Vertical slices, not days. Each slice is a coherent piece of the
 product that can be finished and verified on its own. They are ordered by dependency: later slices
 need earlier ones. Nothing about the ordering is a schedule — the deadline is the schedule, and the
@@ -40,8 +46,9 @@ warehouse schema, the tick loop, any lineage code, and the viewer's framework �
 design decisions that should be made by whoever makes them, not inherited from a stub. The lever
 bounds in `blindcity/levers.py` are plausible placeholders, not calibrated numbers.
 
-**Next action:** clear the four reopened items in Slices 1 and 3, then Slice 4 — FastAPI control
-surface and manual mode.
+**Next action:** clear the four reopened items in Slices 1 and 3, then Slice 4 (control surface) and
+Slice 5 (the benchmark itself — scenario, health index, controllers). Slice 5 comes before the agent
+arms, because the arms implement its controller interface.
 
 Slices 1–3 were built and reviewed on 2026-08-02. The review added per-edge lineage validation and
 found a dead column: road congestion was pinned at 1.0 on every segment for the entire run, which
@@ -185,58 +192,81 @@ via `--dump-lineage`. All 29 edges pass validation. Live GMS emit requires DataH
 - [ ] Confirm hands-on that the Analytics Agent issues SQL against our warehouse.
 - [ ] Manual loop demonstrated end to end: ask, read, pull, observe.
 
-### Slice 5 — Auto mode
+### Slice 5 — The benchmark: scenario, scoring, controllers
+
+**New 2026-08-02. This is the product** — see `docs/DECISIONS.md`. Everything else is scaffolding
+for it. Build it before the agent arms, because the arms implement its interface.
+
+- [ ] **Scenario definition.** A crisis the city starts in, plus a turn budget. Reproducible from a
+      seed. It must be genuinely recoverable and genuinely losable — a crisis that fixes itself, or
+      that no lever sequence can fix, measures nothing. Calibrate by hand-playing it first.
+- [ ] **Composite health index**, 0–1, over solvency, citizen satisfaction, service coverage, and
+      population retention, with a green threshold. Weights chosen deliberately and recorded in
+      `docs/DECISIONS.md` — they are a judged design choice, not an implementation detail.
+- [ ] **Calibrate the lever bounds** in `blindcity/levers.py` against the scenario. They are
+      currently plausible placeholders; they now determine whether the crisis is winnable.
+- [ ] **Controller interface.** One protocol — given the state channel for its arm, return lever
+      settings for this turn. `human`, `agent_datahub`, and `agent_raw` all implement it.
+- [ ] **Run harness.** Drive a controller through a scenario, tick by tick, recording the index and
+      its components each turn alongside the lever settings.
+- [ ] **Run isolation in the warehouse.** Arms run in parallel and all write history. Every row
+      needs a `run_id`, and the sim must stop truncating shared tables.
+- [ ] **Results format** durable enough to compare runs across days and arms.
+
+**Verified when:** the same scenario run twice with the same controller and seed gives the same
+score, a deliberately bad lever policy fails it, and a hand-played good policy recovers it.
+
+### Slice 6 — Agent arms
 
 The original contribution. Do not cut.
 
 - [ ] Agent loop: read state, DataHub MCP for context, SQL, decide, actuate, advance.
 - [ ] `TOOLS_IS_MUTATION_ENABLED=true` set so mutation tools register.
-- [ ] The `--context none` control arm: same everything, DataHub context removed.
+- [ ] `agent_datahub` and `agent_raw` as two controllers over one implementation — identical model,
+      prompt, tool budget, and SQL access, differing only in catalog context. **Any other difference
+      between them is a bug that invalidates the headline result.**
 - [ ] Agent writes findings back into the catalog.
 
-### Slice 6 — Viewer
+### Slice 7 — Viewer and the human arm
 
-The player's window onto the city, and the thing the demo video shows for three minutes. It must
-read as a city, not as a debug view.
+Cosmetic scene, functional controls. The scene is the first thing to cut under time pressure; the
+lever panel is not, because the `human` arm cannot play without it.
 
-- [ ] Rendered city scene on a canvas: terrain, zoning, buildings, roads, utility infrastructure.
-- [ ] Visible inhabitants moving between homes and workplaces along the roads.
+- [ ] Lever panel: the eight controls as GUI inputs, each showing its position, each `POST`ing to
+      `/lever`. **Functional — required for the human arm.**
+- [ ] Advance control, so the player can step a turn and see the consequence.
+- [ ] City scene on a canvas: isometric tiles, buildings as blocks, roads, citizens as dots.
+      **Cosmetic — low fidelity by design.**
 - [ ] Condition shown visually, never numerically — worn roads look worn, unpowered buildings go
-      dark, abandoned lots look derelict, congested roads look congested.
-- [ ] Lever panel: the eight controls as real GUI inputs in manual mode, each showing its current
-      position, each `POST`ing to `/lever`.
-- [ ] Advance control, so the player can step the simulation and watch the consequence.
-- [ ] No charts, counters, gauges, trend lines, or numeric readouts of city state.
+      dark, derelict lots look derelict.
+- [ ] No charts, counters, gauges, trend lines, or numeric readouts of city state. This is
+      information parity between arms, not a style rule.
+- [ ] The human arm wired to the Analytics Agent, so the player can ask questions and then act.
 
-**Verified when:** someone who has never seen the project can watch the city for thirty seconds,
-say something true about how it is doing, and not be able to point at a single number on screen.
+**Verified when:** a person can play a scenario end to end and get a score comparable to an agent
+arm's, and cannot see a single number about the city's state that the agent arms do not also get.
 
 **Approach, decided** (`docs/DECISIONS.md`): plain HTML, 2D canvas, 2.5D isometric tiles, no build
-step, served as static files by the FastAPI process. **Low fidelity is the target** — flat-shaded
-isometric blocks and simple citizen sprites. It must read as a city sim at a glance; silhouette,
-density, and condition carry that, not texture detail.
+step, served as static files by the FastAPI process. `viewer/README.md` has the concrete spec:
+extruded boxes where height is density, colour is type and shade is condition; dots for citizens;
+full canvas redraw each turn; native HTML inputs for the levers. Roughly a day. Sprite art,
+animation, day/night, and camera controls are out until the submission is otherwise complete. If it
+looks flat and schematic, it is correct.
 
-**Build the first version deliberately plain, then stop and move on.** `viewer/README.md` has the
-concrete spec: extruded boxes where height is density, colour is type and shade is condition; dots
-for citizens; full canvas redraw each tick; native HTML inputs for the levers. Roughly a day.
-Sprite art, animation, day/night, camera controls, and building variety are explicitly out until
-the submission is otherwise complete. If it looks flat and schematic, it is correct.
+### Slice 8 — Run the comparison
 
-### Slice 7 — Evaluation harness
+**Build the harness. Do not run the scored evaluation — that is H3.**
 
-**Build the harness. Do not run the evaluation — that is H3.**
+Agent runs cost real money and real time, and produce the number the submission is built around.
 
-The runs cost real money and real time, and the results are the number the submission is built
-around. Whoever runs them decides how many seeds and when.
-
-- [ ] `uv run eval --seeds N` implemented: same agent, same seed, both context arms.
-- [ ] Outcome metrics captured — population, solvency, citizen satisfaction after twenty simulated
-      years.
-- [ ] Results written somewhere durable and comparable across runs.
-- [ ] Harness verified without spending a real evaluation: dry run or mocked agent.
+- [ ] `uv run eval` drives all three arms through one scenario on one seed.
+- [ ] Per-arm results captured: health trajectory, turn green was reached or not reached, lever
+      history, component breakdown.
+- [ ] Results comparable across seeds and across days.
+- [ ] Verified without spending a real evaluation: dry run, mocked agent, or scripted controller.
 - [ ] Hand off H3 with the exact command, the expected cost, and the expected wall-clock time.
 
-### Slice 8 — Submission materials
+### Slice 9 — Submission materials
 
 Everything a judge reads, minus the parts a human owns.
 
@@ -249,17 +279,17 @@ Everything a judge reads, minus the parts a human owns.
 
 Decided in advance, so it is not decided in panic. Sacrifice in this order:
 
-1. **Water and sewer.** Power and roads carry the same story.
-2. **Viewer polish** — *the polish, not the scene.* Revised 2026-08-01, when the viewer became a
-   headline deliverable rather than a proof of concept. What is cuttable: animation smoothness,
-   sprite variety, isometric depth, weather, day/night, decorative detail. What is **not**
-   cuttable: a recognisable city, visible inhabitants, visible condition, and working lever inputs.
-   Fall back to simpler tiles and static citizens before cutting the scene itself.
-3. **Agent write-back to the catalog.** A bonus, not the thesis.
-4. **Multiple evaluation seeds.** One seed with an honest caveat beats none.
+1. **The city scene.** Revised 2026-08-02, when the project was reframed as a benchmark. The render
+   is cosmetic — cut it to bare coloured tiles, or to nothing, before cutting anything else. The
+   **lever panel is not part of this cut**: without it the human arm cannot play.
+2. **Water and sewer.** Power and roads carry the same story.
+3. **The `human` arm.** Two agent arms still answer the metadata question, which is the headline.
+   Losing the human arm costs the automation comparison, not the thesis.
+4. **Agent write-back to the catalog.** A bonus, not the thesis.
+5. **Multiple seeds.** One seed with an honest caveat beats none.
 
-Never cut: generated lineage, the A/B evaluation, a viewer that reads as a city, the three-minute
-video. Those are the submission.
+Never cut: generated and validated lineage, the `agent_datahub` vs `agent_raw` comparison, the
+scenario and health index that make it scoreable, the three-minute video. Those are the submission.
 
 ## Open questions
 

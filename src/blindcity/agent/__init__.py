@@ -9,5 +9,8 @@ Do not ship only that — originality is judged (AGENTS.md).
 Requires `TOOLS_IS_MUTATION_ENABLED=true` in the MCP config or mutation tools are silently absent
 (docs/ERRORS.md).
 
-Plan: TASKS.md, Slice 5.
+Runs as two benchmark arms, `agent_datahub` and `agent_raw`, over one implementation — identical
+model, prompt, seed, turn budget, tool budget, and SQL access, differing only in catalog context.
+
+Plan: TASKS.md, Slice 6.
 """
