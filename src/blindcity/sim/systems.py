@@ -122,14 +122,15 @@ def apply_roads(state: CityState, rng: RNG) -> None:
             traffic[road_list[idx].segment_id] += 1.0 + dist * 0.05
 
     annual_maint = state.levers["road_maintenance_budget"]
-    monthly_maint = annual_maint / 12.0
-    # Spread maintenance across segments
-    maint_per = monthly_maint / max(n_roads, 1)
+    # Citywide annual budget → per-segment monthly wear reduction.
+    # $1M/year offsets roughly 0.01 wear/month on every segment (calibrated so a recovery
+    # policy at a few million/year can reverse neglect within a 36-month scenario budget;
+    # the previous formula divided by segment count twice and made repair impossible).
+    wear_repair = (annual_maint / 1_000_000.0) * 0.01
 
     for r in road_list:
         r.traffic = traffic[r.segment_id]
         wear_increase = 0.002 + r.traffic * 0.00015 + rng.random() * 0.0005
-        wear_repair = maint_per / 500_000.0  # $500k/year citywide ≈ meaningful repair
         r.wear = min(1.0, max(0.0, r.wear + wear_increase - wear_repair))
 
     compute_congestion(state)

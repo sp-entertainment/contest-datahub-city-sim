@@ -4,9 +4,9 @@ Eight levers, defined once here and consumed by the simulation, the viewer's lev
 FastAPI control surface, and the agent's actuation step. They are named in docs/FEATURES.md; this
 module is the single source of truth for their ranges and defaults.
 
-**The bounds and defaults below are provisional.** They were chosen to be plausible, not calibrated,
-and no simulation has run against them yet. Expect to tune them once the model exists, and record
-anything surprising in docs/DECISIONS.md.
+Bounds were recalibrated against the `infrastructure_neglect` scenario (2026-08-02) so a recovery
+policy can reverse road wear and water strain within the 36-turn budget while a neglect policy
+cannot. See docs/DECISIONS.md.
 
 Note the one wrinkle: FEATURES.md calls the levers eight scalars, but `power_contract_mode` is
 genuinely categorical. It is modelled here as a discrete index so the control surface stays a
@@ -47,8 +47,24 @@ LEVERS: dict[str, Lever] = {
         Lever("income_tax_rate", 0.0, 0.40, 0.10, "fraction", "Tax on household income."),
         Lever("property_tax_rate", 0.0, 0.05, 0.012, "fraction", "Annual tax on assessed value."),
         Lever("electricity_tariff", 0.0, 1.00, 0.15, "currency/kWh", "Retail rate charged to households."),
-        Lever("road_maintenance_budget", 0.0, 5_000_000.0, 500_000.0, "currency/year", "Spend on road repair."),
-        Lever("water_sewer_capex", 0.0, 5_000_000.0, 400_000.0, "currency/year", "Capital spend on water and sewer capacity."),
+        # Raised max 5M → 8M so an aggressive recovery can outpace wear under full traffic.
+        Lever(
+            "road_maintenance_budget",
+            0.0,
+            8_000_000.0,
+            600_000.0,
+            "currency/year",
+            "Spend on road repair.",
+        ),
+        # Raised max 5M → 8M and default 400k → 500k so water capacity can recover in-scenario.
+        Lever(
+            "water_sewer_capex",
+            0.0,
+            8_000_000.0,
+            500_000.0,
+            "currency/year",
+            "Capital spend on water and sewer capacity.",
+        ),
         Lever("transit_fare", 0.0, 10.0, 2.50, "currency/ride", "Fare charged per transit trip."),
         Lever("zoning_release", 0.0, 1.0, 0.10, "fraction", "Share of undeveloped land opened for development."),
         Lever("power_contract_mode", 0, len(POWER_CONTRACT_MODES) - 1, 0, "index", f"One of {POWER_CONTRACT_MODES}."),
