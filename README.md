@@ -39,6 +39,44 @@ got back into the green in time. Three controllers face the identical seed, cris
 measures what the automation is worth. Every arm gets the same view of the city, so the metadata is
 the only thing that varies — which is why there are no numbers on the screen.
 
+## The baseline catalog (control arm)
+
+The A/B comparison needs an honest control: same warehouse, same SQL access, same model and tool
+budget — **without** catalog context that would tip the agent toward the right tables and joins.
+
+`uv run datahub-emit --baseline` emits that control catalog. It has:
+
+| Present | Absent |
+| --- | --- |
+| Table and column *names* (typed schema only) | Descriptions on tables or columns |
+| | Glossary terms |
+| | Lineage (causal graph) |
+| | Assertions |
+
+Table names are deliberately opaque in the style of a rushed legacy ETL dump, not gibberish and not
+the semantic names the full catalog uses:
+
+| Full catalog | Baseline (control) |
+| --- | --- |
+| `citizen_monthly` | `t_person_m` |
+| `budget_monthly` | `t_budg_m` |
+| `lever_monthly` | `t_policy_m` |
+| `road_monthly` | `t_road_m` |
+| `power_monthly` | `t_pwr_m` |
+| `water_monthly` | `t_h2o_m` |
+| `migration_monthly` | `t_mig_m` |
+| … | … |
+
+**Why this is fair, not rigged.** A real uncatalogued warehouse still has *some* names — usually
+abbreviated, inconsistent, and undocumented. An agent with SQL alone can still `SELECT` from
+`t_person_m`; it just has to rediscover what the columns mean and how tables relate. Giving the
+control arm random UUIDs or empty schemas would make the comparison a strawman. Giving it the full
+glossary and lineage would erase the treatment. Opaque-but-queryable names with no docs is the
+honest middle: the only thing that differs between `agent_datahub` and `agent_raw` is metadata
+context, which is the quantity under measurement.
+
+The mapping lives in `blindcity.catalog.schema_spec` (`TableSpec.baseline_name`).
+
 ## Requirements
 
 - 16 GB RAM or more. DataHub's quickstart alone wants 8 GB plus 2 GB swap.
