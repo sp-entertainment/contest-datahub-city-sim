@@ -135,6 +135,27 @@ unimplemented command should fail, not look like a success.
 - DataHub UI: `datahub` / `datahub`.
 - GMS GraphQL at `localhost:8080/api/graphql`: unauthenticated, no token, nothing to configure.
 
+### The one real secret: the LLM API key
+
+Everything else here is local and unauthenticated by design. The LLM key is not.
+
+```powershell
+cp .env.example .env
+# then edit .env and paste the key into GOOGLE_API_KEY
+```
+
+`.env` is gitignored; `.env.example` is committed and holds no value. Provider is Google Gemini —
+`LLM_PROVIDER=google`, `GOOGLE_API_KEY=AIza...`, from https://aistudio.google.com/apikey
+
+Rules, for humans and agents alike:
+
+- **Never commit it.** If it lands in a commit, revoke at the provider and issue a new one —
+  removing the commit is not enough, because the value was published the moment it was pushed.
+- **Never paste it into a prompt, an issue, or a log.** Agents read it from the environment; no
+  agent needs to see the value, and none should be asked to create one.
+- Load it into the process environment from `.env` rather than passing it on the command line,
+  where it lands in shell history.
+
 ## Lifecycle
 
 ```powershell
