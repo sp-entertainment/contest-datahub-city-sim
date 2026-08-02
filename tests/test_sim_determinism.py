@@ -5,14 +5,74 @@ These drive the real shipped engine (`run_simulation` / `create_city`), not a re
 
 from __future__ import annotations
 
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
 from blindcity.sim.city_init import create_city
 from blindcity.sim.engine import run_fingerprint, run_simulation
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_same_seed_same_fingerprint():
     a = run_fingerprint(42, years=2)
     b = run_fingerprint(42, years=2)
     assert a == b
+
+
+def test_same_seed_identical_across_processes_with_different_pythonhashseed():
+    """Guard PYTHONHASHSEED-sensitive iteration (sets / string-keyed dict order).
+
+    In-process identity cannot catch hash randomization. Shell out twice with distinct
+    PYTHONHASHSEED values and require byte-identical fingerprints.
+    """
+    script = (
+        "import json;"
+        "from blindcity.sim.engine import run_fingerprint;"
+        "print(json.dumps(run_fingerprint(42, years=2), sort_keys=True))"
+    )
+    env_base = os.environ.copy()
+    # Ensure the project is importable the same way pytest does (editable install via uv).
+    fps = []
+    for hashseed in ("0", "1"):
+        env = env_base.copy()
+        env["PYTHONHASHSEED"] = hashseed
+        # Prefer `uv run` so the project venv is used; fall back to sys.executable.
+        cmd = ["uv", "run", "python", "-c", script]
+        proc = subprocess.run(
+            cmd,
+            cwd=_REPO_ROOT,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=120,
+        )
+        if proc.returncode != 0:
+            # Fallback without uv if the shim is unavailable in the test env.
+            cmd = [sys.executable, "-c", script]
+            proc = subprocess.run(
+                cmd,
+                cwd=_REPO_ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=120,
+            )
+        assert proc.returncode == 0, (
+            f"subprocess failed PYTHONHASHSEED={hashseed}\n"
+            f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+        )
+        line = proc.stdout.strip().splitlines()[-1]
+        fps.append(json.loads(line))
+    assert fps[0] == fps[1], (
+        f"fingerprints diverged across PYTHONHASHSEED values:\n"
+        f"  seed=0: {fps[0]}\n  seed=1: {fps[1]}"
+    )
 
 
 def test_different_seeds_diverge():
