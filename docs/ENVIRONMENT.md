@@ -147,6 +147,19 @@ cp .env.example .env
 `.env` is gitignored; `.env.example` is committed and holds no value. Provider is Google Gemini —
 `LLM_PROVIDER=google`, `GOOGLE_API_KEY=AIza...`, from https://aistudio.google.com/apikey
 
+**Verified 2026-08-01.** The key authenticates and both `gemini-2.5-pro` and `gemini-2.5-flash` are
+available on it. To re-check without exposing the value, list models with the key in a header —
+never in a URL query string, where it lands in logs and history:
+
+```powershell
+Invoke-RestMethod -Uri "https://generativelanguage.googleapis.com/v1beta/models" -Headers @{ "x-goog-api-key" = $k }
+```
+
+**Model split.** Use `gemini-2.5-flash` for dry runs, smoke tests, and harness verification, and
+`gemini-2.5-pro` for anything whose output is evidence — the auto-mode loop and the A/B evaluation.
+Both arms of the evaluation must use the same model; that is a fairness requirement, not a
+preference (`AGENTS.md`).
+
 Rules, for humans and agents alike:
 
 - **Never commit it.** If it lands in a commit, revoke at the provider and issue a new one —

@@ -181,11 +181,11 @@ Never cut: generated lineage, the A/B evaluation, the three-minute video. Those 
 Not agent work. Either an agent cannot do them, or it should not. An agent that hits one of these
 stops, says so, and continues with whatever else is unblocked — it does not improvise around them.
 
-- [ ] **H1 — Provide an LLM API key.** Blocks Slice 4 and Slice 5, which is most of the remaining
-      product. Set it up before starting a long unattended run.
-      **Decided: Google Gemini.** `LLM_PROVIDER=google` with `GOOGLE_API_KEY`, both in a local
-      `.env` — copy `.env.example` and fill it in. The Analytics Agent also supports `anthropic`,
-      `openai`, `bedrock`, and `openai-compatible` if we need to switch.
+- [x] **H1 — Provide an LLM API key.** Done 2026-08-01, verified against the provider.
+      **Google Gemini.** `LLM_PROVIDER=google` with `GOOGLE_API_KEY`, both in a local `.env` —
+      copy `.env.example` and fill it in. `gemini-2.5-pro` and `gemini-2.5-flash` are both
+      available on this key. The Analytics Agent also supports `anthropic`, `openai`, `bedrock`,
+      and `openai-compatible` if we need to switch; that is a two-line change in `.env`.
       Never commit the key, never paste it into a prompt or an issue, and never ask an agent to
       create one. Agents read it from the environment and never handle its value.
 - [ ] **H2 — Make the repository public.** Hard submission requirement, alongside Apache 2.0.
