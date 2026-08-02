@@ -1,7 +1,16 @@
 """Causal graph of the simulation.
 
-The same edges drive monthly updates and DataHub lineage emission. Lineage is generated from this
-structure, never hand-authored — see docs/DECISIONS.md.
+DataHub lineage is generated from this structure — the emitter never hand-writes an edge.
+
+**This list is declared here, not derived from `systems.py`.** That means it could drift from the
+equations, which is precisely the failure this project set out to beat. `causal_check.py` closes
+the gap: every edge below is validated by experiment — perturb the source, run the code that
+computes the target, require the target to move — and `tests/test_causal_validation.py` fails the
+build for any edge that cannot be demonstrated, or any edge left without an experiment.
+
+So the defensible claim is not "the lineage was extracted from the code" but "every lineage edge is
+continuously verified against the running simulation" — which is more than most production data
+platforms can say about their own lineage. See docs/DECISIONS.md.
 """
 
 from __future__ import annotations

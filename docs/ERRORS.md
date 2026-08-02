@@ -92,3 +92,26 @@ Heavy concurrent container starts right after a cold launch can also leave the e
 `docker info` succeeds twice ~10s apart, then `docker compose … up -d` for Postgres and
 `docker start` the datahub-* containers (or `datahub docker quickstart`). Re-run `uv run sim` —
 it truncates and rewrites the warehouse, so a partial run is not fatal.
+
+### Road congestion was pinned at 1.0 on every segment
+
+**Symptom.** None visible. The simulation ran, all tests passed, and `road_monthly.congestion` was
+written for every segment every month. The column was simply the constant 1.0.
+
+**Cause.** `congestion = traffic / (40 * (1 - 0.6 * wear))`. Measured per-segment traffic had a
+median of ~89 against a capacity of 16–40, so the `min(1.0, …)` clamp fired on all 458 segments for
+the whole run. Road wear cannot move a value already at its ceiling.
+
+**Why it mattered more than it looked.** It severed a whole branch of the causal graph:
+wear → congestion → commute travel time → satisfaction → migration. Every downstream effect of road
+maintenance was dead, and the agent would have been handed a column that never varies — the exact
+opposite of what an analytics agent is meant to reason over. Nothing failed, which is why it
+survived a full slice.
+
+**Fix.** `SEGMENT_CAPACITY = 150.0` in `systems.py`, sized against observed traffic. Mean congestion
+is now ~0.76 with no saturated segments. Guarded by
+`tests/test_causal_validation.py::test_congestion_is_not_saturated`.
+
+**Found by** validating each declared lineage edge against the simulation — wear → congestion was
+the one edge that could not be demonstrated. A dead column is invisible to tests that only assert a
+value is within range; it is obvious the moment you require the edge to actually move.

@@ -15,6 +15,10 @@ from blindcity.sim.model import (
     Household,
 )
 
+# Vehicles per month a pristine road segment carries before it is considered fully congested.
+# Sized against observed per-segment traffic so congestion varies instead of pinning at 1.0.
+SEGMENT_CAPACITY = 150.0
+
 
 def apply_power(state: CityState, rng: RNG) -> None:
     mode_idx = round(float(state.levers["power_contract_mode"]))
@@ -41,6 +45,15 @@ def apply_power(state: CityState, rng: RNG) -> None:
     shortfall = max(0.0, demand - supply) / max(demand, 1.0)
     state.power.outage_fraction = min(1.0, shortfall + (1.0 - reliability) * 0.5)
 
+    assign_power_service(state, rng)
+
+
+def assign_power_service(state: CityState, rng: RNG) -> None:
+    """Turn `power.outage_fraction` into per-building and per-tile service.
+
+    Split out from `apply_power` so the outage → power_served causal edge can be exercised with an
+    injected outage fraction — see `blindcity.sim.causal_check`.
+    """
     # Buildings lose power with probability proportional to outage; ordered by building_id.
     for b in sorted(state.buildings, key=lambda x: x.building_id):
         b.power_served = rng.random() >= state.power.outage_fraction
@@ -63,6 +76,20 @@ def apply_water(state: CityState, rng: RNG) -> None:
     decay = 0.5 + rng.random() * 0.2
     state.water.capacity = max(100.0, state.water.capacity + growth - decay)
 
+    compute_water_load(state)
+
+    for tile in state.tiles:
+        # Local load proxy: buildings on tile + neighbors simplified as occupancy share
+        tile.water_load = state.water.load_ratio
+        tile.sewer_load = state.water.load_ratio * (0.9 + 0.1 * rng.random())
+
+
+def compute_water_load(state: CityState) -> None:
+    """Turn `water.capacity` and demand into the load ratio and failure rate.
+
+    Split out from `apply_water` so the capacity → load_ratio causal edge can be exercised with an
+    injected capacity — see `blindcity.sim.causal_check`.
+    """
     demand = sum(
         b.water_demand * max(0.15, b.occupancy / max(1, b.capacity)) for b in state.buildings
     )
@@ -71,11 +98,6 @@ def apply_water(state: CityState, rng: RNG) -> None:
     state.water.demand = demand
     state.water.load_ratio = demand / max(state.water.capacity, 1.0)
     state.water.failure_rate = max(0.0, state.water.load_ratio - 1.0) * 0.4
-
-    for tile in state.tiles:
-        # Local load proxy: buildings on tile + neighbors simplified as occupancy share
-        tile.water_load = state.water.load_ratio
-        tile.sewer_load = state.water.load_ratio * (0.9 + 0.1 * rng.random())
 
 
 def apply_roads(state: CityState, rng: RNG) -> None:
@@ -109,8 +131,24 @@ def apply_roads(state: CityState, rng: RNG) -> None:
         wear_increase = 0.002 + r.traffic * 0.00015 + rng.random() * 0.0005
         wear_repair = maint_per / 500_000.0  # $500k/year citywide ≈ meaningful repair
         r.wear = min(1.0, max(0.0, r.wear + wear_increase - wear_repair))
-        # Congestion: traffic relative to capacity degraded by wear
-        capacity = 40.0 * (1.0 - 0.6 * r.wear)
+
+    compute_congestion(state)
+
+
+def compute_congestion(state: CityState) -> None:
+    """Turn road `wear` and traffic into congestion.
+
+    Split out from `apply_roads` so the wear → congestion causal edge can be exercised with an
+    injected wear value — see `blindcity.sim.causal_check`.
+    """
+    for r in state.roads:
+        # Congestion: traffic relative to capacity degraded by wear.
+        #
+        # SEGMENT_CAPACITY is sized against observed traffic (median ~90 per segment at a few
+        # thousand citizens) so congestion lands in an informative band rather than saturating.
+        # At 40.0 every segment pinned at 1.0 for the whole run, which made congestion a dead
+        # column and severed road wear from commute time — see docs/ERRORS.md.
+        capacity = SEGMENT_CAPACITY * (1.0 - 0.6 * r.wear)
         r.congestion = min(1.0, r.traffic / max(capacity, 1.0))
 
 
@@ -170,6 +208,15 @@ def apply_economy(state: CityState, rng: RNG) -> None:
     state.budget.water_sewer_spend = state.levers["water_sewer_capex"] / 12.0
     state.budget.other_spend = 50_000.0 + state.population() * 2.0
 
+    compute_balance(state)
+
+
+def compute_balance(state: CityState) -> None:
+    """Turn the revenue and spend lines into balance, treasury, and debt.
+
+    Split out from `apply_economy` so the revenue → balance causal edges can be exercised with
+    injected revenue lines — see `blindcity.sim.causal_check`.
+    """
     state.budget.balance = state.budget.total_revenue - state.budget.total_spend
     state.budget.treasury += state.budget.balance
     if state.budget.treasury < 0:

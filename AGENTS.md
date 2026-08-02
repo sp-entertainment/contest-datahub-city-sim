@@ -115,7 +115,11 @@ uv run eval --seeds 5
   OpenTTD and Micropolis derivatives.
 - **The simulation is deterministic.** Same seed produces the same city, always. The A/B evaluation
   is meaningless otherwise.
-- **Lineage is generated, never hand-authored.** It is derived from the simulation's own equations.
+- **Lineage is generated and continuously validated.** The emitter never hand-writes an edge — it
+  generates them from `blindcity.sim.causal.CAUSAL_EDGES`. That list is declared rather than
+  extracted from the equations, so `causal_check.py` proves each edge by experiment and the test
+  suite fails the build for any edge that cannot be demonstrated, or any edge with no experiment
+  behind it. Adding an edge means adding its check.
 
 ## Dos and don'ts
 

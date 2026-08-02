@@ -164,6 +164,61 @@ key or spending real money on an evaluation run.
 **Consequences.** `TASKS.md` is restructured and every "Day N" reference in the codebase and docs was
 updated to point at a slice. The A/B evaluation is explicitly built-but-not-run by agents.
 
+## 2026-08-02 — Validate every lineage edge instead of claiming it was derived
+
+**Context.** Review of Slice 3 found that `CAUSAL_EDGES` is a hand-written list. `systems.py` never
+imports it — the only consumer is the emitter. So the lineage was declared beside the equations, not
+derived from them, and could drift from them silently. `AGENTS.md` and the earlier decision entry
+both claimed derivation. The existing test was circular: it asserted the graph was built from
+`CAUSAL_EDGES`, which is true by construction and would pass if every edge were wrong.
+
+**Options.** Reword the claim and accept hand-maintained lineage; make `systems.py` consume the edge
+list so the equations and the graph are one structure; extract edges by instrumenting the simulation
+at runtime; keep the declaration but require every edge to survive an experiment.
+
+**Decision.** Keep the declaration and validate it. `blindcity.sim.causal_check` runs an experiment
+per edge — perturb the source, run the code that computes the target, require the target to move in
+the stated direction — and `tests/test_causal_validation.py` fails the build for any edge that
+cannot be demonstrated, or any edge with no experiment behind it. All 29 edges pass.
+
+**Rationale.**
+- **It makes the claim true and checkable.** "Every lineage edge is continuously verified against
+  the running simulation" is defensible, and stronger than what most production data platforms can
+  say about their own lineage. Derivation-by-instrumentation would be the literal version, but it is
+  invasive and the schedule does not have room.
+- **It catches drift in the direction that matters.** An edge that stops being real fails the suite
+  by name. An edge added without evidence fails too.
+- **It found a real bug immediately** (below), which derivation would not have — a derived graph
+  would have faithfully recorded a dependency that was numerically dead.
+- The perturbation pattern already existed in `tests/test_lever_effects.py`; this extends it from 8
+  levers to all 29 edges.
+
+**Consequences.** Four pure helpers were extracted from the system functions —
+`assign_power_service`, `compute_water_load`, `compute_congestion`, `compute_balance` — so an
+injected source value is not overwritten before the target is computed. That refactor was verified
+fingerprint-identical before any behavioural change was made. Adding a causal edge now means adding
+its experiment; that is the cost, and it is the point. Wording in `AGENTS.md`, `causal.py`,
+`catalog/__init__.py`, and `emit.py` was corrected to describe validation rather than derivation.
+
+## 2026-08-02 — Size road capacity so congestion is an informative signal
+
+**Context.** Validating the wear → congestion edge failed. Investigation showed congestion was
+exactly 1.0 on all 458 road segments, for the entire run: per-segment traffic ran a median of ~89
+against a wear-adjusted capacity of 16–40, so the clamp always fired.
+
+**Decision.** Introduce `SEGMENT_CAPACITY = 150.0`, sized against observed traffic.
+
+**Rationale.** A column that never varies is worse than a missing one — it is a dead input the agent
+may reason over as though it means something, and it silently severed wear → congestion → commute
+time → satisfaction → migration. The whole point of the entry is that an agent finds real structure
+in this data.
+
+**Consequences.** Mean congestion is now ~0.76 and moves with wear and population, so road
+maintenance has a visible downstream effect. **Simulation behaviour changed**, so every recorded
+fingerprint and row count from 2026-08-02 is stale and needs regenerating once Docker is back up;
+`docs/ENVIRONMENT.md` is marked accordingly. Regression guarded by
+`test_causal_validation.py::test_congestion_is_not_saturated`.
+
 ## 2026-08-01 — The viewer renders an actual city, and the simulation becomes spatial
 
 **Context.** The viewer was scoped as a crude tile map — enough to communicate the premise, and

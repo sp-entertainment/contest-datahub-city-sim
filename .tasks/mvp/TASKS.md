@@ -122,17 +122,27 @@ The thesis of the entry. Do not cut.
 
 - [x] Postgres schemas ingested into DataHub.
 - [x] Glossary terms for every city concept.
-- [x] Lineage generated from the simulation's equations, emitted table and column level.
+- [x] Lineage generated from the causal graph, emitted table and column level.
+- [x] **Every lineage edge validated against the running simulation.** Added 2026-08-02 in review:
+      the edge list is declared, not extracted, so it needs proof. `blindcity.sim.causal_check`
+      perturbs each source, runs the code that computes the target, and requires the target to
+      move; `tests/test_causal_validation.py` fails the build on any edge that cannot be
+      demonstrated or has no experiment. 29/29 currently pass.
 - [x] Assertions on ranges and volumes.
 - [x] The stripped baseline catalog for the evaluation control: schemas only, realistic table names,
       no descriptions, no glossary, no lineage. `uv run datahub-emit --baseline`.
 
 **Verified when:** the lineage graph is traversable in the DataHub UI and traces tax rate through to
-revenue, and the graph was generated from the simulation rather than hand-authored.
+revenue, and every edge in it can be demonstrated against the simulation.
 
-**Verified 2026-08-02.** Lineage generated from `blindcity.sim.causal.CAUSAL_EDGES` (not
-hand-authored). `uv run datahub-emit` / `--baseline` implemented. Tax→revenue edge proven via
-`--dump-lineage`. Live GMS emit requires DataHub containers up (see ENVIRONMENT).
+**Verified 2026-08-02.** Lineage generated from `blindcity.sim.causal.CAUSAL_EDGES`; the emitter
+never hand-writes an edge. `uv run datahub-emit` / `--baseline` implemented. Tax→revenue edge proven
+via `--dump-lineage`. All 29 edges pass validation. Live GMS emit requires DataHub containers up
+(see ENVIRONMENT).
+
+**Still open here:** the range and volume assertions are *declared* and emitted, but nothing ever
+evaluates them against Postgres — an assertion that has never been run could be false. Worth wiring
+into a later slice.
 
 ### Slice 4 — Control surface and manual mode
 

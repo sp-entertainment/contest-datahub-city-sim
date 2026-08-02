@@ -46,7 +46,10 @@ def run_simulation(
 
     months = years * 12
     for _ in range(months):
-        # Parent stream name is fixed per tick index so restarts mid-run stay aligned if needed.
+        # The month's variation comes from `step_month`, which derives each system's stream with
+        # the tick folded into the name (`power:{tick}` etc.). This parent stream is therefore the
+        # same every month by design — it is a namespace, not a per-month seed. Do not "fix" it by
+        # indexing here: that changes every fingerprint and buys nothing.
         step_month(state, parent.stream("tick"))
         if on_month is not None:
             on_month(state)

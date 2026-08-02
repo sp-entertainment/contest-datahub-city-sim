@@ -183,6 +183,9 @@ def emit_lineage(gms: str) -> int:
     Table-level edges land in `upstreamLineage` (queryable in the UI Lineage tab). Column-level
     edges are attached as `fineGrainedLineages` on the same aspect when GMS accepts them; the
     causal edge list is always the source of truth regardless.
+
+    Every edge emitted here is validated against the running simulation by
+    `blindcity.sim.causal_check` — nothing reaches the catalog that cannot be demonstrated.
     """
     # Group column edges by destination table so one aspect write holds all upstreams.
     by_dst: dict[str, dict[str, list[tuple[str, str]]]] = {}

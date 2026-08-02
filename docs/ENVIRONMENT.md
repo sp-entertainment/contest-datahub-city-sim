@@ -149,7 +149,12 @@ uv run datahub-emit --dump-lineage lineage.json --dump-only
 # Serialize the causal graph without talking to GMS
 ```
 
-**Observed seed-42 / 20-year warehouse totals** (single run, after truncate):
+**Observed seed-42 / 20-year warehouse totals** (single run, after truncate).
+
+> ⚠️ **Stale as of 2026-08-02.** The road-capacity fix (`SEGMENT_CAPACITY`, see `docs/ERRORS.md`)
+> changes simulation behaviour, so every fingerprint and every row count below moves. Re-run and
+> re-record when Docker is back up. Row counts should stay the same order of magnitude — congestion
+> now varies, which changes commute times, satisfaction, and therefore migration.
 
 | Table | Rows |
 | --- | ---: |
@@ -167,6 +172,17 @@ diverge. Warehouse dual-run row counts match when Docker stays up for both proce
 **Lineage in the UI.** Open http://localhost:9002, search `budget_monthly`, open the **Lineage**
 tab. Upstream includes `lever_monthly` with column-level edge `income_tax_rate` →
 `income_tax_revenue`, generated from `blindcity.sim.causal.CAUSAL_EDGES`.
+
+**Validating the lineage.** Every edge is proven against the running simulation, so the graph cannot
+quietly drift from the code:
+
+```powershell
+uv run pytest tests/test_causal_validation.py -q
+```
+
+Each edge is a separate parametrised case, so a failure names the exact edge that stopped being
+true. Adding an edge to `CAUSAL_EDGES` without adding its experiment to
+`blindcity.sim.causal_check.CHECKS` fails the suite by design.
 
 The remaining commands — `agent`, `eval` — still exit 1 pointing at later slices.
 
