@@ -126,9 +126,49 @@ uv run pytest -q        # 9 passing
 uv run ruff check .
 ```
 
-The four commands in `AGENTS.md` — `sim`, `datahub-emit`, `agent`, `eval` — all resolve, parse their
-flags, and exit 1 with a pointer to the slice that implements them. That exit code is intentional: an
-unimplemented command should fail, not look like a success.
+### Simulation and metadata (verified 2026-08-02)
+
+```powershell
+uv run pytest -q
+# 29 passed
+
+uv run sim --seed 42 --years 20
+# ~29s wall-clock; writes ~2.12M warehouse rows (citizens × months + tiles/buildings/roads/commute)
+# Truncates warehouse tables first so re-runs are clean.
+
+uv run sim --seed 42 --years 1 --no-warehouse
+# In-memory only (no Postgres). Useful for lever sweeps and CI without Docker.
+
+uv run datahub-emit
+# Full catalog: schemas + descriptions + glossary + generated lineage + assertions → GMS :8080
+
+uv run datahub-emit --baseline
+# Control catalog: opaque table names, schemas only (no glossary/lineage/descriptions)
+
+uv run datahub-emit --dump-lineage lineage.json --dump-only
+# Serialize the causal graph without talking to GMS
+```
+
+**Observed seed-42 / 20-year warehouse totals** (single run, after truncate):
+
+| Table | Rows |
+| --- | ---: |
+| citizen_monthly | 806,531 |
+| commute_monthly | 806,531 |
+| tile_monthly | 246,784 |
+| building_monthly | 140,536 |
+| road_monthly | 106,763 |
+| (dimension + aggregate tables) | ~11k |
+| **total** | **2,118,197** |
+
+Same seed identity: two in-memory `run_fingerprint(42, 20)` calls match exactly; different seeds
+diverge. Warehouse dual-run row counts match when Docker stays up for both processes.
+
+**Lineage in the UI.** Open http://localhost:9002, search `budget_monthly`, open the **Lineage**
+tab. Upstream includes `lever_monthly` with column-level edge `income_tax_rate` →
+`income_tax_revenue`, generated from `blindcity.sim.causal.CAUSAL_EDGES`.
+
+The remaining commands — `agent`, `eval` — still exit 1 pointing at later slices.
 
 ## Credentials
 

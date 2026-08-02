@@ -198,3 +198,48 @@ The instrumentation rule is unchanged and now has a stated boundary: showing the
 product, showing measurements of the city is what we removed. A potholed road is the city; a
 "road quality: 34%" label is instrumentation. Lever positions are the player's own input and are
 exempt.
+
+## 2026-08-02 — Simulation scale and tick grain
+
+**Context.** Open question: how many citizens and how fine a tick to hit "millions of rows" honestly
+without making a 20-year run impractical.
+
+**Decision.** Monthly ticks. 32×32 grid. ~1,400 initial households (~3,100 citizens at seed 42),
+growing via migration. History tables snapshot citizens, tiles, buildings, roads, and commutes every
+month. Each `uv run sim` truncates the warehouse then rewrites.
+
+**Rationale.** Monthly grain × a few thousand citizens × ~241 snapshots (initial + 20×12) yields
+about 2.1M rows across warehouse tables in under 30s on this host — enough volume for the agent to
+feel real SQL pressure without multi-hour loads. Sub-monthly ticks would inflate volume further for
+little causal insight.
+
+**Consequences.** Knobs live in `blindcity.sim.city_init` (`GRID_W`, `GRID_H`,
+`INITIAL_HOUSEHOLDS`). Identity checks use in-memory fingerprints plus matching row counts across
+two full warehouse runs on one seed. Observed seed-42 / 20-year total: **2,118,197** rows.
+
+## 2026-08-02 — Causal graph module as the lineage source
+
+**Context.** Slice 3 requires lineage generated from the simulation's equations, including a path
+from income tax rate to revenue.
+
+**Decision.** Declare directed edges once in `blindcity.sim.causal.CAUSAL_EDGES`. The monthly systems
+implement those relationships; `blindcity.catalog.emit` walks the same structure for table- and
+column-level DataHub lineage. No hand-authored GraphQL lineage blobs.
+
+**Rationale.** One graph cannot drift between the model and the catalog. The direct edge
+`lever_monthly.income_tax_rate → budget_monthly.income_tax_revenue` is the path judges care about;
+longer satisfaction → migration → population → revenue edges remain for exploration.
+
+**Consequences.** Adding a system requires adding causal edges if the catalog should show it. The
+baseline (`datahub-emit --baseline`) skips glossary, lineage, and descriptions entirely.
+
+## 2026-08-02 — Baseline catalog table names
+
+**Context.** Open question: how realistically opaque should baseline table names be?
+
+**Decision.** Short realistic warehouse-ish names (`t_person_m`, `t_budg_m`, `t_policy_m`, …), not
+gibberish and not the full semantic names. Documented in README when the control arm is explained.
+
+**Rationale.** Fair control: an agent with SQL alone can still query, but without glossary or lineage
+it must rediscover meaning. Names that look like a rushed ETL dump are more honest than
+`table_01`.

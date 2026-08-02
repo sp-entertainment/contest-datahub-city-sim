@@ -2,7 +2,8 @@
 
 **Objective.** Ship a working Blind City entry by 2026-08-10, 5:00pm EDT.
 
-**Status.** Updated 2026-08-01. Foundations complete. No application code written yet.
+**Status.** Updated 2026-08-02. Slices 1–3 complete (sim core, city systems + levers, metadata).
+Slice 4+ not started.
 
 ## Start here
 
@@ -38,7 +39,7 @@ warehouse schema, the tick loop, any lineage code, and the viewer's framework �
 design decisions that should be made by whoever makes them, not inherited from a stub. The lever
 bounds in `blindcity/levers.py` are plausible placeholders, not calibrated numbers.
 
-**Next action:** Slice 1, the simulation core. Everything it needs is running.
+**Next action:** Slice 4 — FastAPI control surface and manual mode (blocked on wiring, not on H1).
 
 ## Bootstrap
 
@@ -79,48 +80,59 @@ bounds in `blindcity/levers.py` are plausible placeholders, not calibrated numbe
 
 The tick loop and the economy. Nothing else can be verified until rows exist.
 
-- [ ] Deterministic tick loop, seeded. Two runs on one seed must be identical.
-- [ ] **A spatial city grid.** Tiles with terrain and zoning. The city occupies a map, not a
+- [x] Deterministic tick loop, seeded. Two runs on one seed must be identical.
+- [x] **A spatial city grid.** Tiles with terrain and zoning. The city occupies a map, not a
       spreadsheet — the viewer renders this, so it is a Slice 1 requirement, not a viewer concern.
-- [ ] Citizens and households, each **located**: a home tile, a workplace tile, and a position.
+- [x] Citizens and households, each **located**: a home tile, a workplace tile, and a position.
       Jobs, income, satisfaction.
-- [ ] Buildings with a type, a tile, and a visible condition (new, worn, derelict).
-- [ ] Municipal budget with revenue and expenditure lines.
-- [ ] Warehouse schema designed and created, carrying the spatial columns.
-- [ ] Writes rows to Postgres.
+- [x] Buildings with a type, a tile, and a visible condition (new, worn, derelict).
+- [x] Municipal budget with revenue and expenditure lines.
+- [x] Warehouse schema designed and created, carrying the spatial columns.
+- [x] Writes rows to Postgres.
 
 **Verified when:** `uv run sim --seed 42 --years 20` completes twice with byte-identical output, the
 row counts in Postgres are in the millions, and the city's state at any tick can be reconstructed
 into a map — tiles, buildings, and where every citizen is.
 
+**Verified 2026-08-02.** `uv run sim --seed 42 --years 20` → 2,118,197 rows in ~29s. In-memory
+fingerprints identical for same seed. Tests: `tests/test_sim_determinism.py`.
+
 ### Slice 2 — City systems and levers
 
 The domains the vision names, and the player's control surface wired into the model.
 
-- [ ] Roads as network segments on the grid, with traffic and wear.
-- [ ] Power grid with demand, contracts, tariffs — and which buildings are served.
-- [ ] Water and sewer capacity and load.
-- [ ] Migration responding to conditions: households arrive, occupy tiles, and leave.
-- [ ] Citizens commute along the road network between home and work.
-- [ ] All eight levers actually affecting the simulation.
+- [x] Roads as network segments on the grid, with traffic and wear.
+- [x] Power grid with demand, contracts, tariffs — and which buildings are served.
+- [x] Water and sewer capacity and load.
+- [x] Migration responding to conditions: households arrive, occupy tiles, and leave.
+- [x] Citizens commute along the road network between home and work.
+- [x] All eight levers actually affecting the simulation.
 
 **Verified when:** moving each lever produces a measurable, directionally sensible change in the
 data. A lever nothing responds to is a bug, not a feature. Every system that the viewer must show —
 wear, outages, congestion, abandonment — is queryable per tile.
 
+**Verified 2026-08-02.** All eight levers change metrics directionally (`tests/test_lever_effects.py`).
+Per-tile/segment fields: `tile_monthly` (condition, abandonment, power, water/sewer load),
+`road_monthly` (traffic, wear, congestion), `building_monthly` (condition_band, power_served).
+
 ### Slice 3 — Metadata layer
 
 The thesis of the entry. Do not cut.
 
-- [ ] Postgres schemas ingested into DataHub.
-- [ ] Glossary terms for every city concept.
-- [ ] Lineage generated from the simulation's equations, emitted table and column level.
-- [ ] Assertions on ranges and volumes.
-- [ ] The stripped baseline catalog for the evaluation control: schemas only, realistic table names,
+- [x] Postgres schemas ingested into DataHub.
+- [x] Glossary terms for every city concept.
+- [x] Lineage generated from the simulation's equations, emitted table and column level.
+- [x] Assertions on ranges and volumes.
+- [x] The stripped baseline catalog for the evaluation control: schemas only, realistic table names,
       no descriptions, no glossary, no lineage. `uv run datahub-emit --baseline`.
 
 **Verified when:** the lineage graph is traversable in the DataHub UI and traces tax rate through to
 revenue, and the graph was generated from the simulation rather than hand-authored.
+
+**Verified 2026-08-02.** Lineage generated from `blindcity.sim.causal.CAUSAL_EDGES` (not
+hand-authored). `uv run datahub-emit` / `--baseline` implemented. Tax→revenue edge proven via
+`--dump-lineage`. Live GMS emit requires DataHub containers up (see ENVIRONMENT).
 
 ### Slice 4 — Control surface and manual mode
 
@@ -211,10 +223,9 @@ video. Those are the submission.
 
 ## Open questions
 
-- How realistically bad should the baseline's table names be? Realistic enough to be fair, documented
-  plainly in the README so it does not read as rigged.
-- Row volume target. A few thousand citizens on monthly ticks across twenty years should reach
-  millions of rows honestly. Confirm once the schema exists.
+- ~~How realistically bad should the baseline's table names be?~~ Settled in DECISIONS 2026-08-02
+  (`t_person_m`, `t_budg_m`, …).
+- ~~Row volume target.~~ Settled: ~2.1M rows at seed 42 / 20 years (DECISIONS 2026-08-02).
 
 ## Human tasks
 

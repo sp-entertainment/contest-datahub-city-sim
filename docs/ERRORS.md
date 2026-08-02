@@ -64,3 +64,31 @@ that matters for agents.
 **Cause.** The compose file references `$HOME`, which Windows does not define — it uses `USERPROFILE`.
 
 **Fix.** None needed. Cosmetic. All six containers came up healthy regardless. Do not chase it.
+
+### `uv trampoline failed to canonicalize script path` for `datahub`
+
+**Symptom.** `datahub version` fails immediately with a trampoline canonicalize error after the tool
+was installed earlier.
+
+**Cause.** The uv tool install for `acryl-datahub` was removed or its venv moved, leaving a stale
+`~/.local/bin/datahub.exe` shim.
+
+**Fix.**
+
+```powershell
+uv tool install --python 3.11 --force "acryl-datahub[datahub-rest]"
+```
+
+### Docker Desktop engine pipe vanishes mid-session
+
+**Symptom.** `docker ps` / Postgres / DataHub all fail with
+`open //./pipe/dockerDesktopLinuxEngine: The system cannot find the file specified` after a
+successful start. Containers show `Exited (255)` after the daemon returns.
+
+**Cause.** Docker Desktop (Windows) restarted or crashed; the named pipe goes away with the engine.
+Heavy concurrent container starts right after a cold launch can also leave the engine unstable.
+
+**Fix.** Fully quit Docker Desktop processes, relaunch `Docker Desktop.exe`, wait until
+`docker info` succeeds twice ~10s apart, then `docker compose … up -d` for Postgres and
+`docker start` the datahub-* containers (or `datahub docker quickstart`). Re-run `uv run sim` —
+it truncates and rewrites the warehouse, so a partial run is not fatal.
