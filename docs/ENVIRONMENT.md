@@ -158,20 +158,24 @@ uv run datahub-emit --dump-lineage lineage.json --dump-only
 # Serialize the causal graph without talking to GMS
 ```
 
-**In-memory fingerprint seed-42 / 20 years** (post road-repair + lever calibration, 2026-08-02):
+**In-memory fingerprint seed-42 / 20 years** (post health-index review, 2026-08-02):
 
 ```text
-pop=3665 buildings=669 mean_sat≈0.622 treasury≈319907860 mean_road_wear=1.0
+pop=3661 buildings=669 mean_sat≈0.657 treasury≈316803940 mean_road_wear≈0.572 water_load_ratio≈0.574
 ```
+
+Road wear and water load previously sat pinned at their bounds under default levers, which meant
+the warehouse handed the agent columns that never varied. Both now land mid-range — see
+`docs/ERRORS.md`.
 
 Full JSON captured during implementer run (`run_fingerprint(42, 20)`). Cross-process identity with
 `PYTHONHASHSEED=0` vs `1` confirmed for 2-year fingerprints.
 
 **Observed seed-42 / 20-year warehouse totals**
 
-> ⚠️ **Warehouse re-record blocked in this session** — Docker Desktop daemon did not become ready
-> (`dockerDesktopLinuxEngine` pipe missing after start). Row counts below are the **pre-calibration
-> baseline** from earlier 2026-08-02 and are stale relative to road-repair + lever max changes.
+> ⚠️ **Warehouse re-record still outstanding** — Docker Desktop's daemon did not become ready
+> (`dockerDesktopLinuxEngine` pipe missing after start), so these counts predate both the lever
+> calibration and the health-index review.
 > Re-run `uv run sim --seed 42 --years 20 --reset-warehouse` when Postgres is up and replace this
 > table. Order of magnitude (~2M rows) is unchanged; migration volumes will shift slightly.
 

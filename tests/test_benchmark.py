@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-import json
+from functools import cache
+from itertools import pairwise
 from pathlib import Path
 
 from blindcity.benchmark.controller import (
@@ -12,7 +13,7 @@ from blindcity.benchmark.controller import (
     bad_controller,
     good_controller,
 )
-from blindcity.benchmark.harness import RunHarness, run_scenario
+from blindcity.benchmark.harness import run_scenario
 from blindcity.benchmark.health import (
     GREEN_THRESHOLD,
     WEIGHTS,
@@ -25,7 +26,18 @@ from blindcity.benchmark.scenario import INFRASTRUCTURE_CRISIS, build_crisis_sta
 from blindcity.levers import defaults
 from blindcity.sim.engine import run_simulation
 
-SCRATCH = Path(r"C:\Users\spect\AppData\Local\Temp\grok-goal-62f45bb1ec6e\implementer")
+
+@cache
+def _run(levers: tuple[tuple[str, float], ...]):
+    """Cached scenario run. Scenario runs are expensive and deterministic, so identical
+    lever sets are executed once per session."""
+    return run_scenario(
+        INFRASTRUCTURE_CRISIS, FixedLeverController(name="probe", levers=dict(levers))
+    )
+
+
+def _with(policy: dict[str, float], **overrides: float):
+    return _run(tuple(sorted({**policy, **overrides}.items())))
 
 
 def test_weights_sum_to_one():
@@ -89,11 +101,18 @@ def test_solvency_moves_with_treasury():
     assert rich > base > poor or rich > poor
 
 
+def _pop(n: int):
+    return type("S", (), {"population": lambda self: n})()
+
+
 def test_population_score_moves_with_retention():
-    assert population_score(type("S", (), {"population": lambda self: 1000})(), 1000) == 1.0
-    assert population_score(type("S", (), {"population": lambda self: 500})(), 1000) == 0.0
-    mid = population_score(type("S", (), {"population": lambda self: 750})(), 1000)
-    assert 0.0 < mid < 1.0
+    assert population_score(_pop(500), 1000) == 0.0
+    assert population_score(_pop(1200), 1000) == 1.0
+    # Holding steady is good but not a perfect score, so the component keeps responding
+    # instead of pinning at 1.0 for every turn of a successful run.
+    parity = population_score(_pop(1000), 1000)
+    assert 0.0 < parity < 1.0
+    assert population_score(_pop(750), 1000) < parity < population_score(_pop(1100), 1000)
 
 
 def test_crisis_state_is_unhealthy():
@@ -113,10 +132,9 @@ def test_same_controller_same_seed_same_trajectory():
     assert a.final_index == b.final_index
 
 
-def test_bad_policy_fails_scenario():
+def test_bad_policy_fails_scenario(tmp_path: Path):
     result = run_scenario(INFRASTRUCTURE_CRISIS, bad_controller(), arm="scripted")
-    out = SCRATCH / "scenario-bad.json"
-    result.write_json(out)
+    result.write_json(tmp_path / "scenario-bad.json")
     assert result.recovered is False, (
         f"bad policy must not reach green; final={result.final_index:.3f} "
         f"green_turn={result.green_turn}"
@@ -124,10 +142,9 @@ def test_bad_policy_fails_scenario():
     assert result.final_index < GREEN_THRESHOLD
 
 
-def test_good_policy_recovers_scenario():
+def test_good_policy_recovers_scenario(tmp_path: Path):
     result = run_scenario(INFRASTRUCTURE_CRISIS, good_controller(), arm="scripted")
-    out = SCRATCH / "scenario-good.json"
-    result.write_json(out)
+    result.write_json(tmp_path / "scenario-good.json")
     assert result.recovered is True, (
         f"good policy must reach green; final={result.final_index:.3f} "
         f"trajectory_end_components={result.turns[-1].components if result.turns else None}"
@@ -162,3 +179,77 @@ def test_policies_differ_from_defaults():
     # Bad underfunds infrastructure; good spends to recover. Taxes alone are not the signal.
     assert GOOD_POLICY["water_sewer_capex"] > BAD_POLICY["water_sewer_capex"]
     assert GOOD_POLICY["power_contract_mode"] > BAD_POLICY["power_contract_mode"]
+
+
+# --- Regressions from the 2026-08-02 benchmark review ---------------------------------
+#
+# Every failure below was live at the time: solvency rewarded the neglect arm, water capex
+# could not move its own score, and the road lever was flat across the bottom of its range.
+# All three passed the range-style assertions above, which is the point — a component that
+# is constant, inverted, or saturated is still "in [0, 1]".
+
+COMPONENTS = ("solvency", "satisfaction", "service", "population")
+
+
+def test_good_beats_bad_on_every_component():
+    """Not just on the composite. Solvency used to be *higher* for the neglect arm, which
+    spends nothing, so it repays its debt and builds months of cash cover while the roads
+    fail. A fifth of the index was rewarding the losing policy."""
+    good = _run(tuple(sorted(GOOD_POLICY.items()))).turns[-1].components
+    bad = _run(tuple(sorted(BAD_POLICY.items()))).turns[-1].components
+    for key in COMPONENTS:
+        assert good[key] > bad[key], (
+            f"{key}: recovery scored {good[key]:.3f} but neglect scored {bad[key]:.3f}"
+        )
+
+
+def test_neglect_cannot_look_solvent():
+    """Deferred maintenance is a liability. A city that balances its books by letting the
+    infrastructure rot must not read as financially healthy."""
+    bad = _run(tuple(sorted(BAD_POLICY.items())))
+    assert max(t.components["solvency"] for t in bad.turns) < 0.75
+
+
+def test_defaults_do_not_recover_the_scenario():
+    """The crisis must require action. If leaving every lever alone reaches green, the
+    benchmark measures nothing about the controller."""
+    assert _run(tuple(sorted(defaults().items()))).recovered is False
+
+
+def test_water_capex_can_actually_buy_water_service():
+    """The water lever was a trap: at every legal setting the load ratio stayed above the
+    point where the water term scores anything, so spending on water cost solvency and
+    bought no score. An agent that correctly diagnosed the water system was punished."""
+    starved = _with(GOOD_POLICY, water_sewer_capex=0.0)
+    funded = _with(GOOD_POLICY, water_sewer_capex=6_000_000.0)
+    assert funded.turns[-1].components["service"] > starved.turns[-1].components["service"]
+    assert funded.final_index > starved.final_index + 0.1
+
+
+def test_spend_levers_respond_across_their_whole_range():
+    """No flat zone. Both budgets used to saturate their underlying quantity at 0.0 or 1.0,
+    which made every setting in the bottom of the range produce an identical score — right
+    where a controller starting from the default will probe first."""
+    for lever in ("road_maintenance_budget", "water_sewer_capex"):
+        indices = [
+            _with(GOOD_POLICY, **{lever: float(v)}).final_index
+            for v in (0, 1_000_000, 2_000_000, 4_000_000)
+        ]
+        gaps = [b - a for a, b in pairwise(indices)]
+        assert all(g > 0.01 for g in gaps), f"{lever} response is flat somewhere: {indices}"
+
+
+def test_overspending_is_punished():
+    """The optimum is interior, so the benchmark cannot be won by slamming every budget to
+    its maximum without reading the city's actual condition."""
+    tuned = _with(GOOD_POLICY, road_maintenance_budget=6_000_000.0)
+    maxed = _with(GOOD_POLICY, road_maintenance_budget=8_000_000.0)
+    assert maxed.final_index < tuned.final_index
+
+
+def test_no_component_is_constant_over_a_run():
+    """A component that never moves cannot be diagnosed, and cannot distinguish two arms."""
+    good = _run(tuple(sorted(GOOD_POLICY.items())))
+    for key in COMPONENTS:
+        values = [t.components[key] for t in good.turns]
+        assert max(values) - min(values) > 0.02, f"{key} is effectively constant: {values[0]:.3f}"

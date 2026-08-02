@@ -19,6 +19,19 @@ from blindcity.sim.model import (
 # Sized against observed per-segment traffic so congestion varies instead of pinning at 1.0.
 SEGMENT_CAPACITY = 150.0
 
+# Dollars of monthly capex that buy one unit of water/sewer capacity. Sized against the
+# `infrastructure_neglect` crisis: at the top of the lever range the load ratio must be able to
+# come back under 1.0 inside the turn budget, or the water lever is a trap that costs money and
+# buys no score. See docs/ERRORS.md.
+WATER_CAPEX_PER_UNIT = 6_000.0
+
+# Fraction of *existing* wear repaired per month per $1M/year of road budget. Repair is
+# proportional to wear — you resurface the worn segments — so wear settles at an equilibrium
+# set by the budget instead of slamming into 0.0 or 1.0. A flat per-month repair made every
+# budget below ~1.5M pin at wear 1.0 and every budget above it pin at 0.0, leaving the lever
+# flat across most of its range. See docs/ERRORS.md.
+ROAD_REPAIR_RATE_PER_MILLION = 0.05
+
 
 def apply_power(state: CityState, rng: RNG) -> None:
     mode_idx = round(float(state.levers["power_contract_mode"]))
@@ -72,7 +85,7 @@ def apply_water(state: CityState, rng: RNG) -> None:
     # Capex is annual; convert to monthly capacity growth.
     annual_capex = state.levers["water_sewer_capex"]
     # $1 of capex → small capacity units; baseline decay without spend.
-    growth = (annual_capex / 12.0) / 50_000.0
+    growth = (annual_capex / 12.0) / WATER_CAPEX_PER_UNIT
     decay = 0.5 + rng.random() * 0.2
     state.water.capacity = max(100.0, state.water.capacity + growth - decay)
 
@@ -122,15 +135,15 @@ def apply_roads(state: CityState, rng: RNG) -> None:
             traffic[road_list[idx].segment_id] += 1.0 + dist * 0.05
 
     annual_maint = state.levers["road_maintenance_budget"]
-    # Citywide annual budget → per-segment monthly wear reduction.
-    # $1M/year offsets roughly 0.01 wear/month on every segment (calibrated so a recovery
-    # policy at a few million/year can reverse neglect within a 36-month scenario budget;
-    # the previous formula divided by segment count twice and made repair impossible).
-    wear_repair = (annual_maint / 1_000_000.0) * 0.01
+    # Citywide annual budget → the share of existing wear repaired each month. Wear settles
+    # where repair meets traffic damage, so every budget in the range produces a different
+    # steady state and the lever responds smoothly across all of it.
+    repair_share = (annual_maint / 1_000_000.0) * ROAD_REPAIR_RATE_PER_MILLION
 
     for r in road_list:
         r.traffic = traffic[r.segment_id]
         wear_increase = 0.002 + r.traffic * 0.00015 + rng.random() * 0.0005
+        wear_repair = r.wear * repair_share
         r.wear = min(1.0, max(0.0, r.wear + wear_increase - wear_repair))
 
     compute_congestion(state)

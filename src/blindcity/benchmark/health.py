@@ -11,6 +11,7 @@ Weights and green threshold are a judged design choice — recorded in docs/DECI
 
 from __future__ import annotations
 
+import math
 from dataclasses import asdict, dataclass
 from typing import Any
 
@@ -47,23 +48,59 @@ def _clamp01(x: float) -> float:
     return max(0.0, min(1.0, x))
 
 
-def solvency_score(state: CityState) -> float:
-    """Map treasury/debt/balance into [0, 1].
+# Cost to restore one fully worn road segment, and one unit of missing water capacity.
+# These price the backlog in the same currency as debt; the water figure matches
+# `systems.WATER_CAPEX_PER_UNIT` so the liability is what it would actually cost to close.
+ROAD_RESTORE_COST_PER_SEGMENT = 20_000.0
+WATER_RESTORE_COST_PER_UNIT = 6_000.0
+# Load ratio the water system is expected to be held at. Anything above it is a backlog.
+WATER_TARGET_RATIO = 0.7
+# Scale of effective debt per capita. The debt term decays exponentially with this constant
+# rather than clamping linearly to zero: a linear clamp pinned the neglect arm's solvency at a
+# constant for all 36 turns, and a component that cannot move is a component that cannot be
+# diagnosed. Exponential decay stays responsive at every debt level.
+DEBT_PER_CAPITA_SCALE = 3_000.0
 
-    Adequacy is measured against a few months of operating spend, not raw treasury
-    size — extractive tax regimes that stockpile cash while the city decays should
-    not look perfectly solvent. Deep debt and empty coffers score near 0.
+
+def deferred_maintenance_liability(state: CityState) -> float:
+    """What it would cost today to undo the physical decay the city has let accumulate.
+
+    Municipal finance calls this the deferred maintenance backlog, and it exists precisely
+    because cash-only measures flatter a government that balances its books by letting the
+    assets rot. Without it, the neglect arm of the benchmark scored *perfect* solvency: it
+    spends nothing, so it repays its debt and builds months of cover while the roads fail.
+    """
+    road_backlog = 0.0
+    if state.roads:
+        mean_wear = sum(r.wear for r in state.roads) / len(state.roads)
+        road_backlog = mean_wear * len(state.roads) * ROAD_RESTORE_COST_PER_SEGMENT
+
+    needed_capacity = state.water.demand / WATER_TARGET_RATIO if state.water.demand else 0.0
+    missing = max(0.0, needed_capacity - state.water.capacity)
+    water_backlog = missing * WATER_RESTORE_COST_PER_UNIT
+
+    return road_backlog + water_backlog
+
+
+def solvency_score(state: CityState) -> float:
+    """Map treasury, effective debt, and balance into [0, 1].
+
+    Cover is measured in months of operating spend rather than raw treasury size, and debt
+    includes the deferred maintenance backlog. Both choices exist to stop a do-nothing policy
+    from scoring well: starving services raises cash cover and repays borrowings, so on cash
+    alone neglect is indistinguishable from prudence.
     """
     pop = max(state.population(), 1)
     monthly_burn = max(state.budget.total_spend, 50_000.0 + pop * 2.0)
     # Comfortable buffer: ~6 months of spend in the treasury.
     months_cover = state.budget.treasury / monthly_burn
     t_term = _clamp01(months_cover / 6.0)
-    debt_per = state.budget.debt / pop
-    d_term = _clamp01(1.0 - debt_per / 1_500.0)
+    effective_debt = state.budget.debt + deferred_maintenance_liability(state)
+    debt_per = effective_debt / pop
+    d_term = math.exp(-debt_per / DEBT_PER_CAPITA_SCALE)
     bal = state.budget.balance
     bal_term = _clamp01(0.5 + bal / (monthly_burn * 0.5))
-    return _clamp01(0.45 * t_term + 0.35 * d_term + 0.20 * bal_term)
+    return _clamp01(0.30 * t_term + 0.50 * d_term + 0.20 * bal_term)
 
 
 def satisfaction_score(state: CityState) -> float:
@@ -91,12 +128,16 @@ def service_score(state: CityState) -> float:
 
 
 def population_score(state: CityState, baseline_population: int) -> float:
-    """Retention vs population at crisis onset. Growth above baseline caps at 1."""
+    """Retention vs the founding population.
+
+    Half the founding population scores 0 and 120% scores 1, so simply holding steady lands
+    around 0.71 and growth still registers. A scale that topped out at parity pinned this
+    component at 1.0 for every turn of a successful run, which is no signal at all.
+    """
     if baseline_population <= 0:
         return 1.0 if state.population() > 0 else 0.0
     ratio = state.population() / baseline_population
-    # 100% retained → 1.0; 50% → 0.0; slight growth still 1.0
-    return _clamp01((ratio - 0.5) / 0.5)
+    return _clamp01((ratio - 0.5) / 0.7)
 
 
 def health_index(state: CityState, baseline_population: int) -> HealthComponents:

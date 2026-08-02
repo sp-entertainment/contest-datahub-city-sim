@@ -127,3 +127,30 @@ count twice. At any legal budget, repair was ~0.001/month while traffic-driven w
 **Fix.** Citywide scaling: `wear_repair = (annual_budget / 1_000_000) * 0.01`, and raise the lever
 max to 8M so aggressive recovery can reverse neglect inside a 36-month turn budget. Recorded in
 `docs/DECISIONS.md` (lever calibration).
+
+### The health index rewarded the do-nothing policy
+
+**Symptom.** None. 93 tests passed and the scenario looked correctly calibrated: the recovery
+policy reached green, the neglect policy did not.
+
+**Cause.** Three separate saturations inside the index, found by sweeping levers rather than
+reading tests:
+
+- Neglect finished at solvency **1.0000** versus recovery's 0.9914. Spending nothing repays debt
+  and builds cash cover, so the component rewarded exactly the behaviour it was meant to punish.
+- `water_sewer_capex` could not move its own score at any legal setting — capacity growth was
+  `(annual/12)/50_000`, roughly 13 units/month at maximum against a deficit of 2,100. The water
+  third of `service` was constant at 0, and spending on water strictly lowered the final index.
+- `road_maintenance_budget` was flat from 0 to 1M. Flat repair against wear bounded in [0, 1]
+  means every budget below break-even pins at 1.0 and every budget above it pins at 0.0. The
+  lever's default sat inside the flat region.
+
+**Fix.** Deferred maintenance liability folded into solvency; exponential debt decay; wear-
+proportional road repair; water capex rescaled. See `docs/DECISIONS.md`, same date.
+
+**Why it kept happening.** This is the third saturated quantity found in this codebase after road
+congestion and the road repair formula, and all three passed their tests. Asserting a value is
+within range is satisfied by a constant, and asserting the composite score orders two policies
+correctly is satisfied by three broken components and one working one. The assertions that catch
+it require a value to **move**, and require the winning arm to beat the losing arm **component by
+component**.

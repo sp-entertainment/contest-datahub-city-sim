@@ -429,3 +429,57 @@ via `--reset-warehouse` for clean demo loads.
 correctness bug under the benchmark framing.
 
 **Consequences.** Repeated CLI demos accumulate runs unless `--reset-warehouse` is passed.
+## 2026-08-02 — The health index scored the neglect arm as solvent
+
+**Context.** A review of the Slice 5 benchmark ran lever sweeps against the finished index rather
+than reading its tests. Three components turned out not to measure what they claimed.
+
+- **Solvency rewarded neglect.** The do-nothing arm finished at solvency **1.0000**; the recovery
+  arm at 0.9914. Spending nothing repays the shock debt and builds months of cash cover, so on
+  cash alone neglect is indistinguishable from prudence. Twenty per cent of the index was pointing
+  the wrong way, and the previous entry's claim that months-of-cover prevented this was false.
+- **Water capex was a trap.** With capex at 5.5M the load ratio still ended at 1.61, which scores
+  zero. Raising it to the 8M maximum *lowered* the final index (0.653 → 0.546) because it cost
+  treasury and bought nothing. A third of `service` was pinned at 0 and correctly diagnosing the
+  water system was punished.
+- **The road lever was flat where a controller starts.** Budgets of 0, 600k and 1M produced
+  identical final indices to four decimals — flat repair against bounded wear means everything
+  below break-even pins at wear 1.0 and everything above it pins at 0.0. The default sat inside
+  the dead zone, so incremental probing returned no signal at all.
+
+**Decision.**
+- Add a **deferred maintenance liability** to solvency. Road wear and the missing water capacity
+  are priced (`ROAD_RESTORE_COST_PER_SEGMENT`, `WATER_RESTORE_COST_PER_UNIT`) and added to debt.
+  Reweight solvency to `0.30` cover / `0.50` debt / `0.20` balance.
+- Make the debt term decay **exponentially** (`DEBT_PER_CAPITA_SCALE = 3000`) instead of clamping
+  linearly to zero, which had pinned the neglect arm's solvency at a constant for all 36 turns.
+- Make road repair **proportional to existing wear** (`ROAD_REPAIR_RATE_PER_MILLION = 0.05`), so
+  wear settles at a budget-dependent equilibrium instead of slamming into a bound.
+- Retune water capex to `WATER_CAPEX_PER_UNIT = 6000` so the top of the range can bring the load
+  ratio back under target inside the turn budget.
+- Widen `population_score` so parity with the founding population scores ~0.71 rather than 1.0;
+  it had been pinned at 1.0 for every turn of a successful run.
+
+**Rationale.** Deferred maintenance is how municipal finance already describes this — a government
+that balances its books by letting the assets rot is carrying a real liability — so the fix is
+honest rather than a fudge factor. The saturation fixes share one principle: **a component that
+cannot move cannot be diagnosed**, and the whole benchmark rests on an agent diagnosing the city
+from its data.
+
+**Consequences.** Calibrated results, seed 42, `infrastructure_neglect`:
+
+| Policy | Final index | Green | solvency | satisfaction | service | population |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Crisis onset | 0.328 | — | | | | |
+| Neglect | 0.303 | never | 0.539 | 0.251 | 0.217 | 0.272 |
+| Defaults (no action) | 0.437 | never | 0.582 | 0.433 | 0.324 | 0.464 |
+| Recovery | 0.797 | turn 14 | 0.976 | 0.716 | 0.772 | 0.775 |
+
+Recovery now beats neglect on **every** component, not just the composite. Both budget levers are
+monotone with an interior optimum, so the benchmark cannot be won by slamming everything to maximum
+without reading the city's condition. Doing nothing loses, which is what makes the run a test of
+the controller. Sim behaviour changed, so fingerprints and warehouse counts are stale again.
+
+**Guarded by** the regression block at the end of `tests/test_benchmark.py`. Every one of these
+defects passed the existing range-style assertions — a component that is constant, inverted, or
+saturated is still in [0, 1].

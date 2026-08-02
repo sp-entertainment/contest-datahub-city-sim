@@ -4,9 +4,10 @@ Eight levers, defined once here and consumed by the simulation, the viewer's lev
 FastAPI control surface, and the agent's actuation step. They are named in docs/FEATURES.md; this
 module is the single source of truth for their ranges and defaults.
 
-Bounds were recalibrated against the `infrastructure_neglect` scenario (2026-08-02) so a recovery
-policy can reverse road wear and water strain within the 36-turn budget while a neglect policy
-cannot. See docs/DECISIONS.md.
+Bounds and response curves were calibrated against the `infrastructure_neglect` scenario
+(2026-08-02) so a recovery policy can reverse road wear and water strain within the 36-turn budget
+while a neglect policy cannot, and so every lever responds across its whole range rather than
+saturating at one end. See docs/DECISIONS.md.
 
 Note the one wrinkle: FEATURES.md calls the levers eight scalars, but `power_contract_mode` is
 genuinely categorical. It is modelled here as a discrete index so the control surface stays a
@@ -47,7 +48,9 @@ LEVERS: dict[str, Lever] = {
         Lever("income_tax_rate", 0.0, 0.40, 0.10, "fraction", "Tax on household income."),
         Lever("property_tax_rate", 0.0, 0.05, 0.012, "fraction", "Annual tax on assessed value."),
         Lever("electricity_tariff", 0.0, 1.00, 0.15, "currency/kWh", "Retail rate charged to households."),
-        # Raised max 5M → 8M so an aggressive recovery can outpace wear under full traffic.
+        # Max 8M. Repair is proportional to existing wear, so the response is smooth across
+        # the whole range and the best setting is interior — around 5-6M in the scenario,
+        # above which the treasury cost outweighs the service gain.
         Lever(
             "road_maintenance_budget",
             0.0,
@@ -56,7 +59,8 @@ LEVERS: dict[str, Lever] = {
             "currency/year",
             "Spend on road repair.",
         ),
-        # Raised max 5M → 8M and default 400k → 500k so water capacity can recover in-scenario.
+        # Max 8M, default 500k. The default is deliberately a losing position: water is the
+        # one lever the scenario cannot be won without, so leaving it alone must cost the run.
         Lever(
             "water_sewer_capex",
             0.0,
