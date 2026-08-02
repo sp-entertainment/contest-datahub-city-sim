@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Blind City</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 1rem; background: #1a1a1e; color: #e8e8ec; }
+    h1 { font-size: 1.1rem; font-weight: 600; }
+    p.note { color: #888; font-size: 0.85rem; max-width: 40rem; }
+    #canvas { background: #0e0e12; border: 1px solid #333; display: block; margin: 0.5rem 0; }
+    #levers { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: 0.5rem; }
+    label { display: block; font-size: 0.8rem; margin-bottom: 0.25rem; }
+    button { margin: 0.5rem 0.5rem 0.5rem 0; padding: 0.4rem 0.8rem; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <h1>Blind City</h1>
+  <p class="note">
+    Cosmetic scene + lever panel. No charts, counters, or numeric city-state readouts —
+    information parity with the agent arms. Ask the Analytics Agent for numbers.
+  </p>
+  <canvas id="canvas" width="640" height="480"></canvas>
+  <div>
+    <button id="advance" type="button">Advance one month</button>
+    <button id="refresh" type="button">Refresh scene</button>
+  </div>
+  <div id="levers"></div>
+  <script>
+    // Minimal stub for Slice 4 static serving. Full isometric scene is Slice 7.
+    async function loadScene() {
+      const r = await fetch('/scene');
+      const scene = await r.json();
+      const ctx = document.getElementById('canvas').getContext('2d');
+      ctx.fillStyle = '#0e0e12';
+      ctx.fillRect(0, 0, 640, 480);
+      const scale = 12;
+      for (const t of scene.tiles || []) {
+        if (t.terrain === 'water') ctx.fillStyle = '#1a3a5c';
+        else if (t.terrain === 'rock') ctx.fillStyle = '#444';
+        else ctx.fillStyle = t.zoning === 'none' ? '#1e2a1e' : '#2a3a2a';
+        ctx.fillRect(t.x * scale, t.y * scale, scale - 1, scale - 1);
+      }
+      for (const b of scene.buildings || []) {
+        const tile = (scene.tiles || []).find(t => t.id === b.tile_id);
+        if (!tile) continue;
+        ctx.fillStyle = b.power_served ? '#6a8' : '#333';
+        if (b.condition_band === 'derelict') ctx.fillStyle = '#543';
+        else if (b.condition_band === 'worn') ctx.fillStyle = b.power_served ? '#586' : '#222';
+        ctx.fillRect(tile.x * scale + 2, tile.y * scale + 2, scale - 5, scale - 5);
+      }
+      ctx.fillStyle = '#fc6';
+      for (const c of (scene.citizens || []).slice(0, 800)) {
+        ctx.fillRect(c.x * scale, c.y * scale, 2, 2);
+      }
+    }
+    async function loadLevers() {
+      const r = await fetch('/state');
+      const st = await r.json();
+      const root = document.getElementById('levers');
+      root.innerHTML = '';
+      for (const [name, val] of Object.entries(st.levers || {})) {
+        const meta = (st.lever_meta || {})[name] || { minimum: 0, maximum: 1 };
+        const lab = document.createElement('label');
+        lab.textContent = name;
+        const input = document.createElement('input');
+        input.type = 'range';
+        input.min = meta.minimum;
+        input.max = meta.maximum;
+        input.step = (meta.maximum - meta.minimum) / 100 || 0.01;
+        input.value = val;
+        input.addEventListener('change', async () => {
+          await fetch('/lever', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, value: parseFloat(input.value) }),
+          });
+        });
+        lab.appendChild(document.createElement('br'));
+        lab.appendChild(input);
+        root.appendChild(lab);
+      }
+    }
+    document.getElementById('advance').onclick = async () => {
+      await fetch('/advance', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      await loadScene();
+    };
+    document.getElementById('refresh').onclick = loadScene;
+    loadScene();
+    loadLevers();
+  </script>
+</body>
+</html>
