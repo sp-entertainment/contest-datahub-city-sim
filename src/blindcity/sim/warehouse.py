@@ -1,7 +1,8 @@
 """Warehouse schema and bulk writers.
 
-Batch inserts keep a 20-year citizen-scale run practical. Each `sim` invocation truncates the
-warehouse so two back-to-back runs on one seed are not confounded by leftover rows.
+Batch inserts keep a 20-year citizen-scale run practical. Rows are keyed by `run_id` so concurrent
+benchmark arms can share one database. Truncate is opt-in (`reset_warehouse` / `sim --reset-warehouse`);
+the default path is append-only via `start_run`.
 """
 
 from __future__ import annotations
