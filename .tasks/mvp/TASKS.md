@@ -7,15 +7,16 @@ code written yet.
 
 ## Start here
 
-This file is the live state of the work. It is the handoff — read it, do the next unchecked thing,
-check it off, and record what you learned in the document it belongs in.
+This file is the live state of the work: read it, do the next unchecked thing, check it off, and
+record what you learned in the document it belongs in.
 
-**Read first, in order:** `AGENTS.md` (vision and constraints), `docs/DECISIONS.md` (seven settled
-decisions — do not relitigate without cause), this file, `docs/ENVIRONMENT.md` (what is running and
-how to reach it), `docs/ERRORS.md` (traps).
+**`HANDOFF.md` in this directory is the entry point.** It carries orientation, the hard rules, the
+research findings, and the list of things only a human can do. It deliberately does not track
+progress — this file does. When the two disagree about status, this file wins.
 
-`HANDOFF.md` in this directory is a historical snapshot from the design session, superseded on
-2026-08-01. Read it for background if you want; do not treat it as current.
+**Read first, in order:** `HANDOFF.md`, `AGENTS.md` (vision and constraints), `docs/DECISIONS.md`
+(eight settled decisions — do not relitigate without cause), this file, `docs/ENVIRONMENT.md` (what
+is running and how to reach it), `docs/ERRORS.md` (traps).
 
 **Where each thing gets written down:**
 
