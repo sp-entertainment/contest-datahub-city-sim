@@ -182,10 +182,44 @@ exactly 1.0 overall, and 59.6% by tick 240.
 **Cause.** `SEGMENT_CAPACITY` is a fixed 150 while traffic scales with population. Over 20 years
 the city outgrows the constant, so the `min(1.0, ...)` clamp starts firing again — the same ceiling
 as the original congestion bug, arriving late instead of immediately. The 36-turn benchmark
-scenario is too short to hit it, so the tests do not catch it.
+scenario is too short to hit it, so the tests did not catch it.
 
-**Status.** Open. The warehouse history is exactly what the agent arms query for patterns, so a
-column that is 60% pinned by the end of the record is degraded evidence. Candidate fix: replace the
-hard clamp with an asymptotic map (`ratio / (1 + ratio)`) so congestion never reaches its bound and
-stays strictly ordered at every traffic level — this needs the downstream commute-time and service
-calibrations revisited, since it changes what "congestion = 0.5" means.
+**Why it mattered more than the 20-year figure suggested.** At benchmark crisis onset congestion
+was pinned on **100% of segments**, and the 60 months of neglect history an agent can query were
+flat 1.0 throughout. The column an agent reads to work out that the roads are the problem was a
+constant during exactly the phase where diagnosing it is the entire test. It unpinned by turn 5
+once repair began — so the ceiling landed on the diagnostic window and nowhere else.
+
+**Fix.** `congestion = 1 - exp(-ratio)`. Asymptotic rather than clamped, so it approaches 1.0
+without reaching it and stays strictly ordered at every traffic level. The exponential is close to
+the identity for ratios well under 1, so values that were already informative barely moved and the
+downstream commute-time and service-score calibrations did not need revisiting — confirmed by the
+benchmark invariants still holding (neglect fails, defaults fail, recovery reaches green).
+
+Warehouse after the fix: congestion 0.000–0.728, mean 0.586, **0% at the ceiling** at every tick.
+Crisis onset now spans 0.671–0.847 across segments instead of a flat 1.0.
+
+**One caveat, recorded so nobody trips on it.** The map saturates numerically beyond roughly 35×
+capacity, where `1 - exp(-ratio)` rounds to 1.0 in float64. Observed ratios peak near 2×, so this
+is far outside anything the simulation produces — but it is a real bound, not an unbounded map.
+
+**Guarded by** `test_congestion_never_reaches_its_ceiling` (2-year and 20-year horizons),
+`test_congestion_stays_ordered_as_traffic_rises`, and
+`test_congestion_is_informative_at_benchmark_crisis_onset`. The previous guard asserted only that
+*some* segment was unsaturated and that the mean sat below 0.98 — which a 99%-pinned column passes.
+
+### Assertions pooled every run in the warehouse
+
+**Symptom.** `datahub-emit --evaluate-only` reported `n=1614574` for `citizen_monthly` when a
+single run holds 808,597 rows. All nine assertions passed.
+
+**Cause.** The assertion SQL had no `WHERE run_id`, dating from when `uv run sim` truncated on
+every launch and the warehouse only ever held one run. Once append became the default, the two
+row-count assertions (`minimum=1000`, `minimum=10000`) got easier every time anyone loaded the
+simulation, and the range assertions silently pooled runs that exist to be compared. With three
+benchmark arms writing concurrently this would have reported one verdict over all three.
+
+**Fix.** Every predicate takes an optional `run_id`, bound as a parameter rather than
+interpolated. `datahub-emit` defaults to the most recent run, `--run-id` selects another, and
+`--all-runs` opts into the old pooled behaviour deliberately. The evaluated scope is printed with
+the summary line so a pooled result cannot be mistaken for a scoped one.

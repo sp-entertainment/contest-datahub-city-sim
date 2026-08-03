@@ -483,3 +483,33 @@ the controller. Sim behaviour changed, so fingerprints and warehouse counts are 
 **Guarded by** the regression block at the end of `tests/test_benchmark.py`. Every one of these
 defects passed the existing range-style assertions — a component that is constant, inverted, or
 saturated is still in [0, 1].
+
+## 2026-08-03 — Congestion is asymptotic, and assertions are scoped to a run
+
+**Context.** With the stack finally up, a live warehouse load exposed two defects that only appear
+against real data at real volume.
+
+**Decision 1: replace the congestion clamp with `1 - exp(-ratio)`.** `min(1.0, traffic/capacity)`
+put the column on its ceiling for 24% of rows across a 20-year load, 59.6% by tick 240, and — the
+part that actually matters — **100% of segments at benchmark crisis onset**, holding flat through
+all 60 months of neglect history.
+
+**Rationale.** That history is what an agent queries to work out why the city is failing, and the
+scenario is built so the roads are a large part of the answer. A constant column there means both
+arms are guessing, which collapses the one comparison the project exists to make. The exponential
+is close to the identity for ratios under 1, so previously-informative values barely moved and the
+commute-time and service-score calibrations held without adjustment.
+
+**Decision 2: assertions evaluate one `run_id` by default.** The SQL had no run filter, a holdover
+from when `uv run sim` truncated on launch. `--run-id` selects a specific run, `--all-runs` opts
+back into pooling, and the scope is printed with the results.
+
+**Rationale.** Append-by-`run_id` was adopted so arms could write in parallel; leaving the
+assertions unscoped meant the quality gate reported a single verdict across arms that exist to be
+compared, and the row-count assertions got easier with every load. A gate that loosens as data
+accumulates is worse than no gate.
+
+**Consequences.** Warehouse re-recorded (`run_id=35`): congestion 0.000–0.728, mean 0.586, 0% at
+the ceiling at every tick. Benchmark invariants unchanged — neglect 0.324 (never green), defaults
+0.455 (never green), recovery 0.813 (green at turn 13). Fingerprints shift again, since congestion
+feeds commute time, satisfaction and migration.

@@ -151,6 +151,11 @@ uv run datahub-emit --evaluate-assertions
 uv run datahub-emit --evaluate-only
 # Evaluate assertions only (exit 2 if any fail); no GMS write
 
+uv run datahub-emit --evaluate-only --run-id 35
+uv run datahub-emit --evaluate-only --all-runs
+# Assertions are scoped to the most recent run by default. --run-id picks another;
+# --all-runs pools every run, which makes the row-count assertions meaningless.
+
 uv run datahub-emit --baseline
 # Control catalog: opaque table names, schemas only (no glossary/lineage/descriptions)
 
@@ -181,32 +186,37 @@ each time someone runs the simulation. Find the id with
 
 | Table | Rows for one run |
 | --- | ---: |
-| citizen_monthly | 808,043 |
-| commute_monthly | 808,043 |
+| citizen_monthly | 808,597 |
+| commute_monthly | 808,597 |
 | tile_monthly | 246,784 |
 | building_monthly | 140,536 |
 | road_monthly | 106,763 |
-| citizens | 4,792 |
-| households | 2,662 |
+| citizens | 4,787 |
+| households | 2,652 |
 | tiles | 1,024 |
 | buildings | 669 |
 | road_segments | 443 |
 | ticks, lever_monthly, budget_monthly, power_monthly, water_monthly, migration_monthly | 241 each |
-| **total** | **2,121,205** |
+| **total** | **2,122,301** |
 
 **Column distributions in that run**, which is what the agent arms will actually query:
 
-| Column | min | mean | max | distinct (2dp) |
-| --- | ---: | ---: | ---: | ---: |
-| `road_monthly.wear` | 0.000 | 0.473 | 0.674 | 68 |
-| `road_monthly.congestion` | 0.000 | 0.880 | 1.000 | 51 |
-| `water_monthly.load_ratio` | 0.000 | 0.664 | 0.818 | 27 |
-| `citizen_monthly.satisfaction` | 0.194 | 0.653 | 1.000 | 82 |
+| Column | min | mean | max | distinct (2dp) | at ceiling |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `road_monthly.wear` | 0.000 | 0.472 | 0.649 | 66 | 0% |
+| `road_monthly.congestion` | 0.000 | 0.586 | 0.728 | 35 | 0% |
+| `water_monthly.load_ratio` | 0.000 | 0.664 | 0.818 | 27 | 0% |
+| `citizen_monthly.satisfaction` | 0.224 | 0.678 | 1.000 | 78 | — |
 
-Worth checking after any calibration change: a column pinned at a bound is a column the agent
-cannot reason over, and this project has produced three of them so far. **`congestion` is not
-clean** — 24% of its rows sit at exactly 1.0, rising to 59.6% by tick 240 as population outgrows
-`SEGMENT_CAPACITY`. See `docs/ERRORS.md`.
+**Re-check this table after any calibration change.** A column pinned at a bound is a column the
+agent cannot reason over, it is invisible to a range assertion, and this project has produced
+three of them. The `at ceiling` figure is the one that matters: congestion was 24% pinned here
+and 100% pinned at benchmark crisis onset before the asymptotic map replaced the clamp.
+
+```sql
+SELECT round(100.0*sum(CASE WHEN congestion >= 0.999 THEN 1 ELSE 0 END)/count(*), 2)
+FROM road_monthly WHERE run_id = <id>;
+```
 
 Same seed identity: two in-memory `run_fingerprint(42, 20)` calls match exactly; different seeds
 diverge. Cross-process `PYTHONHASHSEED` identity is guarded by
