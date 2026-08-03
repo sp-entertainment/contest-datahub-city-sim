@@ -154,3 +154,38 @@ within range is satisfied by a constant, and asserting the composite score order
 correctly is satisfied by three broken components and one working one. The assertions that catch
 it require a value to **move**, and require the winning arm to beat the losing arm **component by
 component**.
+
+### `UnicodeEncodeError` on the final status line of a command that worked
+
+**Symptom.** `uv run datahub-emit --evaluate-assertions` wrote all 17 tables, 20 glossary terms,
+29 lineage edges and 9 assertion results, then died with
+`'charmap' codec can't encode character '\u2192'` and exited non-zero.
+
+**Cause.** Python binds stdout to the Windows console's legacy code page (cp1252 here). Any
+character outside it raises at print time. Our output is full of en dashes, arrows and ellipses —
+glossary text, column descriptions, the lineage hint — so the work succeeded and the report killed
+the process. `datahub docker quickstart` has the same bug with its `✔`, which is why its last line
+is a traceback even on a successful bring-up.
+
+**Fix.** `blindcity.console.configure_console()` switches stdout and stderr to UTF-8 with
+`errors="replace"`, called first thing in all four entry points. Nothing to do about the DataHub
+CLI's own copy of the bug; ignore its traceback and check `docker ps` instead.
+
+**Worth knowing.** A non-zero exit here means nothing about whether the catalog was written. Check
+the emitted counts, not the exit code, when this pattern appears in a tool that is not ours.
+
+### Congestion re-saturates over a long run
+
+**Symptom.** `road_monthly.congestion` in the seed-42 / 20-year warehouse load: 24% of rows at
+exactly 1.0 overall, and 59.6% by tick 240.
+
+**Cause.** `SEGMENT_CAPACITY` is a fixed 150 while traffic scales with population. Over 20 years
+the city outgrows the constant, so the `min(1.0, ...)` clamp starts firing again — the same ceiling
+as the original congestion bug, arriving late instead of immediately. The 36-turn benchmark
+scenario is too short to hit it, so the tests do not catch it.
+
+**Status.** Open. The warehouse history is exactly what the agent arms query for patterns, so a
+column that is 60% pinned by the end of the record is degraded evidence. Candidate fix: replace the
+hard clamp with an asymptotic map (`ratio / (1 + ratio)`) so congestion never reaches its bound and
+stays strictly ordered at every traffic level — this needs the downstream commute-time and service
+calibrations revisited, since it changes what "congestion = 0.5" means.

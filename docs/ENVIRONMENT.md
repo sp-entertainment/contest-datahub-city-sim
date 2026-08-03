@@ -171,23 +171,42 @@ the warehouse handed the agent columns that never varied. Both now land mid-rang
 Full JSON captured during implementer run (`run_fingerprint(42, 20)`). Cross-process identity with
 `PYTHONHASHSEED=0` vs `1` confirmed for 2-year fingerprints.
 
-**Observed seed-42 / 20-year warehouse totals**
+**Observed seed-42 / 20-year warehouse rows, per run** — re-recorded 2026-08-03 against
+PostgreSQL 16.14, after the health-index review.
 
-> ⚠️ **Warehouse re-record still outstanding** — Docker Desktop's daemon did not become ready
-> (`dockerDesktopLinuxEngine` pipe missing after start), so these counts predate both the lever
-> calibration and the health-index review.
-> Re-run `uv run sim --seed 42 --years 20 --reset-warehouse` when Postgres is up and replace this
-> table. Order of magnitude (~2M rows) is unchanged; migration volumes will shift slightly.
+These are counts for **one `run_id`**, not whole-table counts. `uv run sim` appends, so the tables
+accumulate every run ever loaded; scope any count with `WHERE run_id = <id>` or the number grows
+each time someone runs the simulation. Find the id with
+`SELECT run_id, seed, years, started_at FROM sim_run`.
 
-| Table | Rows (stale pre-calibration) |
+| Table | Rows for one run |
 | --- | ---: |
-| citizen_monthly | 806,531 |
-| commute_monthly | 806,531 |
+| citizen_monthly | 808,043 |
+| commute_monthly | 808,043 |
 | tile_monthly | 246,784 |
 | building_monthly | 140,536 |
 | road_monthly | 106,763 |
-| (dimension + aggregate tables) | ~11k |
-| **total** | **2,118,197** |
+| citizens | 4,792 |
+| households | 2,662 |
+| tiles | 1,024 |
+| buildings | 669 |
+| road_segments | 443 |
+| ticks, lever_monthly, budget_monthly, power_monthly, water_monthly, migration_monthly | 241 each |
+| **total** | **2,121,205** |
+
+**Column distributions in that run**, which is what the agent arms will actually query:
+
+| Column | min | mean | max | distinct (2dp) |
+| --- | ---: | ---: | ---: | ---: |
+| `road_monthly.wear` | 0.000 | 0.473 | 0.674 | 68 |
+| `road_monthly.congestion` | 0.000 | 0.880 | 1.000 | 51 |
+| `water_monthly.load_ratio` | 0.000 | 0.664 | 0.818 | 27 |
+| `citizen_monthly.satisfaction` | 0.194 | 0.653 | 1.000 | 82 |
+
+Worth checking after any calibration change: a column pinned at a bound is a column the agent
+cannot reason over, and this project has produced three of them so far. **`congestion` is not
+clean** — 24% of its rows sit at exactly 1.0, rising to 59.6% by tick 240 as population outgrows
+`SEGMENT_CAPACITY`. See `docs/ERRORS.md`.
 
 Same seed identity: two in-memory `run_fingerprint(42, 20)` calls match exactly; different seeds
 diverge. Cross-process `PYTHONHASHSEED` identity is guarded by
