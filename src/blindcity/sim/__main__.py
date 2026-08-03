@@ -6,6 +6,7 @@ import argparse
 import sys
 import time
 
+from blindcity.console import configure_console
 from blindcity.sim.city_init import GRID_H, GRID_W
 from blindcity.sim.engine import run_simulation
 from blindcity.sim.warehouse import (
@@ -49,6 +50,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
+    configure_console()
     args = build_parser().parse_args()
     if args.serve:
         import uvicorn

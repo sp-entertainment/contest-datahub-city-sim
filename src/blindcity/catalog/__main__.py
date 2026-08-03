@@ -8,6 +8,7 @@ import sys
 
 from blindcity import config
 from blindcity.catalog.emit import emit_all, lineage_graph_dict
+from blindcity.console import configure_console
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -58,6 +59,7 @@ def _evaluate_warehouse():
 
 
 def main() -> int:
+    configure_console()
     args = build_parser().parse_args()
 
     if args.dump_lineage:

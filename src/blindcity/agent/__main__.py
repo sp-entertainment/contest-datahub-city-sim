@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 import sys
 
+from blindcity.console import configure_console
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="agent", description="Run the Blind City auto-mode agent.")
@@ -21,6 +23,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
+    configure_console()
     args = build_parser().parse_args()
     print(f"agent: not implemented (mode={args.mode}, years={args.years}, context={args.context})")
     print("Next step: TASKS.md Slice 6 — the closed loop, as the agent_datahub and agent_raw arms.")

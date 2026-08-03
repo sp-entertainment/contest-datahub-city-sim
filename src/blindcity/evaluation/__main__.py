@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 import sys
 
+from blindcity.console import configure_console
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="eval", description="Run the context A/B evaluation.")
@@ -14,6 +16,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
+    configure_console()
     args = build_parser().parse_args()
     print(f"eval: not implemented (seeds={args.seeds}, years={args.years})")
     print("Next step: TASKS.md Slice 8 — build the harness. A human runs the scored evaluation (H3).")
