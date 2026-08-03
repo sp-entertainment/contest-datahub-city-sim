@@ -35,46 +35,63 @@ class AssertionResult:
         return asdict(self)
 
 
-def _sql_range_unit(table: str, column: str) -> tuple[str, str]:
-    """Column in [0, 1]. Fail count of out-of-range rows must be 0."""
-    sql = (
-        f"SELECT COUNT(*)::bigint AS violations, "
-        f"COALESCE(MIN({column}), 0)::float8 AS lo, "
-        f"COALESCE(MAX({column}), 0)::float8 AS hi, "
-        f"COUNT(*)::bigint AS n "
-        f"FROM {table} "
-        f"WHERE {column} < 0 OR {column} > 1"
-    )
-    # The WHERE filters violations only — also need total for empty tables.
-    # Recompute with a single query that always reports n and violations.
+def _scope(run_id: int | None) -> str:
+    """Restrict an assertion to one simulation run.
+
+    `uv run sim` appends, so every table holds every run ever loaded and the benchmark arms
+    write concurrently. Unscoped, a row-count assertion gets easier each time anyone runs the
+    simulation, and a range assertion silently pools arms that are supposed to be compared.
+    The run id is bound as a parameter, never interpolated.
+    """
+    return " WHERE run_id = %(run_id)s" if run_id is not None else ""
+
+
+def _sql_range_unit(table: str, column: str, run_id: int | None = None) -> tuple[str, str]:
+    """Column in [0, 1]. Count of out-of-range rows must be 0.
+
+    One pass reports violations and the total, so an empty table is distinguishable from a
+    clean one rather than both looking like zero violations.
+    """
     sql = (
         f"SELECT "
         f"COUNT(*) FILTER (WHERE {column} < 0 OR {column} > 1)::bigint AS violations, "
         f"COALESCE(MIN({column}), 0)::float8 AS lo, "
         f"COALESCE(MAX({column}), 0)::float8 AS hi, "
         f"COUNT(*)::bigint AS n "
-        f"FROM {table}"
+        f"FROM {table}{_scope(run_id)}"
     )
     return sql, "range_0_1"
 
 
-def _sql_non_negative(table: str, column: str) -> tuple[str, str]:
+def _sql_non_negative(table: str, column: str, run_id: int | None = None) -> tuple[str, str]:
     sql = (
         f"SELECT "
         f"COUNT(*) FILTER (WHERE {column} < 0)::bigint AS violations, "
         f"COALESCE(MIN({column}), 0)::float8 AS lo, "
         f"COUNT(*)::bigint AS n "
-        f"FROM {table}"
+        f"FROM {table}{_scope(run_id)}"
     )
     return sql, "non_negative"
 
 
-def _sql_min_rows(table: str, minimum: int) -> tuple[str, str]:
-    sql = f"SELECT COUNT(*)::bigint AS n FROM {table}"
+def _sql_min_rows(table: str, minimum: int, run_id: int | None = None) -> tuple[str, str]:
+    sql = f"SELECT COUNT(*)::bigint AS n FROM {table}{_scope(run_id)}"
     return sql, f"min_rows_{minimum}"
 
 
-def _predicate_for(spec: AssertionSpec) -> tuple[str, Callable[[dict[str, Any]], tuple[bool, str]]]:
+def latest_run_id(conn: psycopg.Connection) -> int | None:
+    """Most recently started run, or None if the warehouse is empty."""
+    with conn.cursor() as cur:
+        cur.execute("SELECT run_id FROM sim_run ORDER BY started_at DESC, run_id DESC LIMIT 1")
+        row = cur.fetchone()
+    if row is None:
+        return None
+    return int(row["run_id"] if isinstance(row, dict) else row[0])
+
+
+def _predicate_for(
+    spec: AssertionSpec, run_id: int | None = None
+) -> tuple[str, Callable[[dict[str, Any]], tuple[bool, str]]]:
     """Map a declared assertion to SQL + a pure pass/fail interpreter of the row."""
     table, column, _desc = spec
 
@@ -83,7 +100,7 @@ def _predicate_for(spec: AssertionSpec) -> tuple[str, Callable[[dict[str, Any]],
             # tiles × months should be large once a multi-year run exists; floor is modest so a
             # short fixture can still pass, while empty warehouse fails.
             minimum = 1_000
-            sql, _ = _sql_min_rows(table, minimum)
+            sql, _ = _sql_min_rows(table, minimum, run_id)
 
             def interpret(row: dict[str, Any], *, _min: int = minimum) -> tuple[bool, str]:
                 n = int(row["n"])
@@ -93,7 +110,7 @@ def _predicate_for(spec: AssertionSpec) -> tuple[str, Callable[[dict[str, Any]],
 
         if table == "citizen_monthly":
             minimum = 10_000
-            sql, _ = _sql_min_rows(table, minimum)
+            sql, _ = _sql_min_rows(table, minimum, run_id)
 
             def interpret(row: dict[str, Any], *, _min: int = minimum) -> tuple[bool, str]:
                 n = int(row["n"])
@@ -117,7 +134,7 @@ def _predicate_for(spec: AssertionSpec) -> tuple[str, Callable[[dict[str, Any]],
     }
 
     if (table, column) in unit_cols:
-        sql, _ = _sql_range_unit(table, column)
+        sql, _ = _sql_range_unit(table, column, run_id)
 
         def interpret(row: dict[str, Any]) -> tuple[bool, str]:
             v = int(row["violations"])
@@ -129,7 +146,7 @@ def _predicate_for(spec: AssertionSpec) -> tuple[str, Callable[[dict[str, Any]],
         return sql, interpret
 
     if (table, column) in nonneg_cols:
-        sql, _ = _sql_non_negative(table, column)
+        sql, _ = _sql_non_negative(table, column, run_id)
 
         def interpret(row: dict[str, Any]) -> tuple[bool, str]:
             v = int(row["violations"])
@@ -140,21 +157,23 @@ def _predicate_for(spec: AssertionSpec) -> tuple[str, Callable[[dict[str, Any]],
     raise ValueError(f"no SQL predicate for assertion {table}.{column}")
 
 
-def assertion_sql(spec: AssertionSpec) -> str:
+def assertion_sql(spec: AssertionSpec, run_id: int | None = None) -> str:
     """Public: the SQL that will be run for this assertion (for tests and docs)."""
-    sql, _ = _predicate_for(spec)
+    sql, _ = _predicate_for(spec, run_id)
     return sql
 
 
 def evaluate_one(
     conn: psycopg.Connection,
     spec: AssertionSpec,
+    run_id: int | None = None,
 ) -> AssertionResult:
-    """Run one assertion against the live warehouse connection."""
+    """Run one assertion against the live warehouse connection, scoped to one run."""
     table, column, description = spec
-    sql, interpret = _predicate_for(spec)
+    sql, interpret = _predicate_for(spec, run_id)
+    params = {"run_id": run_id} if run_id is not None else None
     with conn.cursor() as cur:
-        cur.execute(sql)
+        cur.execute(sql, params)
         row = cur.fetchone()
         assert row is not None
         # psycopg dict_row or tuple
@@ -176,10 +195,16 @@ def evaluate_one(
 def evaluate_assertions(
     conn: psycopg.Connection,
     specs: tuple[AssertionSpec, ...] | None = None,
+    run_id: int | None = None,
 ) -> list[AssertionResult]:
-    """Evaluate every declared assertion. Order matches `ASSERTIONS`."""
+    """Evaluate every declared assertion. Order matches `ASSERTIONS`.
+
+    `run_id` scopes every predicate to one simulation run. Pass None only to check the
+    warehouse as a whole; the row-count assertions are not meaningful that way once more
+    than one run has been loaded.
+    """
     use = specs if specs is not None else ASSERTIONS
-    return [evaluate_one(conn, spec) for spec in use]
+    return [evaluate_one(conn, spec, run_id) for spec in use]
 
 
 def all_passed(results: list[AssertionResult]) -> bool:

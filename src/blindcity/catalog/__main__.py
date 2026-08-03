@@ -43,17 +43,41 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Evaluate assertions against Postgres and print results; do not call GMS.",
     )
+    parser.add_argument(
+        "--run-id",
+        type=int,
+        default=None,
+        help="Evaluate assertions against this simulation run. Defaults to the most recent.",
+    )
+    parser.add_argument(
+        "--all-runs",
+        action="store_true",
+        help="Evaluate across every run in the warehouse instead of one. Row-count assertions "
+        "are not meaningful this way once more than one run is loaded.",
+    )
     return parser
 
 
-def _evaluate_warehouse():
-    from blindcity.catalog.assertions import evaluate_assertions
+def _evaluate_warehouse(run_id: int | None = None, *, all_runs: bool = False):
+    """Evaluate assertions, by default against the most recent simulation run.
+
+    The warehouse appends, so an unscoped assertion pools every run ever loaded — which makes
+    the row-count assertions easier on every load and mixes benchmark arms that exist to be
+    compared. `--all-runs` opts into the unscoped behaviour deliberately.
+    """
+    from blindcity.catalog.assertions import evaluate_assertions, latest_run_id
     from blindcity.sim.warehouse import connect, ensure_schema
 
     conn = connect()
     try:
         ensure_schema(conn)
-        return evaluate_assertions(conn)
+        scope = None if all_runs else (run_id if run_id is not None else latest_run_id(conn))
+        if scope is None and not all_runs:
+            print(
+                "datahub-emit: warehouse has no runs — load one with `uv run sim` first.",
+                file=sys.stderr,
+            )
+        return evaluate_assertions(conn, run_id=scope), scope
     finally:
         conn.close()
 
@@ -75,13 +99,15 @@ def main() -> int:
     assertion_results = None
     if args.evaluate_assertions or args.evaluate_only:
         try:
-            assertion_results = _evaluate_warehouse()
+            assertion_results, scope = _evaluate_warehouse(args.run_id, all_runs=args.all_runs)
         except Exception as exc:  # noqa: BLE001
             print(f"datahub-emit: assertion evaluation failed: {exc}", file=sys.stderr)
             return 1
         n_pass = sum(1 for r in assertion_results if r.passed)
+        where = "all runs" if scope is None else f"run_id={scope}"
         print(
-            f"datahub-emit: assertions evaluated {n_pass}/{len(assertion_results)} passed"
+            f"datahub-emit: assertions evaluated {n_pass}/{len(assertion_results)} passed "
+            f"({where})"
         )
         for r in assertion_results:
             flag = "PASS" if r.passed else "FAIL"
