@@ -6,6 +6,8 @@ does not shift other systems' draws. Iteration always uses sorted id order when 
 
 from __future__ import annotations
 
+import math
+
 from blindcity.levers import POWER_CONTRACT_MODES
 from blindcity.rng import RNG
 from blindcity.sim.model import (
@@ -156,14 +158,21 @@ def compute_congestion(state: CityState) -> None:
     injected wear value — see `blindcity.sim.causal_check`.
     """
     for r in state.roads:
-        # Congestion: traffic relative to capacity degraded by wear.
+        # Congestion: traffic relative to capacity degraded by wear, mapped through
+        # `1 - exp(-ratio)` so it approaches 1.0 without ever reaching it.
         #
-        # SEGMENT_CAPACITY is sized against observed traffic (median ~90 per segment at a few
-        # thousand citizens) so congestion lands in an informative band rather than saturating.
-        # At 40.0 every segment pinned at 1.0 for the whole run, which made congestion a dead
-        # column and severed road wear from commute time — see docs/ERRORS.md.
+        # A hard `min(1.0, ratio)` clamp put this column on its ceiling twice: first with
+        # SEGMENT_CAPACITY at 40 (every segment, every month), and then again at 150 once the
+        # city outgrew the constant — 100% of segments at crisis onset in the benchmark, which
+        # is precisely the history an agent reads to diagnose the road problem. Saturation is
+        # invisible to a range check and destroys the ordering between a bad road and a much
+        # worse one. See docs/ERRORS.md.
+        #
+        # The exponential is close to the identity for ratio well under 1, so the values that
+        # were already informative barely move; only the previously-clamped region changes.
         capacity = SEGMENT_CAPACITY * (1.0 - 0.6 * r.wear)
-        r.congestion = min(1.0, r.traffic / max(capacity, 1.0))
+        ratio = r.traffic / max(capacity, 1.0)
+        r.congestion = 1.0 - math.exp(-ratio)
 
 
 def apply_commute(state: CityState, rng: RNG) -> None:
