@@ -6,6 +6,7 @@ Calibration evidence lives in tests and in docs/DECISIONS.md.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Any
@@ -90,19 +91,36 @@ def apply_crisis_shock(state: CityState) -> None:
         c.satisfaction = min(c.satisfaction, 0.32)
 
 
-def build_crisis_state(scenario: Scenario) -> tuple[CityState, int]:
+def build_crisis_state(
+    scenario: Scenario,
+    on_month: Callable[[CityState], None] | None = None,
+) -> tuple[CityState, int]:
     """Materialise the city at crisis onset.
 
     Returns (state, baseline_population). Baseline is the founding population (tick 0),
     so the population component measures retention through the crisis, not a tautology
     of "100% of whoever is left at onset".
+
+    `on_month` is called once at founding and after every simulated month of the crisis. The
+    agent arms use it to write the neglect history into the warehouse: they diagnose the city
+    exclusively through SQL, so a city whose past does not exist in Postgres is a city with no
+    discoverable cause. Without it the agent's first turn opens on an empty table.
+
+    It is deliberately *not* called after the shock, which alters the city without advancing the
+    clock — a second write at the same tick would collide on the primary key. The shock first
+    becomes visible in the data at the end of the controller's first turn, which is also when a
+    real administration would first see it.
     """
     lev = clamp_levers({**defaults(), **scenario.crisis_levers})
     state = create_city(scenario.seed, lev)
     baseline_pop = state.population()
+    if on_month is not None:
+        on_month(state)
     parent = RNG(scenario.seed)
     for _ in range(scenario.crisis_months):
         step_month(state, parent.stream("tick"))
+        if on_month is not None:
+            on_month(state)
     apply_crisis_shock(state)
     return state, baseline_pop
 

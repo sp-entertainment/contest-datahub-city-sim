@@ -1,0 +1,217 @@
+"""The agent's hands: read-only SQL over the warehouse, and the eight levers.
+
+**Both arms get exactly this tool set.** It is defined once, here, and neither arm may add,
+remove, or reword a tool — the declarations below are what the model sees, and a difference in
+tool wording is a difference in capability. The only thing that differs between `agent_datahub`
+and `agent_raw` is a block of catalog context in the prompt (`catalog.py`).
+
+Schema discovery is deliberately available to both. `agent_raw` can read `information_schema`
+and find every table and column, exactly as a competent analyst with database access would. What
+it cannot find is what any of them *mean*. That is the comparison: not access to data versus no
+access, but described data versus undescribed data. A control that could not discover the schema
+at all would be a straw man and the result would be worthless.
+"""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass, field
+from typing import Any
+
+import psycopg
+
+from blindcity.levers import LEVERS
+
+# Statements the SQL tool will run. Anything else is refused before it reaches the database.
+_ALLOWED_PREFIX = re.compile(r"^\s*(select|with)\b", re.IGNORECASE)
+
+# Refused outright even inside an otherwise-innocent query. The connection is also opened
+# read-only, so this is a second line rather than the only one — but a clear refusal message
+# teaches the model to stop trying, where a database error just invites a retry.
+_FORBIDDEN = re.compile(
+    r"\b(insert|update|delete|drop|truncate|alter|create|grant|revoke|copy|vacuum)\b",
+    re.IGNORECASE,
+)
+
+MAX_ROWS = 50
+MAX_CELL_CHARS = 200
+
+
+@dataclass
+class ToolCallRecord:
+    """One tool invocation, kept so a run can be audited after the fact."""
+
+    turn: int
+    name: str
+    args: dict[str, Any]
+    ok: bool
+    summary: str
+
+
+@dataclass
+class ToolContext:
+    """Everything the tools act on for a single scenario run."""
+
+    conn: psycopg.Connection
+    run_id: int
+    levers: dict[str, float]
+    turn: int = 0
+    log: list[ToolCallRecord] = field(default_factory=list)
+    # Levers the model asked for this turn, applied by the controller when the turn ends.
+    pending: dict[str, float] = field(default_factory=dict)
+
+
+def tool_declarations() -> list[dict[str, Any]]:
+    """The function declarations sent to the model. Identical for both arms."""
+    lever_lines = "\n".join(
+        f"  {name}: {lev.minimum} to {lev.maximum} ({lev.unit}) - {lev.description}"
+        for name, lev in LEVERS.items()
+    )
+    return [
+        {
+            "name": "sql_query",
+            "description": (
+                "Run a read-only SQL query against the city's PostgreSQL warehouse and return up "
+                "to 50 rows. Only SELECT and WITH are permitted. The warehouse holds one row per "
+                "entity per simulated month. Every table has a run_id column and your query is "
+                "automatically restricted to the current run, so you never need to filter on it. "
+                "Use information_schema to discover tables and columns."
+            ),
+            "parameters": {
+                "type": "OBJECT",
+                "properties": {
+                    "query": {
+                        "type": "STRING",
+                        "description": "A single SELECT or WITH statement.",
+                    }
+                },
+                "required": ["query"],
+            },
+        },
+        {
+            "name": "set_levers",
+            "description": (
+                "Set one or more policy levers. Values outside the legal range are clamped rather "
+                "than rejected, so a bad decision stays a bad decision instead of an error. "
+                "Levers persist until changed. Levers and ranges:\n" + lever_lines
+            ),
+            "parameters": {
+                "type": "OBJECT",
+                "properties": {
+                    "levers": {
+                        "type": "OBJECT",
+                        "description": (
+                            "Map of lever name to numeric value. Include only the levers you want "
+                            "to change."
+                        ),
+                    }
+                },
+                "required": ["levers"],
+            },
+        },
+    ]
+
+
+def run_sql(ctx: ToolContext, query: str) -> dict[str, Any]:
+    """Execute a read-only query and return rows as JSON-safe values."""
+    if not isinstance(query, str) or not query.strip():
+        return {"error": "query must be a non-empty string"}
+    if not _ALLOWED_PREFIX.match(query):
+        return {"error": "only SELECT and WITH statements are permitted"}
+    forbidden = _FORBIDDEN.search(query)
+    if forbidden:
+        return {"error": f"'{forbidden.group(0)}' is not permitted; this tool is read-only"}
+    if ";" in query.rstrip().rstrip(";"):
+        return {"error": "one statement per call"}
+
+    # The connection's search_path already points at this run's views (see runscope.py), so the
+    # query the model wrote is the query that runs — no rewriting, no predicate to remember.
+    statement = query.rstrip().rstrip(";")
+    try:
+        with ctx.conn.cursor() as cur:
+            cur.execute(statement)
+            columns = [d.name for d in (cur.description or [])]
+            rows = cur.fetchmany(MAX_ROWS)
+    except psycopg.Error as exc:
+        ctx.conn.rollback()
+        message = str(exc).strip().splitlines()[0][:300]
+        return {"error": message}
+
+    # The warehouse connection uses psycopg's dict_row factory, so a row is a mapping, not a
+    # tuple. Iterating it directly yields column *names* — which is exactly what the model was
+    # handed on the first live run: every query came back as a list of its own headers, so it
+    # re-asked the same question six different ways and burned the whole turn budget.
+    out_rows = [[_cell(row[c]) for c in columns] for row in rows]
+    return {
+        "columns": columns,
+        "rows": out_rows,
+        "row_count": len(out_rows),
+        "truncated": len(out_rows) >= MAX_ROWS,
+    }
+
+
+def _cell(value: Any) -> Any:
+    if value is None or isinstance(value, bool | int):
+        return value
+    if isinstance(value, float):
+        return round(value, 6)
+    text = str(value)
+    return text if len(text) <= MAX_CELL_CHARS else text[:MAX_CELL_CHARS] + "..."
+
+
+def set_levers(ctx: ToolContext, levers: Any) -> dict[str, Any]:
+    """Stage lever changes for this turn, clamped to their legal ranges."""
+    if not isinstance(levers, dict) or not levers:
+        return {"error": "levers must be a non-empty object of name -> number"}
+
+    applied: dict[str, float] = {}
+    rejected: dict[str, str] = {}
+    clamped: dict[str, str] = {}
+    for name, raw in levers.items():
+        lever = LEVERS.get(name)
+        if lever is None:
+            rejected[str(name)] = "unknown lever"
+            continue
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            rejected[name] = f"not a number: {raw!r}"
+            continue
+        bounded = lever.clamp(value)
+        if bounded != value:
+            clamped[name] = f"{value} clamped to {bounded}"
+        applied[name] = bounded
+
+    ctx.pending.update(applied)
+    result: dict[str, Any] = {"applied": applied}
+    if clamped:
+        result["clamped"] = clamped
+    if rejected:
+        result["rejected"] = rejected
+        result["valid_levers"] = sorted(LEVERS)
+    return result
+
+
+DISPATCH = {"sql_query": run_sql, "set_levers": set_levers}
+
+
+def dispatch(ctx: ToolContext, name: str, args: dict[str, Any]) -> dict[str, Any]:
+    """Route one model-issued call, recording it for the audit trail."""
+    handler = DISPATCH.get(name)
+    if handler is None:
+        payload = {"error": f"unknown tool {name!r}; available: {sorted(DISPATCH)}"}
+        ctx.log.append(ToolCallRecord(ctx.turn, name, args, False, payload["error"]))
+        return payload
+
+    if name == "sql_query":
+        payload = handler(ctx, args.get("query", ""))
+        summary = (
+            payload.get("error")
+            or f"{payload.get('row_count', 0)} rows, columns={payload.get('columns')}"
+        )
+    else:
+        payload = handler(ctx, args.get("levers"))
+        summary = payload.get("error") or f"applied={payload.get('applied')}"
+
+    ctx.log.append(ToolCallRecord(ctx.turn, name, args, "error" not in payload, str(summary)[:300]))
+    return payload

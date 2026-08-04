@@ -20,35 +20,46 @@ from blindcity.sim.systems import step_month
 
 
 @dataclass
+class PreparedRun:
+    """A scenario materialised and, optionally, its history written to the warehouse.
+
+    Exists so a controller can be constructed *against the warehouse run it will read*. The
+    agent arms need the `run_id` before their first decision — they diagnose the city through
+    SQL scoped to that run — and the harness is what mints it. Without this split the controller
+    would have to be built before the run existed.
+    """
+
+    state: CityState
+    baseline_population: int
+    parent: RNG
+    durable_id: str
+    warehouse_run_id: int | None = None
+    writer: Any | None = None
+
+
+@dataclass
 class RunHarness:
     scenario: Scenario
     green_threshold: float = GREEN_THRESHOLD
 
-    def run(
+    def prepare(
         self,
-        controller: Controller,
         *,
-        arm: str = "scripted",
-        channel: dict[str, Any] | None = None,
         run_id: str | None = None,
         warehouse_conn: Any | None = None,
         write_warehouse: bool = False,
-    ) -> RunResult:
-        """Execute the scenario under `controller`.
+        write_crisis_history: bool = True,
+    ) -> PreparedRun:
+        """Build the crisis city, and record how it got that way.
 
-        If `write_warehouse` is True, `warehouse_conn` must be an open psycopg connection
-        with schema present. Rows are appended under a new sim_run id; nothing is truncated.
+        `write_crisis_history` writes the months of neglect preceding turn 0. It is on by default
+        because an agent that can only see the recovery period cannot diagnose what caused the
+        crisis — the evidence is all in the past.
         """
-        state, baseline_pop = build_crisis_state(self.scenario)
-        # Isolate from any caller that reuses the builder
-        state = clone_state(state)
-        # Streams inside step_month fold `state.tick` into the name, so the parent is only
-        # a namespace (same pattern as engine.run_simulation).
-        parent = RNG(self.scenario.seed)
-
-        durable_id = run_id or str(uuid.uuid4())
         writer = None
         warehouse_run_id: int | None = None
+        durable_id = run_id or str(uuid.uuid4())
+
         if write_warehouse and warehouse_conn is not None:
             from blindcity.sim.city_init import GRID_H, GRID_W
             from blindcity.sim.warehouse import WarehouseWriter, start_run
@@ -62,7 +73,63 @@ class RunHarness:
             )
             durable_id = str(warehouse_run_id)
             writer = WarehouseWriter(warehouse_conn, warehouse_run_id)
-            writer.write_month(state)
+
+        on_month = None
+        if writer is not None and write_crisis_history:
+            on_month = writer.write_month
+
+        state, baseline_pop = build_crisis_state(self.scenario, on_month=on_month)
+        # Isolate from any caller that reuses the builder
+        state = clone_state(state)
+        if writer is not None:
+            writer.flush_all()
+
+        return PreparedRun(
+            state=state,
+            baseline_population=baseline_pop,
+            # Streams inside step_month fold `state.tick` into the name, so the parent is only
+            # a namespace (same pattern as engine.run_simulation).
+            parent=RNG(self.scenario.seed),
+            durable_id=durable_id,
+            warehouse_run_id=warehouse_run_id,
+            writer=writer,
+        )
+
+    def run(
+        self,
+        controller: Controller,
+        *,
+        arm: str = "scripted",
+        channel: dict[str, Any] | None = None,
+        run_id: str | None = None,
+        warehouse_conn: Any | None = None,
+        write_warehouse: bool = False,
+        prepared: PreparedRun | None = None,
+    ) -> RunResult:
+        """Execute the scenario under `controller`.
+
+        If `write_warehouse` is True, `warehouse_conn` must be an open psycopg connection
+        with schema present. Rows are appended under a new sim_run id; nothing is truncated.
+        Pass `prepared` to reuse a run built earlier by `prepare()`.
+        """
+        if prepared is None:
+            prepared = self.prepare(
+                run_id=run_id,
+                warehouse_conn=warehouse_conn,
+                write_warehouse=write_warehouse,
+                # Preserves the pre-existing behaviour for scripted callers, which do not read
+                # the warehouse and do not need 60 months of setup written for them.
+                write_crisis_history=False,
+            )
+            if prepared.writer is not None:
+                prepared.writer.write_month(prepared.state)
+
+        state = prepared.state
+        baseline_pop = prepared.baseline_population
+        parent = prepared.parent
+        durable_id = prepared.durable_id
+        writer = prepared.writer
+        warehouse_run_id = prepared.warehouse_run_id
 
         channel = dict(channel or {})
         turns: list[TurnRecord] = []
