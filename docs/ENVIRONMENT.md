@@ -38,7 +38,22 @@ Installed `acryl-datahub` 1.6.0.17 on Python 3.11.3.
 DataHub and Analytics Agent dependency sets expect. `--python 3.11` makes uv fetch and use its own
 interpreter regardless of what is on PATH. Use the same pin for the project.
 
-### 4. Start Docker Desktop
+### 4. Start the stack
+
+**This is the only bring-up command you need.** It launches Docker Desktop if the daemon is down,
+waits for it, starts all seven containers in dependency order, waits on health at each tier,
+applies restart policies, and verifies the endpoints answer.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File infra/stack.ps1            # bring up and verify
+powershell -ExecutionPolicy Bypass -File infra/stack.ps1 -Status    # report only, changes nothing
+```
+
+The manual sequence below is kept for when the script itself fails, and because it explains what
+the script is doing. Steps 5 and 6 are only needed on a machine that has never run quickstart.
+
+<details>
+<summary>Manual bring-up</summary>
 
 ```powershell
 Start-Process "C:\Program Files\Docker\Docker\Docker Desktop.exe"
@@ -49,6 +64,17 @@ The daemon is not up the instant the process starts. Poll rather than assume:
 ```powershell
 for ($i=0; $i -lt 30; $i++) { docker info --format '{{.ServerVersion}}' 2>$null | Out-Null; if ($?) { "ready"; break }; Start-Sleep -Seconds 10 }
 ```
+
+Then start the containers in order — OpenSearch and Kafka must be healthy before GMS, or GMS exits:
+
+```powershell
+docker compose -f infra/postgres/docker-compose.yml up -d
+docker start datahub-mysql-1 datahub-opensearch-1 datahub-kafka-broker-1   # wait for healthy
+docker start datahub-datahub-gms-quickstart-1                              # wait for healthy
+docker start datahub-frontend-quickstart-1 datahub-datahub-actions-quickstart-1
+```
+
+</details>
 
 ### 5. Bring up DataHub Core
 
@@ -300,10 +326,16 @@ Rules, for humans and agents alike:
 ## Lifecycle
 
 ```powershell
-datahub docker quickstart          # start, or restart after a stop
-docker ps                          # what is running
+powershell -ExecutionPolicy Bypass -File infra/stack.ps1               # start everything, in order, and verify
+powershell -ExecutionPolicy Bypass -File infra/stack.ps1 -Status       # what is running, and whether it will survive a restart
+datahub docker quickstart          # only to CREATE the DataHub containers, or after a nuke
 datahub docker nuke                # destroy containers and volumes, losing all catalog state
 ```
+
+**Prefer `infra/stack.ps1` over `datahub docker quickstart` for everyday starting.** Quickstart
+recreates its containers and re-downloads its compose file, which resets their restart policy to
+`no` — the reason the DataHub half of the stack used to vanish on every Docker restart. If you do
+run quickstart, run `infra/stack.ps1` afterwards to put the policies back.
 
 `datahub docker nuke` is destructive and unrecoverable. Re-ingesting the catalog after a nuke means
 re-running the sim's metadata emission.

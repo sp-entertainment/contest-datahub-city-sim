@@ -2,6 +2,29 @@
 
 Log problems hit and how they were resolved, so they are not rediscovered.
 
+## The one pattern worth internalising before you read anything else
+
+**Four times now this project has shipped a column or a score that was pinned at a constant, and
+every one of them passed a full green test suite.** Road congestion (twice), the road repair
+formula, the water term in `service`, and solvency in the health index.
+
+They survive because the obvious assertion is a range check, and *a constant is always in range*.
+Asserting `0 <= congestion <= 1` is satisfied by `congestion = 1.0` on every row forever. Asserting
+that a good policy outscores a bad one is satisfied by three broken components and one working one.
+
+The assertions that actually catch it:
+
+- Require a value to **move** when its input moves, not merely to sit inside bounds.
+- Require the winning arm to beat the losing arm **component by component**, not just on the total.
+- Check the **fraction at the ceiling**, not the mean. A mean of 0.88 hid 24% of rows at exactly
+  1.0; see the `at ceiling` column and query in `docs/ENVIRONMENT.md`.
+- Sweep a lever across its **whole range** and require every step to change the outcome. Flat
+  regions are where a controller starting from the default will probe first.
+
+This matters more here than in most codebases: the entire project rests on an agent diagnosing a
+city from its data. A column that never varies is not a cosmetic defect, it is a missing sense
+organ — and it is invisible from the test output.
+
 ## Known traps, recorded before they bite
 
 ### MCP mutation tools missing from the tool list
@@ -88,10 +111,19 @@ successful start. Containers show `Exited (255)` after the daemon returns.
 **Cause.** Docker Desktop (Windows) restarted or crashed; the named pipe goes away with the engine.
 Heavy concurrent container starts right after a cold launch can also leave the engine unstable.
 
-**Fix.** Fully quit Docker Desktop processes, relaunch `Docker Desktop.exe`, wait until
-`docker info` succeeds twice ~10s apart, then `docker compose … up -d` for Postgres and
-`docker start` the datahub-* containers (or `datahub docker quickstart`). Re-run `uv run sim` —
-it truncates and rewrites the warehouse, so a partial run is not fatal.
+**Fix.** `powershell -ExecutionPolicy Bypass -File infra/stack.ps1` — it launches Docker Desktop if the daemon is down, waits for it,
+and brings the containers up in order. Only fall back to relaunching by hand if that fails.
+
+**Superseded, 2026-08-03.** The `Exited (255)` part of this entry was misdiagnosed. 255 is what the
+daemon records when it kills a *running* container during its own shutdown; it is not a crash and
+the containers are not unstable. See "DataHub containers never come back after a Docker restart"
+below for what was actually happening.
+
+**Stale advice removed.** This entry used to say a partial run was not fatal because `uv run sim`
+truncates and rewrites the warehouse. It no longer truncates — append-by-`run_id` became the
+default so benchmark arms can write in parallel. A partial run now leaves a partial `run_id` in the
+warehouse. Use `--reset-warehouse` if you want the old behaviour, or just ignore the stray run,
+since everything is scoped by `run_id` anyway.
 
 ### Road congestion was pinned at 1.0 on every segment
 
@@ -108,9 +140,13 @@ maintenance was dead, and the agent would have been handed a column that never v
 opposite of what an analytics agent is meant to reason over. Nothing failed, which is why it
 survived a full slice.
 
-**Fix.** `SEGMENT_CAPACITY = 150.0` in `systems.py`, sized against observed traffic. Mean congestion
-is now ~0.76 with no saturated segments. Guarded by
-`tests/test_causal_validation.py::test_congestion_is_not_saturated`.
+**Fix.** `SEGMENT_CAPACITY = 150.0` in `systems.py`, sized against observed traffic.
+
+**This fix was not enough — see "Congestion re-saturates over a long run" below.** Resizing a
+constant only moves the point at which a clamp starts firing; it does not stop it firing. The
+column pinned again once the city outgrew 150, and the real fix was to remove the clamp. The
+guard named here (`test_congestion_is_not_saturated`) was also too weak to catch the recurrence
+and has been replaced by three stricter tests.
 
 **Found by** validating each declared lineage edge against the simulation — wear → congestion was
 the one edge that could not be demonstrated. A dead column is invisible to tests that only assert a
@@ -250,8 +286,8 @@ then applies `docker update --restart unless-stopped` to all seven so the next e
 recovers by itself. Idempotent — safe to run when things are already up.
 
 ```powershell
-pwsh infra/stack.ps1            # bring up and verify
-pwsh infra/stack.ps1 -Status    # report only, changes nothing
+powershell -ExecutionPolicy Bypass -File infra/stack.ps1            # bring up and verify
+powershell -ExecutionPolicy Bypass -File infra/stack.ps1 -Status    # report only, changes nothing
 ```
 
 **The catch.** `datahub docker quickstart` *recreates* its containers and re-downloads its compose

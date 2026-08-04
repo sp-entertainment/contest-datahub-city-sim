@@ -166,3 +166,12 @@ uv run eval --seeds 5
   invalidates the comparison. Lever positions are the controller's own input and are exempt.
 - **Don't ship only the upstream Analytics Agent.** Originality is a judged criterion; the closed
   loop is ours.
+- **Do run `powershell -ExecutionPolicy Bypass -File infra/stack.ps1` before touching anything that needs Docker,** and again after any
+  `datahub docker quickstart`. The engine on this host restarts often and quickstart resets the
+  containers' restart policy. `docker ps` showing two containers instead of seven is the normal
+  failure, not a crisis.
+- **Don't trust a green test suite to mean a value is alive.** A constant passes every range check.
+  This project has shipped four columns pinned at a bound, each one through a fully green suite.
+  Require values to *move*, compare arms component by component, and check the fraction of rows
+  sitting at the ceiling rather than the mean. The opening section of `docs/ERRORS.md` is the
+  full version of this, and it is the single most useful thing in the documentation.

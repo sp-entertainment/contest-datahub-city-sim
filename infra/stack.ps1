@@ -9,8 +9,8 @@
 # The catch: `datahub docker quickstart` RECREATES its containers and re-downloads its compose
 # file, which resets the policy to `no`. So re-run this script after any quickstart.
 #
-#   pwsh infra/stack.ps1            # bring everything up and verify
-#   pwsh infra/stack.ps1 -Status    # report only, change nothing
+#   powershell -ExecutionPolicy Bypass -File infra/stack.ps1            # bring everything up and verify
+#   powershell -ExecutionPolicy Bypass -File infra/stack.ps1 -Status    # report only, change nothing
 
 [CmdletBinding()]
 param(

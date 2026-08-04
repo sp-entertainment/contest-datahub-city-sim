@@ -67,6 +67,9 @@ and `blindcity.sim.causal_check`.
    pin the project to 3.11.
 4. [x] Run `datahub docker quickstart`. Confirm `localhost:9002` loads and
    `localhost:8080/api/graphql` answers unauthenticated. — both confirmed.
+   **Every session after the first: run `powershell -ExecutionPolicy Bypass -File infra/stack.ps1` instead.** Quickstart is for
+   creating the containers; the script starts them in order and, unlike quickstart, leaves them
+   configured to survive a Docker restart. See `docs/ERRORS.md`.
 5. [x] Register on Devpost: https://datahub.devpost.com/register
 6. [x] Join the DataHub Slack, channel `#agent-hackathon`, for live help from DataHub staff.
 

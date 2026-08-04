@@ -37,6 +37,22 @@ means, then queries Postgres and answers. The catalog plus the agent replace the
 wrote the simulation, we have ground truth, so the same agent can be run twice on one seed — with and
 without DataHub context — to measure whether metadata actually improves decisions.
 
+## Before anything else: bring the stack up
+
+```powershell
+powershell -ExecutionPolicy Bypass -File infra/stack.ps1
+```
+
+Starts Docker Desktop if needed, brings the seven containers up in dependency order, waits on
+health, and verifies that GMS GraphQL and warehouse SQL actually answer. Idempotent — run it any
+time. `-Status` reports without changing anything.
+
+Do not skip this and do not assume the stack is up because it was up an hour ago. The Docker engine
+on this host restarts often, and until 2026-08-03 the DataHub containers were configured never to
+come back afterwards. `docker ps` showing two containers instead of seven is the normal failure.
+**If you ever run `datahub docker quickstart`, run `infra/stack.ps1` again after it** — quickstart
+recreates its containers and resets their restart policy.
+
 ## Read these first, in order
 
 1. `AGENTS.md` — the vision statement, immutable, plus constraints and conventions.
@@ -45,7 +61,9 @@ without DataHub context — to measure whether metadata actually improves decisi
 3. `.tasks/mvp/TASKS.md` — current status and the day-by-day plan. The `Start here` section at the
    top tells you where each kind of learning gets written down.
 4. `docs/ENVIRONMENT.md` — what is running, how to reach it, and every verified command.
-5. `docs/ERRORS.md` — traps already hit, so they are not rediscovered.
+5. `docs/ERRORS.md` — traps already hit, so they are not rediscovered. **Read this one properly
+   rather than skimming it.** Several entries describe defects that passed a full green test suite,
+   and the section on saturated columns describes a mistake this project has now made four times.
 
 ## Where things stand
 
