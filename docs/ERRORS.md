@@ -223,3 +223,53 @@ benchmark arms writing concurrently this would have reported one verdict over al
 interpolated. `datahub-emit` defaults to the most recent run, `--run-id` selects another, and
 `--all-runs` opts into the old pooled behaviour deliberately. The evaluated scope is printed with
 the summary line so a pooled result cannot be mistaken for a scoped one.
+
+### DataHub containers never come back after a Docker restart
+
+**Symptom.** The engine restarts (update, crash, reboot) and afterwards only `blindcity-postgres`
+and `datahub-mysql-1` are running. The five DataHub quickstart containers sit at `Exited (255)`.
+Starting them all at once then produces a fresh round of 255s, which looks like a cascading
+dependency failure.
+
+**Cause.** Two things, neither of which is a cascade.
+
+1. **Restart policy.** DataHub's quickstart compose sets `restart: no` on its containers. Our
+   `infra/postgres/docker-compose.yml` sets `unless-stopped`. So on every engine restart Postgres
+   heals itself and DataHub does not — the asymmetry that made this look like DataHub-specific
+   flakiness.
+2. **Exit 255 is not a fault.** `OOMKilled=false`, empty `State.Error`, `RestartCount=0`. 255 is
+   what the daemon records when it terminates a *running* container during its own shutdown. It is
+   a shutdown signature, not a crash signature, and reading it as a crash sends you looking for a
+   bug that is not there.
+
+The genuine ordering constraint is real but smaller than it appears: OpenSearch and Kafka must be
+healthy before GMS will start cleanly.
+
+**Fix.** `infra/stack.ps1`. Starts everything in dependency order, waits on health at each tier,
+then applies `docker update --restart unless-stopped` to all seven so the next engine restart
+recovers by itself. Idempotent — safe to run when things are already up.
+
+```powershell
+pwsh infra/stack.ps1            # bring up and verify
+pwsh infra/stack.ps1 -Status    # report only, changes nothing
+```
+
+**The catch.** `datahub docker quickstart` *recreates* its containers and re-downloads its compose
+file, which resets the policy to `no`. Re-run `infra/stack.ps1` after any quickstart.
+
+**Also worth setting.** Docker Desktop's `AutoStart` is `False` on this host, so a reboot leaves
+the daemon down entirely. Enable "Start Docker Desktop when you sign in" in Settings > General if
+you want the stack to survive a restart unattended.
+
+### `docker start @array` splats a single-element result one character at a time
+
+**Symptom.** `Error response from daemon: No such container: d` / `: a` / `: t` ... one line per
+letter of the container name.
+
+**Cause.** `Where-Object` returns a bare string when exactly one item matches, not an array.
+Splatting a string with `@` passes each character as a separate argument.
+
+**Fix.** Force an array with `@(...)` around the pipeline, and pass it to the native command
+directly (`docker start $present`) rather than splatting. Note this failure was invisible while the
+container happened to be running already — the script reported success. Test recovery paths by
+actually stopping the thing first.
