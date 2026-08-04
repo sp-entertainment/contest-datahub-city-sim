@@ -217,12 +217,19 @@ green_turn=31, final≈0.653. Deterministic trajectories. 93 tests pass.
 
 The original contribution. Do not cut.
 
-- [ ] Agent loop: read state, DataHub MCP for context, SQL, decide, actuate, advance.
-- [ ] `TOOLS_IS_MUTATION_ENABLED=true` set so mutation tools register.
-- [ ] `agent_datahub` and `agent_raw` as two controllers over one implementation — identical model,
+**In progress. See `.tasks/mvp/SLICE6-HANDOFF.md` before continuing.**
+
+- [x] Agent loop: read state, catalog for context, SQL, decide, actuate, advance.
+      `uv run agent --arm agent_datahub|agent_raw`.
+- [x] `agent_datahub` and `agent_raw` as two controllers over one implementation — identical model,
       prompt, tool budget, and SQL access, differing only in catalog context. **Any other difference
-      between them is a bug that invalidates the headline result.**
+      between them is a bug that invalidates the headline result.** No branch on the arm exists in
+      the loop; guarded by `tests/test_agent.py`.
+- [x] Crisis history written to the warehouse, so the cause of the crisis is discoverable by SQL.
+- [ ] Clean live smoke run for both arms, and the real per-arm cost of a 36-turn run for H3.
 - [ ] Agent writes findings back into the catalog.
+- [ ] `TOOLS_IS_MUTATION_ENABLED=true` — only applies if the MCP path is adopted; the catalog is
+      currently read over GMS GraphQL. See the handoff for the reasoning and the seam.
 
 ### Slice 7 — Viewer and the human arm
 
