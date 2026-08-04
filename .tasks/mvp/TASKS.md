@@ -2,8 +2,17 @@
 
 **Objective.** Ship a working Blind City entry by 2026-08-10, 5:00pm EDT.
 
-**Status.** Updated 2026-08-02 (implementer session). Four reopened Slice 1/3 items done; Slice 4
-control surface done; Slice 5 benchmark done. Stop before Slice 6 (agent arms).
+**Status.** Updated 2026-08-03. Slices 0–5 done and verified against live infrastructure. The
+health index was rebuilt after a review found three components that did not measure what they
+claimed, congestion was un-saturated, assertions were scoped to a `run_id`, and the warehouse was
+re-recorded against a live Postgres. 102 tests, ruff clean.
+
+**Next: Slice 6 — the agent arms.** Unstarted, and it is the entire result. Everything built so
+far is apparatus for one number: whether `agent_datahub` recovers the city better than `agent_raw`.
+
+Two Slice 4 items remain open, both needing a live Analytics Agent process rather than more code:
+confirming hands-on that it issues SQL against our warehouse, and demonstrating the manual loop
+end to end.
 
 ## Start here
 
@@ -110,10 +119,11 @@ The tick loop and the economy. Nothing else can be verified until rows exist.
 - [x] Writes rows to Postgres.
 - [x] **Guard determinism across processes.** `tests/test_sim_determinism.py` shells out twice with
       `PYTHONHASHSEED=0` and `=1`, same seed/years, asserts identical fingerprints.
-- [x] **Re-record the warehouse numbers.** In-memory fingerprint for seed 42 / 20y re-recorded after
-      road-repair + lever calibration (see ENVIRONMENT). **Postgres row totals still stale** —
-      Docker daemon was unavailable this session; re-run `sim --seed 42 --years 20 --reset-warehouse`
-      when up. Marked honestly in ENVIRONMENT.
+- [x] **Re-record the warehouse numbers.** Done 2026-08-03 against a live Postgres. 2,122,301 rows
+      for one run, now recorded **per `run_id`** rather than whole-table, since the warehouse
+      appends and the arms will write in parallel. `docs/ENVIRONMENT.md` also carries the column
+      distributions and an `at ceiling` figure per column — re-check that table after any
+      calibration change.
 
 **Verified when:** `uv run sim --seed 42 --years 20` completes twice with byte-identical output, the
 row counts in Postgres are in the millions, and the city's state at any tick can be reconstructed
