@@ -13,7 +13,7 @@ from typing import Any
 
 import psycopg
 
-from blindcity.agent import runscope
+from blindcity.agent import runscope, writeback
 from blindcity.agent.catalog import build_catalog
 from blindcity.agent.controller import DEFAULT_TOOL_BUDGET, AgentController
 from blindcity.agent.llm import DEFAULT_MODEL, LLMClient
@@ -45,6 +45,7 @@ def run_arm(
     tool_budget: int = DEFAULT_TOOL_BUDGET,
     llm: LLMClient | None = None,
     keep_views: bool = False,
+    write_back_findings: bool = True,
 ) -> ArmRun:
     """Play one arm. `turns` truncates the scenario for smoke tests; None plays it in full."""
     if arm not in ARMS:
@@ -90,6 +91,12 @@ def run_arm(
         )
         result = harness.run(controller, arm=arm, prepared=prepared)
         report = controller.report()
+
+        # After scoring, never before: write-back must not be able to influence the run it
+        # describes. The control arm is skipped inside `write_back` rather than here, so the
+        # decision stays in one place and no branch on the arm enters this loop.
+        if write_back_findings:
+            report["write_back"] = writeback.write_back(report, str(result.run_id)).to_dict()
     finally:
         # The per-run views are scaffolding, not data. The rows they read stay in the warehouse
         # under their run_id; only the schema of views goes. Keep them with --keep-views when

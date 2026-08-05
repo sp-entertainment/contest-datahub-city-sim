@@ -72,6 +72,9 @@ class FakeCursor:
     def fetchmany(self, n):
         return self.rows[:n]
 
+    def fetchall(self):
+        return list(self.rows)
+
     def fetchone(self):
         return self.rows[0] if self.rows else None
 
@@ -357,3 +360,129 @@ def test_report_captures_what_an_auditor_needs(controllers):
     for key in ("controller", "model", "catalog", "tool_budget", "usage", "turns"):
         assert key in report
     assert report["catalog"] == "datahub"
+
+
+# --- Catalog write-back ---------------------------------------------------------------------
+
+
+def test_writeback_finds_only_real_tables():
+    """Table names are matched against the schema, so a CTE alias or an information_schema
+    probe never becomes a dataset URN that does not exist."""
+    from blindcity.agent.writeback import tables_queried
+
+    counts = tables_queried(
+        [
+            "SELECT * FROM road_monthly WHERE tick > 60",
+            "SELECT table_name FROM information_schema.tables",
+            "WITH recent AS (SELECT * FROM water_monthly) SELECT * FROM recent",
+            "SELECT a.wear FROM public.road_monthly a JOIN budget_monthly b ON a.tick = b.tick",
+        ]
+    )
+    assert counts == {"road_monthly": 2, "water_monthly": 1, "budget_monthly": 1}
+    assert "recent" not in counts
+    assert "tables" not in counts
+
+
+def test_writeback_skips_the_control_arm():
+    """Giving agent_raw a write path would be a second difference between the arms."""
+    from blindcity.agent.writeback import write_back
+
+    out = write_back({"catalog": "none", "turns": []}, "1")
+    assert out.datasets == 0
+    assert "control arm" in out.skipped
+
+
+def test_writeback_preserves_existing_documentation(monkeypatch):
+    """UPSERT replaces the whole aspect. Writing only the new keys would strip the table's
+    description — the very thing agent_datahub depends on — a little more with every run."""
+    from blindcity.agent import writeback
+
+    emitted: list[tuple[str, str, dict]] = []
+    monkeypatch.setattr(
+        writeback,
+        "_emit_mcp",
+        lambda gms, urn, aspect_name, aspect: emitted.append((urn, aspect_name, aspect)),
+    )
+    monkeypatch.setattr(
+        writeback,
+        "_current_properties",
+        lambda client, gms, urn: {
+            "name": "road_monthly",
+            "description": "Traffic, wear, and congestion per segment per month.",
+            "customProperties": {"agent_finding.7.arm": "agent_datahub"},
+        },
+    )
+
+    report = {
+        "catalog": "datahub",
+        "controller": "agent_datahub",
+        "turns": [
+            {"queries": ["SELECT wear FROM road_monthly"], "rationale": "Roads are the problem."}
+        ],
+    }
+    out = writeback.write_back(report, "9")
+
+    assert out.datasets == 1
+    _urn, aspect_name, aspect = emitted[0]
+    assert aspect_name == "datasetProperties"
+    assert aspect["description"] == "Traffic, wear, and congestion per segment per month."
+    # The earlier run's finding survives alongside the new one.
+    assert aspect["customProperties"]["agent_finding.7.arm"] == "agent_datahub"
+    assert aspect["customProperties"]["agent_finding.9.conclusion"] == "Roads are the problem."
+
+
+def test_writeback_records_failures_rather_than_swallowing_them(monkeypatch):
+    """A silent skip looks identical to an agent that found nothing worth writing."""
+    from blindcity.agent import writeback
+
+    monkeypatch.setattr(
+        writeback, "_current_properties", lambda client, gms, urn: {"customProperties": {}}
+    )
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("GMS is down")
+
+    monkeypatch.setattr(writeback, "_emit_mcp", boom)
+    out = writeback.write_back(
+        {"catalog": "datahub", "turns": [{"queries": ["SELECT 1 FROM road_monthly"]}]}, "9"
+    )
+    assert out.datasets == 0
+    assert "GMS is down" in out.failures["road_monthly"]
+
+
+def test_sql_row_cap_is_enforced_in_sql_not_in_python():
+    """psycopg's default cursor is client-side: `execute` pulls the whole result set before a
+    single row is read. Capping with `fetchmany` let a `SELECT * FROM citizen_monthly` drag
+    ~290k rows across the wire and stall a one-turn run past nine minutes."""
+    ctx = ToolContext(conn=FakeConn(), run_id=1, levers=defaults())
+    dispatch(ctx, "sql_query", {"query": "SELECT * FROM citizen_monthly"})
+    executed = ctx.conn.cursor_obj.executed[0].lower()
+    assert "limit" in executed, f"no server-side cap in: {executed}"
+    assert "select * from citizen_monthly" in executed
+
+
+def test_truncated_results_say_so():
+    """A silently clipped result invites a conclusion drawn from the first fifty rows of an
+    unordered scan."""
+    from blindcity.agent.tools import MAX_ROWS
+
+    conn = FakeConn()
+    conn.cursor_obj.description = [_Col("n")]
+    conn.cursor_obj.rows = [{"n": i} for i in range(MAX_ROWS + 1)]
+    ctx = ToolContext(conn=conn, run_id=1, levers=defaults())
+    out = dispatch(ctx, "sql_query", {"query": "SELECT n FROM t"})
+    assert out["truncated"] is True
+    assert out["row_count"] == MAX_ROWS
+    assert "cut off" in out["note"]
+
+
+def test_exactly_full_page_is_not_reported_as_truncated():
+    from blindcity.agent.tools import MAX_ROWS
+
+    conn = FakeConn()
+    conn.cursor_obj.description = [_Col("n")]
+    conn.cursor_obj.rows = [{"n": i} for i in range(MAX_ROWS)]
+    ctx = ToolContext(conn=conn, run_id=1, levers=defaults())
+    out = dispatch(ctx, "sql_query", {"query": "SELECT n FROM t"})
+    assert out["truncated"] is False
+    assert out["row_count"] == MAX_ROWS

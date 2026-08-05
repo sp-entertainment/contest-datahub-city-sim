@@ -125,13 +125,21 @@ def run_sql(ctx: ToolContext, query: str) -> dict[str, Any]:
         return {"error": "one statement per call"}
 
     # The connection's search_path already points at this run's views (see runscope.py), so the
-    # query the model wrote is the query that runs — no rewriting, no predicate to remember.
+    # predicate scoping the query to one run is structural — nothing to rewrite for that.
+    #
+    # The row cap, though, must be enforced in SQL rather than by `fetchmany`. psycopg's default
+    # cursor is client-side: `execute` transfers the whole result set before a single row is
+    # read. An unqualified `SELECT * FROM citizen_monthly` moved ~290k wide rows across the wire
+    # and stalled a one-turn run past nine minutes, to show the model fifty of them.
+    #
+    # One extra row is fetched so `truncated` reports whether anything was actually cut.
     statement = query.rstrip().rstrip(";")
+    capped = f"SELECT * FROM ({statement}) AS _agent_query LIMIT {MAX_ROWS + 1}"
     try:
         with ctx.conn.cursor() as cur:
-            cur.execute(statement)
+            cur.execute(capped)
             columns = [d.name for d in (cur.description or [])]
-            rows = cur.fetchmany(MAX_ROWS)
+            rows = cur.fetchall()
     except psycopg.Error as exc:
         ctx.conn.rollback()
         message = str(exc).strip().splitlines()[0][:300]
@@ -141,13 +149,22 @@ def run_sql(ctx: ToolContext, query: str) -> dict[str, Any]:
     # tuple. Iterating it directly yields column *names* — which is exactly what the model was
     # handed on the first live run: every query came back as a list of its own headers, so it
     # re-asked the same question six different ways and burned the whole turn budget.
-    out_rows = [[_cell(row[c]) for c in columns] for row in rows]
-    return {
+    truncated = len(rows) > MAX_ROWS
+    out_rows = [[_cell(row[c]) for c in columns] for row in rows[:MAX_ROWS]]
+    payload: dict[str, Any] = {
         "columns": columns,
         "rows": out_rows,
         "row_count": len(out_rows),
-        "truncated": len(out_rows) >= MAX_ROWS,
+        "truncated": truncated,
     }
+    if truncated:
+        # Said plainly, because a silently clipped result invites the model to draw a conclusion
+        # from the first fifty rows of an unordered scan.
+        payload["note"] = (
+            f"Result was cut off at {MAX_ROWS} rows. Aggregate, filter, or ORDER BY to get an "
+            "answer rather than a sample."
+        )
+    return payload
 
 
 def _cell(value: Any) -> Any:

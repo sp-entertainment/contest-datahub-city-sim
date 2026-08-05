@@ -90,13 +90,20 @@ class LLMClient:
         *,
         api_key: str | None = None,
         temperature: float = 0.0,
-        timeout: float = 120.0,
-        max_retries: int = 3,
+        timeout: float = 90.0,
+        max_retries: int = 5,
+        min_interval: float = 6.5,
+        backoff_base: float = 8.0,
     ) -> None:
         self.model = model
         self.temperature = temperature
         self.timeout = timeout
         self.max_retries = max_retries
+        # ~9 requests/minute, under the free tier's limit. Override with LLM_MIN_INTERVAL if the
+        # key gets a paid tier, where this is pure waiting.
+        self.min_interval = float(os.environ.get("LLM_MIN_INTERVAL", min_interval))
+        self.backoff_base = backoff_base
+        self._last_request = 0.0
         key = api_key or os.environ.get("GOOGLE_API_KEY")
         if not key:
             raise LLMError(
@@ -164,25 +171,61 @@ class LLMClient:
             raw_parts=parts,
         )
 
+    def _pace(self) -> None:
+        """Hold a minimum gap between requests.
+
+        The key is on the free tier, which limits requests per minute. Firing a turn's tool calls
+        back to back trips that limit within seconds, and no amount of retrying inside the same
+        minute clears it — the first live runs failed every turn this way while a single call
+        made by hand succeeded instantly. A full 36-turn run is roughly 216 calls per arm, so
+        pacing is the difference between an evaluation and a pile of failed turns.
+        """
+        if self.min_interval <= 0:
+            return
+        wait = self.min_interval - (time.monotonic() - self._last_request)
+        if wait > 0:
+            time.sleep(wait)
+
+    @staticmethod
+    def _retry_after(payload: dict[str, Any]) -> float | None:
+        """Google returns its own backoff in the error details. Prefer it to a guess."""
+        for detail in (payload.get("error") or {}).get("details") or []:
+            delay = detail.get("retryDelay")
+            if isinstance(delay, str) and delay.endswith("s"):
+                try:
+                    return float(delay[:-1])
+                except ValueError:
+                    continue
+        return None
+
     def _post_with_retries(self, url: str, body: dict[str, Any]) -> dict[str, Any]:
         headers = {"x-goog-api-key": self._key, "Content-Type": "application/json"}
         last: Exception | None = None
         for attempt in range(self.max_retries):
+            self._pace()
             try:
                 with httpx.Client(timeout=self.timeout) as client:
                     r = client.post(url, json=body, headers=headers)
+                self._last_request = time.monotonic()
                 if r.status_code == 200:
                     return r.json()
-                # 429 and 5xx are worth another go; 4xx otherwise is our bug and retrying
+                # 429 and 5xx are worth another go; any other 4xx is our bug, and retrying
                 # just burns quota against the same broken request.
-                if r.status_code == 429 or r.status_code >= 500:
-                    last = LLMError(f"HTTP {r.status_code}: {r.text[:300]}")
-                else:
+                if r.status_code != 429 and r.status_code < 500:
                     raise LLMError(f"HTTP {r.status_code}: {r.text[:300]}")
+                last = LLMError(f"HTTP {r.status_code}: {r.text[:300]}")
+                sleep_for = None
+                if r.status_code == 429:
+                    try:
+                        sleep_for = self._retry_after(r.json())
+                    except ValueError:
+                        sleep_for = None
             except httpx.HTTPError as exc:
                 last = exc
+                sleep_for = None
+                self._last_request = time.monotonic()
             if attempt < self.max_retries - 1:
-                time.sleep(2.0 * (2**attempt))
+                time.sleep(sleep_for if sleep_for else self.backoff_base * (2**attempt))
         raise LLMError(f"request failed after {self.max_retries} attempts: {last}")
 
 
