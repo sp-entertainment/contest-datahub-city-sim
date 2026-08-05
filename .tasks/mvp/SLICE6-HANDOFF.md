@@ -3,10 +3,36 @@
 **Written 2026-08-03.** Read `.tasks/mvp/HANDOFF.md` first for orientation and the hard rules;
 this file covers only what is specific to the agent arms and what is left to do on them.
 
+## BLOCKED on the API key — read this first
+
+**2026-08-04.** Slice 6 is code-complete and cannot be validated until the key is replaced.
+
+The key is on Google's free tier and its quota is exhausted. Current behaviour, measured:
+
+- A single hand-made call succeeds in ~1.1s.
+- Inside a run, the first call succeeds and everything after it returns **429 quota exceeded**,
+  surviving five retries across ~60 seconds of waiting. That is a daily cap, not a per-minute
+  burst limit — pacing does not clear it.
+- Every `pro` model 429s outright. `gemini-2.5-flash` 404s with "no longer available to new
+  users" while still appearing in the models listing. Only `gemini-3.6-flash`,
+  `gemini-3.5-flash` and `gemini-flash-latest` respond at all.
+
+**What is needed:** a key with billing enabled, on a paid tier. A full scored run is roughly 216
+LLM calls per arm, times two arms, times however many seeds — that is not a free-tier workload.
+
+Once the key is replaced:
+
+1. Set `LLM_MIN_INTERVAL=0` in `.env`. The 6.5s pacing exists only for the free tier and is pure
+   waiting on a paid one.
+2. Re-check which models actually answer — availability has moved under this project twice.
+3. `uv run agent --arm agent_raw --turns 2` then the same for `agent_datahub`.
+
+Nothing else blocks. The stack is up, the warehouse is loaded, the tests are green.
+
 ## State: built, tested, not yet proven live
 
-`uv run agent --arm agent_datahub|agent_raw` runs the closed loop against the live stack. 126
-tests pass, ruff clean, everything pushed to `main` (`1d78683`).
+`uv run agent --arm agent_datahub|agent_raw` runs the closed loop against the live stack. 133
+tests pass, ruff clean, everything pushed to `main` (`0dd11bd`).
 
 What exists:
 
@@ -18,6 +44,7 @@ What exists:
 | `agent/runscope.py` | Per-run view schema so SQL scoping is structural, not remembered |
 | `agent/controller.py` | The loop, as a Slice 5 `Controller` |
 | `agent/run.py` | Wires a run together; `ARMS` maps arm name to catalog context |
+| `agent/writeback.py` | The agent's findings recorded back onto the datasets it queried |
 
 ## The one thing that must not be broken
 
@@ -31,15 +58,16 @@ revealing the scoring function. If you change the prompt, those tests are the co
 
 ## What is left
 
-1. **Finish the live smoke test.** Two turns per arm on a working model, confirming the agent
-   reads the warehouse, forms a diagnosis, and sets levers. The control arm's first live run is
-   what surfaced the `dict_row` bug below; it has been fixed but the fixed version has not
-   completed a clean two-turn run for either arm.
-2. **Record the real cost per arm** and extrapolate a 36-turn run, so H3 can be budgeted. The
-   CLI already prints an extrapolation; it just needs a clean run behind it.
-3. **Catalog write-back.** The fourth Slice 6 checkbox, not started. The agent should record what
-   it found back into DataHub rather than working around gaps.
-4. **Decide whether the MCP path matters.** See below.
+1. **A clean live smoke run, blocked on the key.** No run has yet completed with the agent
+   actually reading data and setting levers for a stated reason. Every attempt has died on quota.
+   The machinery around it is proven — the warehouse writes, the run scoping, the tool dispatch,
+   the scoring, the error path — but the thing being tested has never happened.
+2. **The real cost per arm.** The CLI already extrapolates; it needs one clean run behind it.
+   Nothing measured so far is usable: the numbers came from runs that were mostly failed calls.
+3. **Decide whether the MCP path matters.** See below.
+
+Write-back is done (`agent/writeback.py`), but has never run against a live GMS for the same
+reason — the agent has to query something before it has findings to record.
 
 ## Findings that change the plan
 
