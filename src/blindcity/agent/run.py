@@ -16,7 +16,7 @@ import psycopg
 from blindcity.agent import runscope, writeback
 from blindcity.agent.catalog import build_catalog
 from blindcity.agent.controller import DEFAULT_TOOL_BUDGET, AgentController
-from blindcity.agent.llm import DEFAULT_MODEL, LLMClient
+from blindcity.agent.llm import LLM, build_llm
 from blindcity.benchmark.harness import RunHarness
 from blindcity.benchmark.results import RunResult
 from blindcity.benchmark.scenario import INFRASTRUCTURE_CRISIS, Scenario
@@ -40,10 +40,10 @@ def run_arm(
     arm: str,
     *,
     scenario: Scenario = INFRASTRUCTURE_CRISIS,
-    model: str = DEFAULT_MODEL,
+    model: str | None = None,
     turns: int | None = None,
     tool_budget: int = DEFAULT_TOOL_BUDGET,
-    llm: LLMClient | None = None,
+    llm: LLM | None = None,
     keep_views: bool = False,
     write_back_findings: bool = True,
 ) -> ArmRun:
@@ -65,7 +65,8 @@ def run_arm(
         )
 
     harness = RunHarness(scenario)
-    client = llm or LLMClient(model=model)
+    # One factory for both arms: they cannot end up on different providers or models.
+    client = llm or build_llm(model=model)
 
     # Two connections on purpose. The writer bulk-loads with COPY against the real tables in
     # `public`; the agent reads through a per-run view schema with `search_path` pointed at it.

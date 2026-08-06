@@ -62,7 +62,12 @@ class ToolContext:
 
 
 def tool_declarations() -> list[dict[str, Any]]:
-    """The function declarations sent to the model. Identical for both arms."""
+    """The function declarations sent to the model. Identical for both arms.
+
+    Plain JSON Schema, which is what OpenAI-compatible servers expect. The Gemini client
+    upper-cases the type names on its way out, so this stays the single definition and neither
+    backend can hand one arm a differently-worded tool than the other.
+    """
     lever_lines = "\n".join(
         f"  {name}: {lev.minimum} to {lev.maximum} ({lev.unit}) - {lev.description}"
         for name, lev in LEVERS.items()
@@ -78,10 +83,10 @@ def tool_declarations() -> list[dict[str, Any]]:
                 "Use information_schema to discover tables and columns."
             ),
             "parameters": {
-                "type": "OBJECT",
+                "type": "object",
                 "properties": {
                     "query": {
-                        "type": "STRING",
+                        "type": "string",
                         "description": "A single SELECT or WITH statement.",
                     }
                 },
@@ -96,10 +101,10 @@ def tool_declarations() -> list[dict[str, Any]]:
                 "Levers persist until changed. Levers and ranges:\n" + lever_lines
             ),
             "parameters": {
-                "type": "OBJECT",
+                "type": "object",
                 "properties": {
                     "levers": {
-                        "type": "OBJECT",
+                        "type": "object",
                         "description": (
                             "Map of lever name to numeric value. Include only the levers you want "
                             "to change."

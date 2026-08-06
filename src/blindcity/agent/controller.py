@@ -30,11 +30,11 @@ import psycopg
 from blindcity.agent import runscope
 from blindcity.agent.catalog import CatalogSource, NoCatalog
 from blindcity.agent.llm import (
-    LLMClient,
+    LLM,
     LLMError,
+    ToolResult,
+    Turn,
     Usage,
-    model_turn,
-    tool_results_turn,
     user_turn,
 )
 from blindcity.agent.tools import ToolContext, dispatch, tool_declarations
@@ -83,7 +83,7 @@ class AgentController:
     """A `Controller` (see `blindcity.benchmark.controller`) driven by an LLM."""
 
     name: str
-    llm: LLMClient
+    llm: LLM
     conn: psycopg.Connection
     run_id: int
     catalog: CatalogSource = field(default_factory=NoCatalog)
@@ -111,7 +111,9 @@ class AgentController:
     def decide(self, state: CityState, turn: int, channel: dict[str, Any]) -> dict[str, float]:
         """One turn of the loop. Returns the levers to apply."""
         ctx = ToolContext(conn=self.conn, run_id=self.run_id, levers=dict(state.levers), turn=turn)
-        contents = [user_turn(self._turn_prompt(state, turn))]
+        # Provider-neutral: the controller never builds a wire format, so it cannot hand one arm
+        # a differently-shaped conversation than the other.
+        history: list[Turn] = [user_turn(self._turn_prompt(state, turn))]
         declarations = tool_declarations()
         queries: list[str] = []
         rationale = ""
@@ -121,7 +123,7 @@ class AgentController:
         for _ in range(self.tool_budget):
             try:
                 reply = self.llm.generate(
-                    system=self._system, contents=contents, tools=declarations
+                    system=self._system, history=history, tools=declarations
                 )
             except LLMError as exc:
                 # A failed turn must not abort the run: the harness still advances a month, and
@@ -137,13 +139,13 @@ class AgentController:
             if not reply.calls:
                 break
 
-            contents.append(model_turn(reply.raw_parts))
-            results: list[tuple[str, dict[str, Any]]] = []
+            history.append(Turn(role="model", text=reply.text, calls=reply.calls))
+            results: list[ToolResult] = []
             for call in reply.calls:
                 if call.name == "sql_query":
                     queries.append(str(call.args.get("query", "")))
-                results.append((call.name, dispatch(ctx, call.name, call.args)))
-            contents.append(tool_results_turn(results))
+                results.append(ToolResult(call=call, payload=dispatch(ctx, call.name, call.args)))
+            history.append(Turn(role="user", results=results))
 
             # Committing ends the turn. Anything after this is the model second-guessing itself
             # on a city it can no longer observe, and both arms are held to the same rule.

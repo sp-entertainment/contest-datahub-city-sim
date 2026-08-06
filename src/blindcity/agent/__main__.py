@@ -25,8 +25,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--model",
         default=None,
-        help="Gemini model. Defaults to $LLM_MODEL or gemini-2.5-flash. Use flash for smoke "
-        "tests and pro for anything whose output is evidence; both arms must match.",
+        help="Model id. Defaults to $LLM_MODEL. Both arms must use the same one -- that is a "
+        "fairness requirement, not a preference.",
     )
     parser.add_argument(
         "--turns",
@@ -40,6 +40,13 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=None,
         help="Tool calls the model may make per turn before it must commit.",
+    )
+    parser.add_argument(
+        "--provider",
+        choices=("local", "google"),
+        default=None,
+        help="Where inference runs. Defaults to $LLM_PROVIDER ('local' = an OpenAI-compatible "
+        "server such as LM Studio at $LLM_BASE_URL).",
     )
     parser.add_argument("--out", default=None, help="Write the run result JSON here.")
     parser.add_argument(
@@ -56,14 +63,14 @@ def main() -> int:
 
     # Imported here so `--help` works without a database, a key, or a running stack.
     from blindcity.agent.controller import DEFAULT_TOOL_BUDGET
-    from blindcity.agent.llm import DEFAULT_MODEL, LLMError
+    from blindcity.agent.llm import LLMError, build_llm
     from blindcity.agent.run import estimate_full_run, run_arm
     from blindcity.benchmark.scenario import INFRASTRUCTURE_CRISIS
 
     try:
         run = run_arm(
             args.arm,
-            model=args.model or DEFAULT_MODEL,
+            llm=build_llm(args.provider, args.model),
             turns=args.turns,
             tool_budget=args.tool_budget or DEFAULT_TOOL_BUDGET,
             keep_views=args.keep_views,

@@ -15,10 +15,27 @@ import pytest
 
 from blindcity.agent.catalog import DataHubCatalog, NoCatalog, build_catalog
 from blindcity.agent.controller import SYSTEM_PROMPT, AgentController
-from blindcity.agent.llm import Reply, Usage
+from blindcity.agent.llm import (
+    GeminiClient,
+    LocalClient,
+    Reply,
+    ToolCall,
+    ToolResult,
+    Turn,
+    Usage,
+)
 from blindcity.agent.run import ARMS
 from blindcity.agent.tools import ToolContext, dispatch, set_levers, tool_declarations
 from blindcity.levers import LEVERS, defaults
+
+
+def _turn_as_dict(turn):
+    return {
+        "role": turn.role,
+        "text": turn.text,
+        "calls": [(c.name, c.args) for c in turn.calls],
+        "results": [(r.call.name, r.payload) for r in turn.results],
+    }
 
 
 class FakeLLM:
@@ -33,10 +50,11 @@ class FakeLLM:
         self.contents: list[Any] = []
         self.usage = Usage()
 
-    def generate(self, *, system, contents, tools=None):
+    def generate(self, *, system, history, tools=None):
         self.systems.append(system)
         self.tool_sets.append(tools)
-        self.contents.append(json.loads(json.dumps(contents)))
+        # Serialised so a later mutation of the live objects cannot rewrite what we recorded.
+        self.contents.append([_turn_as_dict(x) for x in history])
         if self.replies:
             return self.replies.pop(0)
         return Reply(text="done", calls=[], usage=Usage(calls=1))
@@ -291,9 +309,7 @@ def _state():
 
 
 def _call(name, args):
-    from blindcity.agent.llm import FunctionCall
-
-    return FunctionCall(name=name, args=args)
+    return ToolCall(name=name, args=args, id="fixed-id")
 
 
 def test_decide_returns_the_levers_the_model_set(controllers):
@@ -486,3 +502,67 @@ def test_exactly_full_page_is_not_reported_as_truncated():
     out = dispatch(ctx, "sql_query", {"query": "SELECT n FROM t"})
     assert out["truncated"] is False
     assert out["row_count"] == MAX_ROWS
+
+
+# --- Backends -------------------------------------------------------------------------------
+#
+# The controller holds the conversation in a provider-neutral form and each backend serialises
+# it. These assert the serialisation, so a backend cannot quietly hand one arm a differently
+# shaped conversation than the other.
+
+
+def _history():
+    call = ToolCall(name="sql_query", args={"query": "SELECT 1"}, id="c1")
+    return [
+        Turn(role="user", text="Turn 1."),
+        Turn(role="model", text="Looking.", calls=[call]),
+        Turn(role="user", results=[ToolResult(call=call, payload={"rows": [[1]]})]),
+    ]
+
+
+
+
+def test_local_backend_serialises_a_tool_round_trip():
+    messages = LocalClient._messages("SYS", _history())
+    assert messages[0] == {"role": "system", "content": "SYS"}
+    assert messages[1] == {"role": "user", "content": "Turn 1."}
+    assistant = messages[2]
+    assert assistant["role"] == "assistant"
+    assert assistant["tool_calls"][0]["function"]["name"] == "sql_query"
+    # Arguments go over the wire as a JSON *string*, not an object.
+    assert json.loads(assistant["tool_calls"][0]["function"]["arguments"]) == {"query": "SELECT 1"}
+    # Results are keyed back to the call id, or the server cannot match them up.
+    assert messages[3]["role"] == "tool"
+    assert messages[3]["tool_call_id"] == "c1"
+
+
+def test_gemini_backend_serialises_a_tool_round_trip():
+    contents = GeminiClient._contents(_history())
+    assert contents[0] == {"role": "user", "parts": [{"text": "Turn 1."}]}
+    assert contents[1]["role"] == "model"
+    assert contents[1]["parts"][-1]["functionCall"]["name"] == "sql_query"
+    # Gemini returns tool output in the *user* role, as functionResponse parts.
+    assert contents[2]["role"] == "user"
+    assert contents[2]["parts"][0]["functionResponse"]["name"] == "sql_query"
+
+
+def test_backends_agree_on_the_tool_set():
+    """One declaration, two wire formats. Gemini wants upper-case OpenAPI type names; an
+    OpenAI-compatible server wants plain JSON Schema nested under a `function` key."""
+    declared = tool_declarations()
+    local = LocalClient._tools(declared)
+    gemini = GeminiClient._tools(declared)
+
+    assert [t["function"]["name"] for t in local] == [d["name"] for d in declared]
+    assert local[0]["function"]["parameters"]["type"] == "object"
+    assert gemini[0]["parameters"]["type"] == "OBJECT"
+    # Same tools, same descriptions - only the casing and nesting differ.
+    assert [t["name"] for t in gemini] == [d["name"] for d in declared]
+    assert gemini[0]["description"] == declared[0]["description"]
+
+
+def test_provider_factory_rejects_an_unknown_provider():
+    from blindcity.agent.llm import LLMError, build_llm
+
+    with pytest.raises(LLMError, match="unknown LLM_PROVIDER"):
+        build_llm("hal9000")
