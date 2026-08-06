@@ -31,8 +31,22 @@ $Tiers = @(
 $AllContainers = @('blindcity-postgres') + ($Tiers | ForEach-Object { $_.Containers })
 
 function Test-Daemon {
-    docker info --format '{{.ServerVersion}}' 2>$null | Out-Null
-    return $?
+    # $ErrorActionPreference = 'Stop' turns a native command's stderr into a terminating
+    # NativeCommandError in Windows PowerShell 5.1. A dead daemon writes to stderr, so the
+    # original version of this function threw in precisely the case it exists to detect --
+    # the script died instead of starting Docker Desktop. Exit code, not $?, is the signal.
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $null = docker info --format '{{.ServerVersion}}' 2>$null
+        return ($LASTEXITCODE -eq 0)
+    }
+    catch {
+        return $false
+    }
+    finally {
+        $ErrorActionPreference = $previous
+    }
 }
 
 function Get-ContainerState([string]$Name) {

@@ -309,3 +309,52 @@ Splatting a string with `@` passes each character as a separate argument.
 directly (`docker start $present`) rather than splatting. Note this failure was invisible while the
 container happened to be running already — the script reported success. Test recovery paths by
 actually stopping the thing first.
+
+### Docker Desktop dies on startup: "initializing Inference manager"
+
+**Symptom.** Docker Desktop shows *An unexpected error occurred… needs to close*, with:
+
+```
+starting services: initializing Inference manager: listening on
+unix://C:/Users/spect/AppData/Local/Docker/run/dockerInference:
+remove …/dockerInference: The file cannot be accessed by the system.
+```
+
+The daemon never comes up, `com.docker.service` stays `Stopped`, and `docker` commands hang or
+report the missing named pipe.
+
+**Cause.** An unclean shutdown leaves orphaned AF_UNIX socket files in
+`%LOCALAPPDATA%\Docker\run` — zero-byte entries with the `ReparsePoint` attribute. Docker tries
+to remove one before rebinding it and cannot. Neither can anything else: Windows will not open an
+orphaned socket reparse point through normal file APIs, so `Remove-Item -Force` fails on each with
+"The file cannot be accessed by the system."
+
+**Fix.** Quit Docker, then rename the whole directory. Docker recreates it on next start.
+
+```powershell
+Get-Process | Where-Object { $_.ProcessName -like "*ocker*" } | Stop-Process -Force
+Rename-Item "$env:LOCALAPPDATA\Docker\run" "run.stale"
+Start-Process "C:\Program Files\Docker\Docker\Docker Desktop.exe"
+```
+
+Renaming the parent works where deleting the children does not, because it never opens them. The
+leftover directory holds 0 bytes and can be deleted after the next reboot, which releases the
+kernel objects.
+
+**Do NOT click "Reset to factory defaults".** It sits next to Quit in that dialog and destroys
+every container and volume — the warehouse's run history and the entire DataHub catalog — to fix
+three empty files. Both are rebuildable (the simulation is deterministic and `datahub-emit`
+reruns) but it is hours of work for nothing.
+
+### `infra/stack.ps1` threw instead of starting a stopped Docker
+
+**Symptom.** With the daemon down, the script exited with a `NativeCommandError` from its own
+`docker info` probe rather than launching Docker Desktop.
+
+**Cause.** `$ErrorActionPreference = 'Stop'` turns a native command's *stderr* into a terminating
+error in Windows PowerShell 5.1. A dead daemon writes to stderr, so `Test-Daemon` threw in exactly
+the case it exists to detect.
+
+**Fix.** Relax the preference around the probe and test `$LASTEXITCODE`, not `$?`. Every earlier
+run had Docker already up, which is why a function whose entire purpose is the down case had never
+executed its down path.
