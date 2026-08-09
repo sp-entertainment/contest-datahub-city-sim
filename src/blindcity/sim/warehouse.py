@@ -260,6 +260,38 @@ def reset_warehouse(conn: psycopg.Connection) -> None:
     ensure_schema(conn)
 
 
+class WarehouseInUse(RuntimeError):
+    """Raised when a destructive reset would land on top of a run that is still playing."""
+
+
+# A run that started this recently and has not finished is presumed alive. Longer than any run
+# takes, short enough that a killed run stops blocking resets by the next working session.
+IN_FLIGHT_HOURS = 2.0
+
+
+def runs_in_flight(conn: psycopg.Connection, *, younger_than_hours: float = IN_FLIGHT_HOURS) -> list[int]:
+    """Run ids that have started, have not finished, and are too young to be abandoned.
+
+    The signal is deliberately weak — Postgres does not tell us whether the process that opened a
+    run is alive — so this errs toward *not* clearing. A stale row costs a `--force-reset`; a
+    wrong answer the other way deletes a run mid-play, which is the failure this exists to stop.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT EXISTS (SELECT 1 FROM information_schema.tables "
+            "WHERE table_schema = 'public' AND table_name = 'sim_run') AS present"
+        )
+        row = cur.fetchone()
+        if not row or not row["present"]:
+            return []
+        cur.execute(
+            "SELECT run_id FROM sim_run WHERE finished_at IS NULL "
+            "AND started_at >= now() - make_interval(secs => %s) ORDER BY run_id",
+            (younger_than_hours * 3600.0,),
+        )
+        return [int(r["run_id"]) for r in cur.fetchall()]
+
+
 @dataclass
 class WarehouseWriter:
     """Buffers monthly rows and flushes in batches."""

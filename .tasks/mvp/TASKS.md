@@ -194,6 +194,17 @@ via `--dump-lineage`. All 29 edges pass validation. Live GMS emit requires DataH
       live agent process not run this session — Docker down.)
 - [ ] Manual loop demonstrated end to end: ask, read, pull, observe. (needs live agent)
 
+**Deferred 2026-08-09, deliberately.** Both remaining items are about the *upstream* DataHub
+Analytics Agent, which exists here only as the tooling the `human` mode gets. Neither touches
+`agent_datahub` vs `agent_raw`, which is the comparison the submission is built on. So they wait
+until the agent modes reach the score we want; the human loop is the last thing wired up. The
+specific risk when they are picked up is the one DECISIONS 2026-08-01 chased down: DataHub uses
+Postgres for two unrelated things — a queryable warehouse and the Analytics Agent's own
+conversation store — and DataHub's MySQL on 3306 is a third database in the mix. Pointing the
+agent at the wrong one reads as working right up until the answers are nonsense, so the check is
+"a query was observed hitting `blindcity` on 5432", not "the config is written down". If time runs
+out, the cut line already covers this: ship the two-mode comparison and say so.
+
 ### Slice 5 — The benchmark: scenario, scoring, controllers
 
 **New 2026-08-02. This is the product** — see `docs/DECISIONS.md`. Everything else is scaffolding
@@ -230,6 +241,25 @@ The original contribution. Do not cut.
 - [ ] Agent writes findings back into the catalog.
 - [ ] `TOOLS_IS_MUTATION_ENABLED=true` — only applies if the MCP path is adopted; the catalog is
       currently read over GMS GraphQL. See the handoff for the reasoning and the seam.
+- [x] **The warehouse is cleared before every agent run.** Added 2026-08-09. `--keep-warehouse`
+      opts out; `--force-clean` overrides the guard that refuses to clear under a run still
+      playing. A warehouse holding twenty previous cities changes planner choices, `ANALYZE` cost,
+      and how much a mis-scoped query can see — none of which may differ between two modes that
+      are meant to be identical. During development a clean slate is worth more than an archive.
+- [ ] **Close the `public.*` search_path escape.** Scheduled for immediately after the clean
+      comparison run, at the user's call — 2026-08-09. The agent's connection has `search_path`
+      set to its per-run view schema with `public` left out, so unqualified `SELECT ... FROM
+      road_monthly` is structurally scoped to one run. But `search_path` is a *resolution order,
+      not a permission*: a model that writes `public.road_monthly` reads the pooled table across
+      every run in the database and gets a confident number about a city that does not exist.
+      Nothing fails; it lies. No observed query has done it, and both modes are equally exposed so
+      it cannot bias the comparison — but "the model has not thought to type six extra characters"
+      is not a correctness guarantee, and a model that reads `information_schema` (which it can,
+      and which reports `public` as the real schema) and decides to be explicit walks straight
+      through. **Fix:** a separate read-only role with `REVOKE ... ON SCHEMA public`, granted only
+      on the run schema, so the view-creating connection and the reading connection hold different
+      credentials. Clearing the warehouse each run shrinks the blast radius — one stale run rather
+      than twenty — but does not close it, because both modes still write to `public`.
 
 ### Slice 7 — Viewer and the human mode
 

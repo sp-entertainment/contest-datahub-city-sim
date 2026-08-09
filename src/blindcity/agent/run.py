@@ -20,7 +20,13 @@ from blindcity.agent.llm import LLM, build_llm
 from blindcity.benchmark.harness import RunHarness
 from blindcity.benchmark.results import RunResult
 from blindcity.benchmark.scenario import INFRASTRUCTURE_CRISIS, Scenario
-from blindcity.sim.warehouse import connect, ensure_schema
+from blindcity.sim.warehouse import (
+    WarehouseInUse,
+    connect,
+    ensure_schema,
+    reset_warehouse,
+    runs_in_flight,
+)
 
 # The two modes. `context` is the only field that differs, and it is the only field that may.
 MODES: dict[str, str] = {
@@ -46,6 +52,8 @@ def run_mode(
     llm: LLM | None = None,
     keep_views: bool = False,
     write_back_findings: bool = True,
+    clean_warehouse: bool = True,
+    force_clean: bool = False,
 ) -> ModeRun:
     """Play one mode. `turns` truncates the scenario for smoke tests; None plays it in full."""
     if mode not in MODES:
@@ -78,6 +86,21 @@ def run_mode(
     try:
         phase_start = time.perf_counter()
         ensure_schema(conn)
+        if clean_warehouse:
+            # Every run starts from an empty warehouse. The rows are evidence for one run, not an
+            # archive, and a warehouse holding twenty previous cities changes what the planner
+            # chooses, how long ANALYZE takes, and how much a mis-scoped query can see -- none of
+            # which should differ between two modes that are meant to be identical. Pass
+            # keep_warehouse when you need to inspect what an earlier run's agent could see.
+            live = runs_in_flight(conn)
+            if live and not force_clean:
+                raise WarehouseInUse(
+                    f"run(s) {live} started recently and have not finished; refusing to clear the "
+                    "warehouse under them. Wait for them, or pass force_clean to override."
+                )
+            # Views first: DROP TABLE CASCADE takes the views but leaves their schemas standing.
+            runscope.drop_all_run_views(conn)
+            reset_warehouse(conn)
         prepared = harness.prepare(warehouse_conn=conn, write_warehouse=True)
         # Statistics must exist before the agent queries, or the planner will choose nested
         # loops over hundreds of thousands of rows and every interesting query will time out.

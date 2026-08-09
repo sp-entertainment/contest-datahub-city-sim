@@ -189,6 +189,38 @@ uv run datahub-emit --dump-lineage lineage.json --dump-only
 # Serialize the causal graph without talking to GMS
 ```
 
+### Agent modes
+
+```powershell
+uv run agent --mode agent_datahub --out results\datahub.json
+uv run agent --mode agent_raw     --out results\raw.json
+# One mode, full turn budget. --turns N truncates for a smoke test.
+# Writes the RunResult to --out and the agent's own report to <out>.agent.json.
+
+uv run agent --mode agent_raw --keep-warehouse
+# Append instead of clearing. See below.
+
+uv run agent --mode agent_raw --keep-views
+# Leave the per-run SQL views behind so you can inspect exactly what the agent could see.
+```
+
+**`uv run agent` clears the warehouse first, by default.** This is the opposite of `uv run sim`,
+which appends, and the difference is deliberate: `sim` is a demo load that must never destroy a
+benchmark, while an agent run is a measurement that must not inherit anything. A warehouse holding
+twenty previous cities changes which plan Postgres picks, how long `ANALYZE` takes, and how much a
+mis-scoped query can see — none of which may differ between two modes that are meant to be
+identical apart from a block of catalog text.
+
+Two consequences worth knowing before you rely on them:
+
+- **Running the second mode destroys the first mode's rows.** The scores do not live in the
+  warehouse — they are in the `--out` JSON — so this costs nothing except the ability to go back
+  and query what mode A's agent was looking at. Pass `--keep-warehouse` on the second run if you
+  want both.
+- **It refuses to clear under a run that is still playing** — any `sim_run` with no `finished_at`
+  that started within two hours. A run killed hard leaves such a row behind and will block the
+  next reset until it ages out; `--force-clean` overrides, and deletes that run's data.
+
 **In-memory fingerprint seed-42 / 20 years** (post health-index review, 2026-08-02):
 
 ```text

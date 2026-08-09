@@ -54,6 +54,19 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Leave the per-run SQL views in place so you can inspect what the agent could see.",
     )
+    parser.add_argument(
+        "--keep-warehouse",
+        action="store_true",
+        help="Append to the existing warehouse instead of clearing it first. The default is a "
+        "clean slate every run, so no run inherits another's rows, planner statistics, or "
+        "leftover views. Use this to compare a new run against data already loaded.",
+    )
+    parser.add_argument(
+        "--force-clean",
+        action="store_true",
+        help="Clear the warehouse even when another run looks like it is still playing. This "
+        "deletes that run's data; only use it when you know the process is dead.",
+    )
     return parser
 
 
@@ -74,6 +87,8 @@ def main() -> int:
             turns=args.turns,
             tool_budget=args.tool_budget or DEFAULT_TOOL_BUDGET,
             keep_views=args.keep_views,
+            clean_warehouse=not args.keep_warehouse,
+            force_clean=args.force_clean,
         )
     except LLMError as exc:
         print(f"agent: {exc}", file=sys.stderr)

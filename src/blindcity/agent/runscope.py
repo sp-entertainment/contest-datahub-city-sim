@@ -134,6 +134,28 @@ def drop_stale_run_views(
     return dropped
 
 
+def drop_all_run_views(conn: psycopg.Connection) -> list[str]:
+    """Remove every per-run view schema, without asking whether its run is alive.
+
+    Only for the warehouse reset path, which is already destroying the rows the views read. Kept
+    separate from `drop_stale_run_views` on purpose: that function's whole value is the age check
+    that stops it deleting a run in flight, and a boolean argument that switches the check off
+    would make the safe call and the unsafe call look alike at the call site.
+
+    Dropping the schemas before the tables also avoids leaving empty `run_N` shells behind, which
+    is what `DROP TABLE ... CASCADE` does on its own -- it takes the views, not their schema.
+    """
+    dropped: list[str] = []
+    with conn.cursor() as cur:
+        cur.execute("SELECT nspname FROM pg_namespace WHERE nspname ~ '^run_[0-9]+$'")
+        names = [r["nspname"] for r in cur.fetchall()]
+        for name in names:
+            cur.execute(sql.SQL("DROP SCHEMA IF EXISTS {} CASCADE").format(sql.Identifier(name)))
+            dropped.append(name)
+    conn.commit()
+    return dropped
+
+
 def scope_connection(conn: psycopg.Connection, run_id: int) -> None:
     """Point this connection at one run's views.
 
