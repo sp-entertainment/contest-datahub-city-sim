@@ -91,6 +91,7 @@ def run_arm(
             catalog=build_catalog(MODES[mode]),
             tool_budget=tool_budget,
             turn_budget=scenario.turn_budget,
+            reconnect=connect,
         )
         phase_start = time.perf_counter()
         result = harness.run(controller, mode=mode, prepared=prepared)

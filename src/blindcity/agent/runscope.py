@@ -20,6 +20,10 @@ from psycopg import sql
 
 from blindcity.catalog.schema_spec import TABLES
 
+# Ceiling on any one agent query. Measured queries run in tens of milliseconds, so this is a
+# runaway guard rather than a working limit.
+STATEMENT_TIMEOUT_SECONDS = 45
+
 
 def schema_name(run_id: int) -> str:
     return f"run_{int(run_id)}"
@@ -75,4 +79,9 @@ def scope_connection(conn: psycopg.Connection, run_id: int) -> None:
                 sql.Identifier(schema_name(run_id))
             )
         )
+        # No single model-authored query may stall the run. The warehouse grows with every run,
+        # and one unbounded scan or accidental cross join would otherwise hang a mode for as
+        # long as Postgres was willing to work at it. A timeout returns an error the model can
+        # see and react to, which is strictly better than a run that never finishes.
+        cur.execute(f"SET statement_timeout = '{STATEMENT_TIMEOUT_SECONDS}s'")
     conn.commit()

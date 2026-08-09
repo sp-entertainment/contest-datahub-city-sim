@@ -23,6 +23,7 @@ model reads a briefing.
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -97,11 +98,27 @@ class AgentController:
     turn_budget: int | None = None
     history: list[AgentTurn] = field(default_factory=list)
     usage: Usage = field(default_factory=Usage)
+    # Optional: rebuild the warehouse connection if it dies mid-run, re-scoping it to this run.
+    reconnect: Callable[[], psycopg.Connection] | None = None
 
     def __post_init__(self) -> None:
         runscope.create_run_views(self.conn, self.run_id)
         runscope.scope_connection(self.conn, self.run_id)
         self._system = self._build_system_prompt()
+
+    def _reconnect(self) -> psycopg.Connection:
+        """Replace a dead warehouse connection, re-scoped to this run's views.
+
+        Re-scoping is the part that is easy to forget: a fresh connection has the default
+        search_path, so without it the agent would silently start reading every run pooled
+        together instead of its own.
+        """
+        if self.reconnect is None:
+            raise psycopg.OperationalError("no reconnect factory configured")
+        conn = self.reconnect()
+        runscope.scope_connection(conn, self.run_id)
+        self.conn = conn
+        return conn
 
     def _build_system_prompt(self) -> str:
         """System prompt = shared instructions + (catalog block, or nothing).
@@ -116,7 +133,13 @@ class AgentController:
 
     def decide(self, state: CityState, turn: int, channel: dict[str, Any]) -> dict[str, float]:
         """One turn of the loop. Returns the levers to apply."""
-        ctx = ToolContext(conn=self.conn, run_id=self.run_id, levers=dict(state.levers), turn=turn)
+        ctx = ToolContext(
+            conn=self.conn,
+            run_id=self.run_id,
+            levers=dict(state.levers),
+            turn=turn,
+            reconnect=self._reconnect,
+        )
         # Provider-neutral: the controller never builds a wire format, so it cannot hand one mode
         # a differently-shaped conversation than the other.
         history: list[Turn] = [user_turn(self._turn_prompt(state, turn))]

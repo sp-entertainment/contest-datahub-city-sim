@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import os
+import random
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -127,7 +128,8 @@ class _HttpClient:
         timeout: float,
         max_retries: int,
         min_interval: float,
-        backoff_base: float = 8.0,
+        backoff_base: float = 4.0,
+        backoff_cap: float = 90.0,
     ) -> None:
         self.timeout = timeout
         self.max_retries = max_retries
@@ -136,6 +138,7 @@ class _HttpClient:
         # Local inference has no such limit, so this is 0 there and is pure waiting otherwise.
         self.min_interval = float(os.environ.get("LLM_MIN_INTERVAL", min_interval))
         self.backoff_base = backoff_base
+        self.backoff_cap = backoff_cap
         self._last_request = 0.0
         self.usage = Usage()
 
@@ -157,6 +160,22 @@ class _HttpClient:
                 except ValueError:
                     continue
         return None
+
+    def _backoff(self, attempt: int, suggested: float | None) -> float:
+        """Exponential backoff with full jitter, capped.
+
+        Jitter matters more than it looks. Both benchmark modes hammer the same endpoint, and a
+        turn fires several tool calls in quick succession; without randomisation, everything that
+        gets rate-limited together retries together, and the same collision repeats on every
+        attempt. Full jitter (uniform over the whole window) spreads them out.
+
+        A provider that states its own delay is believed, but still jittered a little so
+        simultaneous callers do not line back up.
+        """
+        if suggested:
+            return suggested + random.uniform(0.0, min(2.0, suggested * 0.25))
+        window = min(self.backoff_cap, self.backoff_base * (2**attempt))
+        return random.uniform(0.0, window)
 
     def post(self, url: str, body: dict[str, Any], headers: dict[str, str]) -> dict[str, Any]:
         last: Exception | None = None
@@ -183,7 +202,7 @@ class _HttpClient:
                 last = exc
                 self._last_request = time.monotonic()
             if attempt < self.max_retries - 1:
-                time.sleep(sleep_for if sleep_for else self.backoff_base * (2**attempt))
+                time.sleep(self._backoff(attempt, sleep_for))
         raise LLMError(f"request failed after {self.max_retries} attempts: {last}")
 
 

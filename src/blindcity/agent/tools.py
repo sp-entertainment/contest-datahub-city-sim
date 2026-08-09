@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import re
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -63,6 +64,10 @@ class ToolContext:
     log: list[ToolCallRecord] = field(default_factory=list)
     # Levers the model asked for this turn, applied by the controller when the turn ends.
     pending: dict[str, float] = field(default_factory=dict)
+    # Rebuilds the connection if it dies mid-run. Docker on this host has dropped the warehouse
+    # out from under a run more than once, and losing a scored mode to a container restart is a
+    # much worse outcome than one retried query.
+    reconnect: Callable[[], psycopg.Connection] | None = None
 
 
 def tool_declarations() -> list[dict[str, Any]]:
@@ -149,6 +154,21 @@ def run_sql(ctx: ToolContext, query: str) -> dict[str, Any]:
             cur.execute(capped)
             columns = [d.name for d in (cur.description or [])]
             rows = cur.fetchall()
+    except psycopg.OperationalError as exc:
+        # The connection itself failed rather than the query. Rebuild it once and retry, so a
+        # warehouse blip costs one query instead of the whole mode.
+        if ctx.reconnect is not None:
+            try:
+                ctx.conn = ctx.reconnect()
+                with ctx.conn.cursor() as cur:
+                    cur.execute(capped)
+                    columns = [d.name for d in (cur.description or [])]
+                    rows = cur.fetchall()
+                ctx.conn.rollback()
+            except psycopg.Error as retry_exc:
+                return {"error": f"warehouse unavailable: {str(retry_exc).splitlines()[0][:220]}"}
+        else:
+            return {"error": f"warehouse unavailable: {str(exc).splitlines()[0][:220]}"}
     except psycopg.Error as exc:
         ctx.conn.rollback()
         message = str(exc).strip().splitlines()[0][:300]

@@ -588,3 +588,65 @@ def test_tool_calls_are_timed():
     dispatch(ctx, "sql_query", {"query": "SELECT 1"})
     assert ctx.log[0].seconds >= 0.0
     assert hasattr(ctx.log[0], "seconds")
+
+
+# --- Robustness ------------------------------------------------------------------------------
+
+
+def test_backoff_is_jittered_and_capped():
+    """Both modes hammer one endpoint and a turn fires several calls together. Without jitter,
+    everything rate-limited together retries together and collides again on every attempt."""
+    from blindcity.agent.llm import _HttpClient
+
+    c = _HttpClient(timeout=1, max_retries=5, min_interval=0, backoff_base=4.0, backoff_cap=90.0)
+    waits = [c._backoff(6, None) for _ in range(40)]
+    assert len(set(waits)) > 30, "backoff is not jittered"
+    assert max(waits) <= c.backoff_cap, "backoff exceeded its cap"
+    assert min(waits) >= 0.0
+
+
+def test_backoff_prefers_a_provider_supplied_delay():
+    """A provider that states its own retry delay knows better than our guess."""
+    from blindcity.agent.llm import _HttpClient
+
+    c = _HttpClient(timeout=1, max_retries=3, min_interval=0)
+    waits = [c._backoff(0, 30.0) for _ in range(20)]
+    assert all(30.0 <= w <= 32.0 for w in waits), waits
+    assert len(set(waits)) > 1, "provider delay should still carry a little jitter"
+
+
+def test_sql_survives_a_dropped_warehouse_connection():
+    """Docker has dropped the warehouse mid-run more than once. Losing a scored mode to a
+    container restart is far worse than retrying one query."""
+    import psycopg
+
+    dead = FakeConn()
+
+    def explode(sql, params=None):
+        raise psycopg.OperationalError("server closed the connection unexpectedly")
+
+    dead.cursor_obj.execute = explode
+
+    fresh = FakeConn()
+    fresh.cursor_obj.description = [_Col("n")]
+    fresh.cursor_obj.rows = [{"n": 7}]
+
+    ctx = ToolContext(conn=dead, run_id=1, levers=defaults(), reconnect=lambda: fresh)
+    out = dispatch(ctx, "sql_query", {"query": "SELECT n FROM t"})
+    assert out.get("rows") == [[7]], out
+    assert ctx.conn is fresh
+
+
+def test_sql_reports_clearly_when_the_warehouse_is_gone():
+    """With no way to reconnect, the model gets an error it can see rather than a crash."""
+    import psycopg
+
+    dead = FakeConn()
+
+    def explode(sql, params=None):
+        raise psycopg.OperationalError("connection refused")
+
+    dead.cursor_obj.execute = explode
+    ctx = ToolContext(conn=dead, run_id=1, levers=defaults())
+    out = dispatch(ctx, "sql_query", {"query": "SELECT 1"})
+    assert "warehouse unavailable" in out["error"]
