@@ -101,6 +101,7 @@ class FakeConn:
     def __init__(self) -> None:
         self.cursor_obj = FakeCursor()
         self.committed = 0
+        self.rollbacks = 0
 
     def cursor(self):
         return self.cursor_obj
@@ -109,7 +110,7 @@ class FakeConn:
         self.committed += 1
 
     def rollback(self):
-        pass
+        self.rollbacks += 1
 
 
 @pytest.fixture
@@ -566,3 +567,24 @@ def test_provider_factory_rejects_an_unknown_provider():
 
     with pytest.raises(LLMError, match="unknown LLM_PROVIDER"):
         build_llm("hal9000")
+
+
+def test_sql_tool_ends_its_transaction():
+    """psycopg opens a transaction on execute. A SELECT that is never committed leaves the
+    session idle-in-transaction holding locks on every view it touched — which deadlocked a
+    completed run against its own DROP SCHEMA cleanup for 27 minutes."""
+    conn = FakeConn()
+    conn.cursor_obj.description = [_Col("n")]
+    conn.cursor_obj.rows = [{"n": 1}]
+    ctx = ToolContext(conn=conn, run_id=1, levers=defaults())
+    dispatch(ctx, "sql_query", {"query": "SELECT n FROM t"})
+    assert conn.rollbacks >= 1, "read transaction was left open"
+
+
+def test_tool_calls_are_timed():
+    """A run that reports LLM seconds and total seconds with nothing in between cannot say
+    where its time went — which is how 90% of one run stayed unexplained."""
+    ctx = ToolContext(conn=FakeConn(), run_id=1, levers=defaults())
+    dispatch(ctx, "sql_query", {"query": "SELECT 1"})
+    assert ctx.log[0].seconds >= 0.0
+    assert hasattr(ctx.log[0], "seconds")

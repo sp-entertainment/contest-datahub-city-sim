@@ -153,6 +153,12 @@ def run_sql(ctx: ToolContext, query: str) -> dict[str, Any]:
         ctx.conn.rollback()
         message = str(exc).strip().splitlines()[0][:300]
         return {"error": message}
+    else:
+        # End the read transaction immediately. psycopg opens one on execute, and a SELECT that
+        # is never committed leaves the session "idle in transaction" holding locks on every
+        # view it touched -- which deadlocked a run against its own cleanup for 27 minutes.
+        # Nothing is written here, so a rollback is the cheapest way to let go.
+        ctx.conn.rollback()
 
     # The warehouse connection uses psycopg's dict_row factory, so a row is a mapping, not a
     # tuple. Iterating it directly yields column *names* — which is exactly what the model was

@@ -46,8 +46,14 @@ def create_run_views(conn: psycopg.Connection, run_id: int) -> str:
 
 
 def drop_run_views(conn: psycopg.Connection, run_id: int) -> None:
-    """Remove a run's view schema. Safe to call when it was never created."""
+    """Remove a run's view schema. Safe to call when it was never created.
+
+    Bounded by a lock timeout: cleanup that cannot get its lock must fail loudly and leave the
+    views behind, not block forever. A stale view schema is inert; a hung process at the end of
+    a completed run looks exactly like a hung model.
+    """
     with conn.cursor() as cur:
+        cur.execute("SET LOCAL lock_timeout = '15s'")
         cur.execute(
             sql.SQL("DROP SCHEMA IF EXISTS {} CASCADE").format(sql.Identifier(schema_name(run_id)))
         )

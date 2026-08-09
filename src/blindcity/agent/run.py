@@ -107,6 +107,11 @@ def run_arm(
         if write_back_findings:
             report["write_back"] = writeback.write_back(report, str(result.run_id)).to_dict()
     finally:
+        # Close the agent's connection FIRST. It is the one that read through the views, and
+        # DROP SCHEMA CASCADE needs a lock that connection may still hold. Dropping before
+        # closing it makes the cleanup wait on a lock held by a session the cleanup itself is
+        # keeping alive -- a self-deadlock that stalled a completed run for 27 minutes.
+        agent_conn.close()
         # The per-run views are scaffolding, not data. The rows they read stay in the warehouse
         # under their run_id; only the schema of views goes. Keep them with --keep-views when
         # you want to poke at exactly what the agent could see.
@@ -115,7 +120,6 @@ def run_arm(
                 runscope.drop_run_views(conn, warehouse_run_id)
             except psycopg.Error:
                 pass  # cleanup only; never mask the real outcome of the run
-        agent_conn.close()
         conn.close()
 
     wall = time.perf_counter() - started
