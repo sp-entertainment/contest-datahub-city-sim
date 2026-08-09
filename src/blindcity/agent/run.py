@@ -30,13 +30,13 @@ MODES: dict[str, str] = {
 
 
 @dataclass
-class ArmRun:
+class ModeRun:
     result: RunResult
     report: dict[str, Any]
     wall_seconds: float
 
 
-def run_arm(
+def run_mode(
     mode: str,
     *,
     scenario: Scenario = INFRASTRUCTURE_CRISIS,
@@ -46,7 +46,7 @@ def run_arm(
     llm: LLM | None = None,
     keep_views: bool = False,
     write_back_findings: bool = True,
-) -> ArmRun:
+) -> ModeRun:
     """Play one mode. `turns` truncates the scenario for smoke tests; None plays it in full."""
     if mode not in MODES:
         raise ValueError(f"unknown mode {mode!r}; expected one of {sorted(MODES)}")
@@ -82,6 +82,8 @@ def run_arm(
         # Statistics must exist before the agent queries, or the planner will choose nested
         # loops over hundreds of thousands of rows and every interesting query will time out.
         runscope.analyze_run_tables(conn)
+        # Sweep view schemas orphaned by earlier runs that were killed mid-flight.
+        runscope.drop_stale_run_views(conn, keep=prepared.warehouse_run_id)
         prepare_seconds = time.perf_counter() - phase_start
         assert prepared.warehouse_run_id is not None
         warehouse_run_id = prepared.warehouse_run_id
@@ -129,7 +131,7 @@ def run_arm(
     wall = time.perf_counter() - started
     result.meta["agent"] = report
     result.meta["wall_seconds"] = round(wall, 1)
-    return ArmRun(result=result, report=report, wall_seconds=wall)
+    return ModeRun(result=result, report=report, wall_seconds=wall)
 
 
 def estimate_full_run(report: dict[str, Any], turns_played: int, turn_budget: int) -> dict[str, Any]:

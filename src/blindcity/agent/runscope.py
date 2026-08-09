@@ -80,6 +80,60 @@ def analyze_run_tables(conn: psycopg.Connection) -> None:
     conn.commit()
 
 
+# A run with no finished_at is either in flight or was killed. Age decides which: nothing here
+# takes hours, so an unfinished run older than this was abandoned.
+ORPHAN_AFTER_HOURS = 2
+
+
+def drop_stale_run_views(
+    conn: psycopg.Connection, keep: int | None = None, orphan_after_hours: int = ORPHAN_AFTER_HOURS
+) -> list[str]:
+    """Remove view schemas left behind by runs that died before their cleanup ran.
+
+    A hard kill skips the finally block, so the schema survives its run. They are inert -- views
+    over rows that are still correctly scoped -- but they accumulate, and a database full of
+    run_37, run_39, run_41 makes it harder to see what is actually live. Nine had piled up.
+
+    Only schemas whose run has a finished_at are dropped, so a run in flight is never touched.
+    """
+    dropped: list[str] = []
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT n.nspname AS name,
+                   NULLIF(regexp_replace(n.nspname, '^run_', ''), '')::bigint AS rid
+            FROM pg_namespace n
+            WHERE n.nspname ~ '^run_[0-9]+$'
+            """
+        )
+        candidates = [(r["name"], r["rid"]) for r in cur.fetchall()]
+        for name, rid in candidates:
+            if keep is not None and rid == keep:
+                continue
+            cur.execute(
+                """
+                SELECT finished_at,
+                       started_at < now() - make_interval(hours => %s) AS is_old
+                FROM sim_run WHERE run_id = %s
+                """,
+                (orphan_after_hours, rid),
+            )
+            row = cur.fetchone()
+            # Drop when the run finished, when it is old enough to have been abandoned, or when
+            # no sim_run row exists at all. A run genuinely in flight is younger than the
+            # threshold and is left alone.
+            if row is not None and row["finished_at"] is None and not row["is_old"]:
+                continue
+            cur.execute("SET LOCAL lock_timeout = '5s'")
+            try:
+                cur.execute(sql.SQL("DROP SCHEMA {} CASCADE").format(sql.Identifier(name)))
+                dropped.append(name)
+            except psycopg.errors.LockNotAvailable:
+                conn.rollback()  # someone is using it; leave it for next time
+    conn.commit()
+    return dropped
+
+
 def scope_connection(conn: psycopg.Connection, run_id: int) -> None:
     """Point this connection at one run's views.
 

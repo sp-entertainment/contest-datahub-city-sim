@@ -64,11 +64,11 @@ def main() -> int:
     # Imported here so `--help` works without a database, a key, or a running stack.
     from blindcity.agent.controller import DEFAULT_TOOL_BUDGET
     from blindcity.agent.llm import LLMError, build_llm
-    from blindcity.agent.run import estimate_full_run, run_arm
+    from blindcity.agent.run import estimate_full_run, run_mode
     from blindcity.benchmark.scenario import INFRASTRUCTURE_CRISIS
 
     try:
-        run = run_arm(
+        run = run_mode(
             args.mode,
             llm=build_llm(args.provider, args.model),
             turns=args.turns,
