@@ -44,7 +44,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--reset-warehouse",
         action="store_true",
         help="Drop and recreate warehouse tables before writing. Default is append-by-run_id "
-        "so concurrent benchmark arms do not wipe each other. Use this for a clean demo load.",
+        "so concurrent benchmark modes do not wipe each other. Use this for a clean demo load.",
     )
     return parser
 

@@ -5,10 +5,10 @@ Two things drove the shape of this module.
 First, the benchmark's validity rests on `agent_datahub` and `agent_raw` being byte-identical
 apart from one block of context. So the conversation is held in a **provider-neutral** form and
 each client serialises it. The controller never sees a wire format and cannot accidentally send
-one arm something subtly different from the other.
+one mode something subtly different from the other.
 
 Second, the hosted path turned out to be unusable on a free-tier key: a scored run is roughly 216
-calls per arm, and the daily quota dies long before that (see `.tasks/mvp/SLICE6-HANDOFF.md`).
+calls per mode, and the daily quota dies long before that (see `.tasks/mvp/SLICE6-HANDOFF.md`).
 Local inference removes the quota, the cost, and the network — and lets a judge reproduce the
 whole benchmark from a clone, which is a stronger claim than asking them to trust our numbers.
 
@@ -32,7 +32,7 @@ from blindcity import config  # noqa: F401  -- imported for its .env loading sid
 
 GEMINI_API_ROOT = "https://generativelanguage.googleapis.com/v1beta"
 
-# Both arms must use the same model. That is a fairness requirement, not a preference.
+# Both modes must use the same model. That is a fairness requirement, not a preference.
 DEFAULT_PROVIDER = os.environ.get("LLM_PROVIDER", "local")
 DEFAULT_LOCAL_MODEL = os.environ.get("LLM_MODEL") or "qwen/qwen3.6-35b-a3b"
 DEFAULT_GEMINI_MODEL = "gemini-3.6-flash"
@@ -205,7 +205,7 @@ class OpenAIClient(_HttpClient):
         base_url: str | None = None,
         temperature: float = 0.0,
         # Generous: a large context on a partially-offloaded MoE can take a while to prefill,
-        # and a timeout here would be scored as the arm failing to steer the city.
+        # and a timeout here would be scored as the mode failing to steer the city.
         timeout: float = 600.0,
         max_retries: int = 3,
         min_interval: float = 0.0,
@@ -224,7 +224,7 @@ class OpenAIClient(_HttpClient):
                 raise LLMError(
                     f"LLM_MODEL is not set and {base} is not a local server. Set LLM_MODEL to a "
                     "model id the provider actually serves -- list them first rather than "
-                    "guessing; both arms must use the same one."
+                    "guessing; both modes must use the same one."
                 )
         self.model = resolved
         self.base_url = base
@@ -297,7 +297,7 @@ class OpenAIClient(_HttpClient):
         try:
             data = self.post(url, body, headers)
         except LLMError as exc:
-            # Retry once without temperature if that is what it objected to. Both arms share the
+            # Retry once without temperature if that is what it objected to. Both modes share the
             # client, so this flips for both at once and cannot become a difference between them.
             if self._send_temperature and "temperature" in str(exc).lower():
                 self._send_temperature = False
@@ -360,7 +360,7 @@ class ResponsesClient(_HttpClient):
 
     Stateless on purpose: the conversation is resent each call rather than chained with
     `previous_response_id`. Every turn already starts fresh, both other backends work that way,
-    and server-side state is one more thing that could quietly differ between the two arms.
+    and server-side state is one more thing that could quietly differ between the two modes.
     """
 
     def __init__(
@@ -380,7 +380,7 @@ class ResponsesClient(_HttpClient):
         if not resolved:
             raise LLMError(
                 "LLM_MODEL is not set. Set it to a model id the provider actually serves — list "
-                "them rather than guessing. Both arms must use the same one."
+                "them rather than guessing. Both modes must use the same one."
             )
         self.model = resolved
         # Reasoning models reject a non-default temperature outright, so it is not sent at all.
@@ -627,7 +627,7 @@ class GeminiClient(_HttpClient):
 def build_llm(provider: str | None = None, model: str | None = None) -> LLM:
     """Construct the client named by `LLM_PROVIDER`.
 
-    One factory, shared by both arms, so they cannot end up on different models or providers —
+    One factory, shared by both modes, so they cannot end up on different models or providers —
     which would make the headline comparison meaningless.
     """
     name = (provider or DEFAULT_PROVIDER or "local").strip().lower()

@@ -15,7 +15,7 @@ that a good policy outscores a bad one is satisfied by three broken components a
 The assertions that actually catch it:
 
 - Require a value to **move** when its input moves, not merely to sit inside bounds.
-- Require the winning arm to beat the losing arm **component by component**, not just on the total.
+- Require the winning mode to beat the losing mode **component by component**, not just on the total.
 - Check the **fraction at the ceiling**, not the mean. A mean of 0.88 hid 24% of rows at exactly
   1.0; see the `at ceiling` column and query in `docs/ENVIRONMENT.md`.
 - Sweep a lever across its **whole range** and require every step to change the outcome. Flat
@@ -121,7 +121,7 @@ below for what was actually happening.
 
 **Stale advice removed.** This entry used to say a partial run was not fatal because `uv run sim`
 truncates and rewrites the warehouse. It no longer truncates — append-by-`run_id` became the
-default so benchmark arms can write in parallel. A partial run now leaves a partial `run_id` in the
+default so benchmark modes can write in parallel. A partial run now leaves a partial `run_id` in the
 warehouse. Use `--reset-warehouse` if you want the old behaviour, or just ignore the stray run,
 since everything is scoped by `run_id` anyway.
 
@@ -161,7 +161,7 @@ flat; mean wear still climbed.
 count twice. At any legal budget, repair was ~0.001/month while traffic-driven wear was ~0.01+/month.
 
 **Fix.** Citywide scaling: `wear_repair = (annual_budget / 1_000_000) * 0.01`, and raise the lever
-max to 8M so aggressive recovery can reverse neglect inside a 36-month turn budget. Recorded in
+max to 8M so aggressive recovery can reverse neglect inside the 36-month recovery window. Recorded in
 `docs/DECISIONS.md` (lever calibration).
 
 ### The health index rewarded the do-nothing policy
@@ -188,7 +188,7 @@ proportional road repair; water capex rescaled. See `docs/DECISIONS.md`, same da
 congestion and the road repair formula, and all three passed their tests. Asserting a value is
 within range is satisfied by a constant, and asserting the composite score orders two policies
 correctly is satisfied by three broken components and one working one. The assertions that catch
-it require a value to **move**, and require the winning arm to beat the losing arm **component by
+it require a value to **move**, and require the winning mode to beat the losing mode **component by
 component**.
 
 ### `UnicodeEncodeError` on the final status line of a command that worked
@@ -217,7 +217,7 @@ exactly 1.0 overall, and 59.6% by tick 240.
 
 **Cause.** `SEGMENT_CAPACITY` is a fixed 150 while traffic scales with population. Over 20 years
 the city outgrows the constant, so the `min(1.0, ...)` clamp starts firing again — the same ceiling
-as the original congestion bug, arriving late instead of immediately. The 36-turn benchmark
+as the original congestion bug, arriving late instead of immediately. The benchmark
 scenario is too short to hit it, so the tests did not catch it.
 
 **Why it mattered more than the 20-year figure suggested.** At benchmark crisis onset congestion
@@ -253,7 +253,7 @@ single run holds 808,597 rows. All nine assertions passed.
 every launch and the warehouse only ever held one run. Once append became the default, the two
 row-count assertions (`minimum=1000`, `minimum=10000`) got easier every time anyone loaded the
 simulation, and the range assertions silently pooled runs that exist to be compared. With three
-benchmark arms writing concurrently this would have reported one verdict over all three.
+benchmark modes writing concurrently this would have reported one verdict over all three.
 
 **Fix.** Every predicate takes an optional `run_id`, bound as a parameter rather than
 interpolated. `datahub-emit` defaults to the most recent run, `--run-id` selects another, and

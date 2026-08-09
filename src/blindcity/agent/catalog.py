@@ -1,7 +1,7 @@
-"""The catalog context block — the single difference between the two arms.
+"""The catalog context block — the single difference between the two modes.
 
 `agent_datahub` gets the text this module produces prepended to its prompt. `agent_raw` gets
-nothing in its place, not even a placeholder. Everything else about the two arms is byte-identical:
+nothing in its place, not even a placeholder. Everything else about the two modes is byte-identical:
 same model, same temperature, same system prompt, same tools, same tool budget, same turn budget,
 same seed, same scenario, same SQL access.
 
@@ -32,10 +32,10 @@ class CatalogSource(Protocol):
 
 
 class NoCatalog:
-    """The control arm's catalog: nothing at all.
+    """The control mode's catalog: nothing at all.
 
     Not an empty catalog, not a stub explaining that metadata is unavailable — the absence of a
-    section. A note saying "you have no catalog" would itself be information the other arm lacks.
+    section. A note saying "you have no catalog" would itself be information the other mode lacks.
     """
 
     name = "none"

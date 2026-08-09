@@ -24,7 +24,7 @@ class PreparedRun:
     """A scenario materialised and, optionally, its history written to the warehouse.
 
     Exists so a controller can be constructed *against the warehouse run it will read*. The
-    agent arms need the `run_id` before their first decision — they diagnose the city through
+    agent modes need the `run_id` before their first decision — they diagnose the city through
     SQL scoped to that run — and the harness is what mints it. Without this split the controller
     would have to be built before the run existed.
     """
@@ -99,7 +99,7 @@ class RunHarness:
         self,
         controller: Controller,
         *,
-        arm: str = "scripted",
+        mode: str = "scripted",
         channel: dict[str, Any] | None = None,
         run_id: str | None = None,
         warehouse_conn: Any | None = None,
@@ -169,7 +169,7 @@ class RunHarness:
             scenario_name=self.scenario.name,
             seed=self.scenario.seed,
             controller_name=getattr(controller, "name", type(controller).__name__),
-            arm=arm,
+            mode=mode,
             run_id=durable_id,
             turn_budget=self.scenario.turn_budget,
             green_threshold=self.green_threshold,

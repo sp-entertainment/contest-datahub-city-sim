@@ -176,7 +176,7 @@ substrate that makes it meaningful.
 budget. A run is scored by a **composite health index**, and "recovered" means the index crossed a
 green threshold within the budget. Three controllers face the identical seed, crisis, and budget:
 
-| Arm | Controller | Sees |
+| Mode | Controller | Sees |
 | --- | --- | --- |
 | `human` | A person | The city render, the levers, and the upstream Analytics Agent to ask questions |
 | `agent_datahub` | Our auto-mode agent | DataHub over MCP, plus SQL against the warehouse |
@@ -185,7 +185,7 @@ green threshold within the budget. Three controllers face the identical seed, cr
 **Rationale.**
 - **Simulation fidelity is what makes the result mean anything**, so effort belongs there. A crisis
   that is trivially recoverable, or unrecoverable regardless of skill, measures nothing.
-- **Three arms separate two different questions.** `agent_datahub` vs `agent_raw` isolates the value
+- **Three modes separate two different questions.** `agent_datahub` vs `agent_raw` isolates the value
   of the metadata. `human` vs `agent_datahub` says whether the automation is worth having at all.
   Giving the human the Analytics Agent makes them a realistic operator-with-tooling baseline rather
   than a strawman.
@@ -196,21 +196,21 @@ green threshold within the budget. Three controllers face the identical seed, cr
 
 **Consequences.**
 - **The viewer is demoted to cosmetic.** It does not need to represent the city faithfully. It needs
-  to look like a city and carry the lever controls for the human arm. This reverses the 2026-08-01
-  decision that made a recognisable city never-cut; the levers stay required because the human arm
+  to look like a city and carry the lever controls for the human mode. This reverses the 2026-08-01
+  decision that made a recognisable city never-cut; the levers stay required because the human mode
   cannot exist without them, but scene fidelity is now the first thing to cut.
-- **Information parity becomes an experimental control, not an aesthetic rule.** Every arm must get
+- **Information parity becomes an experimental control, not an aesthetic rule.** Every mode must get
   the same channel to the city's state; only the metadata differs. The existing "no charts, no
   counters" rule now has a stronger justification than the original one: a numeric readout in the
-  viewer would hand the human arm an information channel the agent arms do not have, and invalidate
+  viewer would hand the human mode an information channel the agent modes do not have, and invalidate
   the comparison.
 - **Lever bounds stop being placeholders.** They determine whether a crisis is recoverable, so they
   need calibrating against an actual scenario.
-- **Runs must be isolated in the warehouse.** Arms run in parallel and all write history; without a
+- **Runs must be isolated in the warehouse.** Modes run in parallel and all write history; without a
   run identifier they overwrite each other. The schema needs a `run_id`, and the sim must stop
   truncating shared tables.
 - New work that existed in no slice: scenario definition, health index and green threshold, turn
-  budget, a controller interface the three arms implement, a run harness, and a results format.
+  budget, a controller interface the three modes implement, a run harness, and a results format.
 
 **Future, explicitly not now.** Seeding the simulation from real historical city data, so the
 benchmark runs against real conditions rather than generated ones. Recorded so it is not
@@ -345,7 +345,7 @@ baseline (`datahub-emit --baseline`) skips glossary, lineage, and descriptions e
 **Context.** Open question: how realistically opaque should baseline table names be?
 
 **Decision.** Short realistic warehouse-ish names (`t_person_m`, `t_budg_m`, `t_policy_m`, …), not
-gibberish and not the full semantic names. Documented in README when the control arm is explained.
+gibberish and not the full semantic names. Documented in README when the control mode is explained.
 
 **Rationale.** Fair control: an agent with SQL alone can still query, but without glossary or lineage
 it must rediscover meaning. Names that look like a rushed ETL dump are more honest than
@@ -420,7 +420,7 @@ stale again (alongside the `SEGMENT_CAPACITY` change). Re-record when Postgres i
 
 ## 2026-08-02 — Warehouse append-by-run_id (no default truncate)
 
-**Context.** Arms write history in parallel; global truncate made multi-arm runs impossible.
+**Context.** Modes write history in parallel; global truncate made multi-mode runs impossible.
 
 **Decision.** Default `uv run sim` calls `ensure_schema` and `start_run` only. Truncate is opt-in
 via `--reset-warehouse` for clean demo loads.
@@ -429,13 +429,13 @@ via `--reset-warehouse` for clean demo loads.
 correctness bug under the benchmark framing.
 
 **Consequences.** Repeated CLI demos accumulate runs unless `--reset-warehouse` is passed.
-## 2026-08-02 — The health index scored the neglect arm as solvent
+## 2026-08-02 — The health index scored the neglect mode as solvent
 
 **Context.** A review of the Slice 5 benchmark ran lever sweeps against the finished index rather
 than reading its tests. Three components turned out not to measure what they claimed.
 
-- **Solvency rewarded neglect.** The do-nothing arm finished at solvency **1.0000**; the recovery
-  arm at 0.9914. Spending nothing repays the shock debt and builds months of cash cover, so on
+- **Solvency rewarded neglect.** The do-nothing mode finished at solvency **1.0000**; the recovery
+  mode at 0.9914. Spending nothing repays the shock debt and builds months of cash cover, so on
   cash alone neglect is indistinguishable from prudence. Twenty per cent of the index was pointing
   the wrong way, and the previous entry's claim that months-of-cover prevented this was false.
 - **Water capex was a trap.** With capex at 5.5M the load ratio still ended at 1.61, which scores
@@ -452,7 +452,7 @@ than reading its tests. Three components turned out not to measure what they cla
   are priced (`ROAD_RESTORE_COST_PER_SEGMENT`, `WATER_RESTORE_COST_PER_UNIT`) and added to debt.
   Reweight solvency to `0.30` cover / `0.50` debt / `0.20` balance.
 - Make the debt term decay **exponentially** (`DEBT_PER_CAPITA_SCALE = 3000`) instead of clamping
-  linearly to zero, which had pinned the neglect arm's solvency at a constant for all 36 turns.
+  linearly to zero, which had pinned the neglect mode's solvency at a constant for all 36 turns.
 - Make road repair **proportional to existing wear** (`ROAD_REPAIR_RATE_PER_MILLION = 0.05`), so
   wear settles at a budget-dependent equilibrium instead of slamming into a bound.
 - Retune water capex to `WATER_CAPEX_PER_UNIT = 6000` so the top of the range can bring the load
@@ -496,7 +496,7 @@ all 60 months of neglect history.
 
 **Rationale.** That history is what an agent queries to work out why the city is failing, and the
 scenario is built so the roads are a large part of the answer. A constant column there means both
-arms are guessing, which collapses the one comparison the project exists to make. The exponential
+modes are guessing, which collapses the one comparison the project exists to make. The exponential
 is close to the identity for ratios under 1, so previously-informative values barely moved and the
 commute-time and service-score calibrations held without adjustment.
 
@@ -504,8 +504,8 @@ commute-time and service-score calibrations held without adjustment.
 from when `uv run sim` truncated on launch. `--run-id` selects a specific run, `--all-runs` opts
 back into pooling, and the scope is printed with the results.
 
-**Rationale.** Append-by-`run_id` was adopted so arms could write in parallel; leaving the
-assertions unscoped meant the quality gate reported a single verdict across arms that exist to be
+**Rationale.** Append-by-`run_id` was adopted so modes could write in parallel; leaving the
+assertions unscoped meant the quality gate reported a single verdict across modes that exist to be
 compared, and the row-count assertions got easier with every load. A gate that loosens as data
 accumulates is worse than no gate.
 
@@ -513,3 +513,40 @@ accumulates is worse than no gate.
 the ceiling at every tick. Benchmark invariants unchanged — neglect 0.324 (never green), defaults
 0.455 (never green), recovery 0.813 (green at turn 13). Fingerprints shift again, since congestion
 feeds commute time, satisfaction and migration.
+
+## 2026-08-06 — Quarterly decisions, and "modes" instead of "arms"
+
+**Context.** The scenario gave the controller 36 monthly turns. Two problems surfaced together
+once the loop actually ran against a hosted model.
+
+**Decision 1: twelve quarterly turns instead of thirty-six monthly ones.** `turn_budget=12`,
+`months_per_turn=3`. The recovery window is unchanged at 36 simulated months.
+
+**Rationale.** Three separate reasons pointed the same way.
+
+- **The human mode has to play this too.** Thirty-six rounds of lever-pulling is tedious rather
+  than interesting, and a human who disengages halfway is not a fair comparison for an agent that
+  does not get bored.
+- **Cost.** Each agent turn is several LLM round trips, because the model must see each query
+  result before choosing the next one. Thirty-six turns ran to hundreds of calls per mode, per
+  seed. Twelve turns puts a full run in the dozens.
+- **Realism, and a sharper test.** Cities are not re-planned monthly; quarterly budget review is
+  the real cadence. Fewer chances to correct also put more weight on each individual diagnosis —
+  which is exactly the thing the catalog is supposed to improve, so the change strengthens the
+  measurement rather than diluting it.
+
+**Consequences.** Calibration is unchanged, because it is the same levers over the same 36
+months: crisis onset 0.338, neglect 0.324 (never green), defaults 0.455 (never green), recovery
+0.813, now reaching green at turn 4 of 12 rather than turn 13 of 36.
+
+**Decision 2: the three controllers are "modes", not "arms".** Renamed throughout the code, the
+docs, and the results format.
+
+**Rationale.** "Arm" is borrowed from clinical trials — treatment arm, control arm — and is
+meaningless outside that context. The project's own original framing said "control modes: human
+pulling levers, AI with DataHub, AI without DataHub", which is clearer and is what a judge will
+understand without translation. The jargon crept in from thinking about experimental design; the
+plainer word was there first.
+
+**Consequences.** `RunResult.arm` is now `RunResult.mode` and `--arm` is now `--mode`. Done before
+any scored results existed, so no recorded data uses the old field name.

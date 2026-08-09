@@ -10,7 +10,7 @@ So each run gets a schema of views, one per table, each filtered to that run, an
 connection has `search_path` pointing at it. The model writes `SELECT ... FROM road_monthly` and
 the filtering is structural rather than remembered.
 
-The views are cheap, disposable, and named after the run so parallel arms cannot collide.
+The views are cheap, disposable, and named after the run so parallel modes cannot collide.
 """
 
 from __future__ import annotations
@@ -59,7 +59,7 @@ def scope_connection(conn: psycopg.Connection, run_id: int) -> None:
 
     `public` is deliberately left out of the search path. A model that explicitly writes
     `public.road_monthly` can still reach the pooled tables — blocking that properly needs a
-    read-only role, which is more machinery than this is worth. Both arms have identical
+    read-only role, which is more machinery than this is worth. Both modes have identical
     exposure, so it cannot bias the comparison, and the prompt tells the model the tables are
     already scoped.
     """

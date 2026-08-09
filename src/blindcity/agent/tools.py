@@ -1,6 +1,6 @@
 """The agent's hands: read-only SQL over the warehouse, and the eight levers.
 
-**Both arms get exactly this tool set.** It is defined once, here, and neither arm may add,
+**Both modes get exactly this tool set.** It is defined once, here, and neither mode may add,
 remove, or reword a tool — the declarations below are what the model sees, and a difference in
 tool wording is a difference in capability. The only thing that differs between `agent_datahub`
 and `agent_raw` is a block of catalog context in the prompt (`catalog.py`).
@@ -62,11 +62,11 @@ class ToolContext:
 
 
 def tool_declarations() -> list[dict[str, Any]]:
-    """The function declarations sent to the model. Identical for both arms.
+    """The function declarations sent to the model. Identical for both modes.
 
     Plain JSON Schema, which is what OpenAI-compatible servers expect. The Gemini client
     upper-cases the type names on its way out, so this stays the single definition and neither
-    backend can hand one arm a differently-worded tool than the other.
+    backend can hand one mode a differently-worded tool than the other.
     """
     lever_lines = "\n".join(
         f"  {name}: {lev.minimum} to {lev.maximum} ({lev.unit}) - {lev.description}"

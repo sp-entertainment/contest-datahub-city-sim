@@ -29,17 +29,17 @@ The city is the substrate, not the deliverable. A **scenario** puts it into a cr
 **controller** pulls levers over a fixed turn budget; a **composite health index** scores whether it
 got back into the green in time. Three controllers face the identical seed, crisis, and budget:
 
-| Arm | Who is deciding | What they can see |
+| Mode | Who is deciding | What they can see |
 | --- | --- | --- |
 | `human` | You | The city, the levers, and the Analytics Agent to ask questions |
 | `agent_datahub` | Our agent | DataHub over MCP, plus SQL |
 | `agent_raw` | Our agent | SQL only — no catalog |
 
 `agent_datahub` vs `agent_raw` measures what the metadata is worth. `human` vs `agent_datahub`
-measures what the automation is worth. Every arm gets the same view of the city, so the metadata is
+measures what the automation is worth. Every mode gets the same view of the city, so the metadata is
 the only thing that varies — which is why there are no numbers on the screen.
 
-## The baseline catalog (control arm)
+## The baseline catalog (control mode)
 
 The A/B comparison needs an honest control: same warehouse, same SQL access, same model and tool
 budget — **without** catalog context that would tip the agent toward the right tables and joins.
@@ -70,7 +70,7 @@ the semantic names the full catalog uses:
 **Why this is fair, not rigged.** A real uncatalogued warehouse still has *some* names — usually
 abbreviated, inconsistent, and undocumented. An agent with SQL alone can still `SELECT` from
 `t_person_m`; it just has to rediscover what the columns mean and how tables relate. Giving the
-control arm random UUIDs or empty schemas would make the comparison a strawman. Giving it the full
+control mode random UUIDs or empty schemas would make the comparison a strawman. Giving it the full
 glossary and lineage would erase the treatment. Opaque-but-queryable names with no docs is the
 honest middle: the only thing that differs between `agent_datahub` and `agent_raw` is metadata
 context, which is the quantity under measurement.

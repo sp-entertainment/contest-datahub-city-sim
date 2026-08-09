@@ -5,7 +5,7 @@ FastAPI control surface, and the agent's actuation step. They are named in docs/
 module is the single source of truth for their ranges and defaults.
 
 Bounds and response curves were calibrated against the `infrastructure_neglect` scenario
-(2026-08-02) so a recovery policy can reverse road wear and water strain within the 36-turn budget
+(2026-08-02) so a recovery policy can reverse road wear and water strain within the recovery budget
 while a neglect policy cannot, and so every lever responds across its whole range rather than
 saturating at one end. See docs/DECISIONS.md.
 

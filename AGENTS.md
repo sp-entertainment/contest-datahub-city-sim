@@ -34,7 +34,7 @@ A **scenario** puts the city into a defined crisis. A **controller** pulls lever
 budget. A run is scored by a **composite health index**; "recovered" means the index crossed the
 green threshold within the budget. Three controllers face the identical seed, crisis, and budget:
 
-| Arm | Controller | Sees |
+| Mode | Controller | Sees |
 | --- | --- | --- |
 | `human` | A person | The city render, the levers, and the Analytics Agent to ask questions |
 | `agent_datahub` | Our auto-mode agent | DataHub over MCP, plus SQL against the warehouse |
@@ -44,7 +44,7 @@ Two comparisons fall out: `agent_datahub` vs `agent_raw` measures the metadata; 
 `agent_datahub` measures the automation.
 
 **What follows from this.** Simulation fidelity is where effort belongs. The viewer is cosmetic —
-it must look like a city and carry the levers, nothing more. Information parity across arms is an
+it must look like a city and carry the levers, nothing more. Information parity across modes is an
 experimental control, so a number on screen is not a style violation, it is a corrupted experiment.
 
 ## Contest context
@@ -65,14 +65,14 @@ src/blindcity/
                Also declares its causal graph, validated per edge (causal_check.py).
   catalog/     Metadata ingestion: schemas, glossary terms, lineage, assertions.
   agent/       Auto-mode agent. DataHub MCP + SQL + lever actuation, closed loop.
-               Runs as both the agent_datahub and agent_raw arms.
+               Runs as both the agent_datahub and agent_raw modes.
   benchmark/   Scenario definition, health index, turn budget, controller interface,
                run harness, results. The measurement, and the point of the project.
-  evaluation/  Runs the arms and compares them. `uv run eval`.
+  evaluation/  Runs the modes and compares them. `uv run eval`.
   levers.py    The eight levers. Single source of truth for ranges and defaults.
   rng.py       Seeded randomness. Determinism is a hard rule.
   config.py    Connection settings.
-viewer/        Cosmetic city scene plus the lever panel — the human arm's control surface.
+viewer/        Cosmetic city scene plus the lever panel — the human mode's control surface.
                No numbers, no charts, no trends.
 infra/         Docker compose for the warehouse Postgres.
 tests/         pytest.
@@ -159,10 +159,10 @@ uv run eval --seeds 5
 - **Do spend effort on simulation fidelity, not on rendering.** The sim is the substrate the whole
   measurement rests on. The viewer is cosmetic: it should look like a city and carry the levers.
   Time spent making it pretty is time not spent on the thing being judged.
-- **Do hold information parity across arms.** Every controller gets the same channel to the city's
+- **Do hold information parity across modes.** Every controller gets the same channel to the city's
   state; only the metadata differs. This is the experiment's control, not a preference.
 - **Don't build a dashboard.** Any chart, trend line, gauge, or numeric readout of city state in the
-  viewer breaks parity — it hands the human arm information the agent arms do not have and
+  viewer breaks parity — it hands the human mode information the agent modes do not have and
   invalidates the comparison. Lever positions are the controller's own input and are exempt.
 - **Don't ship only the upstream Analytics Agent.** Originality is a judged criterion; the closed
   loop is ours.
@@ -172,6 +172,6 @@ uv run eval --seeds 5
   failure, not a crisis.
 - **Don't trust a green test suite to mean a value is alive.** A constant passes every range check.
   This project has shipped four columns pinned at a bound, each one through a fully green suite.
-  Require values to *move*, compare arms component by component, and check the fraction of rows
+  Require values to *move*, compare modes component by component, and check the fraction of rows
   sitting at the ceiling rather than the mean. The opening section of `docs/ERRORS.md` is the
   full version of this, and it is the single most useful thing in the documentation.

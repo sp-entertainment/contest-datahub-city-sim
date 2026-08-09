@@ -113,18 +113,18 @@ Violating any of these is expensive and often silent.
   rejected.
 - **Simulation fidelity is where effort goes; the viewer is cosmetic.** The sim is the substrate the
   measurement rests on. The scene needs to read as a city at a glance and nothing more. The lever
-  panel is the exception — it is functional, because the `human` arm cannot play without it.
-- **Information parity across arms is an experimental control.** Every controller gets the same
+  panel is the exception — it is functional, because the `human` mode cannot play without it.
+- **Information parity across modes is an experimental control.** Every controller gets the same
   channel to the city's state; only the metadata differs. No charts, counters, gauges, or numeric
-  readouts of city state in the viewer — a number on screen hands the human arm information the
-  agent arms lack and invalidates the comparison. Lever positions are the controller's own input
+  readouts of city state in the viewer — a number on screen hands the human mode information the
+  agent modes lack and invalidates the comparison. Lever positions are the controller's own input
   and are exempt.
 - **`agent_datahub` and `agent_raw` must differ in exactly one thing.** Same model, prompt, seed,
   turn budget, tool budget, and SQL access; only the catalog context differs. Any other difference
   invalidates the headline result.
 - **The simulation is spatial.** Tiles, buildings on tiles, citizens with homes, workplaces, and
   positions. The viewer is downstream of this — without it there is nothing to draw.
-- **Keep the baseline honest.** The no-DataHub control arm gets the same model, prompt, seed, tool
+- **Keep the baseline honest.** The no-DataHub control mode gets the same model, prompt, seed, tool
   budget, and full SQL access. Only the metadata context differs.
 - **Do not ship only the upstream Analytics Agent.** Originality is judged. The closed loop in auto
   mode is the original contribution.

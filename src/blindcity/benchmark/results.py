@@ -1,4 +1,4 @@
-"""Durable results format for comparing runs across days and arms."""
+"""Durable results format for comparing runs across days and modes."""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ class RunResult:
     scenario_name: str
     seed: int
     controller_name: str
-    arm: str  # human | agent_datahub | agent_raw | scripted
+    mode: str  # human | agent_datahub | agent_raw | scripted
     run_id: str  # durable id (uuid or warehouse run_id as string)
     turn_budget: int
     green_threshold: float

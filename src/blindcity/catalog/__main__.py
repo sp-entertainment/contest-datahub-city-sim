@@ -62,7 +62,7 @@ def _evaluate_warehouse(run_id: int | None = None, *, all_runs: bool = False):
     """Evaluate assertions, by default against the most recent simulation run.
 
     The warehouse appends, so an unscoped assertion pools every run ever loaded — which makes
-    the row-count assertions easier on every load and mixes benchmark arms that exist to be
+    the row-count assertions easier on every load and mixes benchmark modes that exist to be
     compared. `--all-runs` opts into the unscoped behaviour deliberately.
     """
     from blindcity.catalog.assertions import evaluate_assertions, latest_run_id

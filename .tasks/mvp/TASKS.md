@@ -7,7 +7,7 @@ health index was rebuilt after a review found three components that did not meas
 claimed, congestion was un-saturated, assertions were scoped to a `run_id`, and the warehouse was
 re-recorded against a live Postgres. 102 tests, ruff clean.
 
-**Next: Slice 6 — the agent arms.** Unstarted, and it is the entire result. Everything built so
+**Next: Slice 6 — the agent modes.** Unstarted, and it is the entire result. Everything built so
 far is apparatus for one number: whether `agent_datahub` recovers the city better than `agent_raw`.
 
 Two Slice 4 items remain open, both needing a live Analytics Agent process rather than more code:
@@ -54,7 +54,7 @@ warehouse schema, the tick loop, any lineage code, and the viewer's framework �
 design decisions that should be made by whoever makes them, not inherited from a stub. The lever
 bounds in `blindcity/levers.py` are plausible placeholders, not calibrated numbers.
 
-**Next action:** Slice 6 — agent arms (`agent_datahub` / `agent_raw`) implementing the controller
+**Next action:** Slice 6 — agent modes (`agent_datahub` / `agent_raw`) implementing the controller
 interface from Slice 5.
 
 Slices 1–3 were built and reviewed on 2026-08-02. The review added per-edge lineage validation and
@@ -121,7 +121,7 @@ The tick loop and the economy. Nothing else can be verified until rows exist.
       `PYTHONHASHSEED=0` and `=1`, same seed/years, asserts identical fingerprints.
 - [x] **Re-record the warehouse numbers.** Done 2026-08-03 against a live Postgres. 2,122,301 rows
       for one run, now recorded **per `run_id`** rather than whole-table, since the warehouse
-      appends and the arms will write in parallel. `docs/ENVIRONMENT.md` also carries the column
+      appends and the modes will write in parallel. `docs/ENVIRONMENT.md` also carries the column
       distributions and an `at ceiling` figure per column — re-check that table after any
       calibration change.
 
@@ -181,7 +181,7 @@ via `--dump-lineage`. All 29 edges pass validation. Live GMS emit requires DataH
       ASSERTIONS entry as SQL; `datahub-emit --evaluate-assertions` / `--evaluate-only` reports
       pass/fail and emit attaches results. Tests force fail cases so always-pass cannot hide.
 - [x] **Document the baseline naming in the README.** Fairness section with `t_person_m` mapping
-      and control-arm rationale.
+      and control-mode rationale.
 
 ### Slice 4 — Control surface and manual mode
 
@@ -197,7 +197,7 @@ via `--dump-lineage`. All 29 edges pass validation. Live GMS emit requires DataH
 ### Slice 5 — The benchmark: scenario, scoring, controllers
 
 **New 2026-08-02. This is the product** — see `docs/DECISIONS.md`. Everything else is scaffolding
-for it. Build it before the agent arms, because the arms implement its interface.
+for it. Build it before the agent modes, because the modes implement its interface.
 
 - [x] **Scenario definition.** `infrastructure_neglect` — 60 months neglect + shock, 36-turn budget.
 - [x] **Composite health index**, weights 0.20/0.30/0.30/0.20, green **0.62**, in DECISIONS.
@@ -213,42 +213,42 @@ score, a deliberately bad lever policy fails it, and a hand-played good policy r
 **Verified 2026-08-02.** Bad policy: recovered=False, final≈0.417. Good policy: recovered=True,
 green_turn=31, final≈0.653. Deterministic trajectories. 93 tests pass.
 
-### Slice 6 — Agent arms
+### Slice 6 — Agent modes
 
 The original contribution. Do not cut.
 
 **In progress. See `.tasks/mvp/SLICE6-HANDOFF.md` before continuing.**
 
 - [x] Agent loop: read state, catalog for context, SQL, decide, actuate, advance.
-      `uv run agent --arm agent_datahub|agent_raw`.
+      `uv run agent --mode agent_datahub|agent_raw`.
 - [x] `agent_datahub` and `agent_raw` as two controllers over one implementation — identical model,
       prompt, tool budget, and SQL access, differing only in catalog context. **Any other difference
-      between them is a bug that invalidates the headline result.** No branch on the arm exists in
+      between them is a bug that invalidates the headline result.** No branch on the mode exists in
       the loop; guarded by `tests/test_agent.py`.
 - [x] Crisis history written to the warehouse, so the cause of the crisis is discoverable by SQL.
-- [ ] Clean live smoke run for both arms, and the real per-arm cost of a 36-turn run for H3.
+- [ ] Clean live smoke run for both modes, and the real per-mode cost of a 36-turn run for H3.
 - [ ] Agent writes findings back into the catalog.
 - [ ] `TOOLS_IS_MUTATION_ENABLED=true` — only applies if the MCP path is adopted; the catalog is
       currently read over GMS GraphQL. See the handoff for the reasoning and the seam.
 
-### Slice 7 — Viewer and the human arm
+### Slice 7 — Viewer and the human mode
 
 Cosmetic scene, functional controls. The scene is the first thing to cut under time pressure; the
-lever panel is not, because the `human` arm cannot play without it.
+lever panel is not, because the `human` mode cannot play without it.
 
 - [ ] Lever panel: the eight controls as GUI inputs, each showing its position, each `POST`ing to
-      `/lever`. **Functional — required for the human arm.**
+      `/lever`. **Functional — required for the human mode.**
 - [ ] Advance control, so the player can step a turn and see the consequence.
 - [ ] City scene on a canvas: isometric tiles, buildings as blocks, roads, citizens as dots.
       **Cosmetic — low fidelity by design.**
 - [ ] Condition shown visually, never numerically — worn roads look worn, unpowered buildings go
       dark, derelict lots look derelict.
 - [ ] No charts, counters, gauges, trend lines, or numeric readouts of city state. This is
-      information parity between arms, not a style rule.
-- [ ] The human arm wired to the Analytics Agent, so the player can ask questions and then act.
+      information parity between modes, not a style rule.
+- [ ] The human mode wired to the Analytics Agent, so the player can ask questions and then act.
 
 **Verified when:** a person can play a scenario end to end and get a score comparable to an agent
-arm's, and cannot see a single number about the city's state that the agent arms do not also get.
+mode's, and cannot see a single number about the city's state that the agent modes do not also get.
 
 **Approach, decided** (`docs/DECISIONS.md`): plain HTML, 2D canvas, 2.5D isometric tiles, no build
 step, served as static files by the FastAPI process. `viewer/README.md` has the concrete spec:
@@ -263,8 +263,8 @@ looks flat and schematic, it is correct.
 
 Agent runs cost real money and real time, and produce the number the submission is built around.
 
-- [ ] `uv run eval` drives all three arms through one scenario on one seed.
-- [ ] Per-arm results captured: health trajectory, turn green was reached or not reached, lever
+- [ ] `uv run eval` drives all three modes through one scenario on one seed.
+- [ ] Per-mode results captured: health trajectory, turn green was reached or not reached, lever
       history, component breakdown.
 - [ ] Results comparable across seeds and across days.
 - [ ] Verified without spending a real evaluation: dry run, mocked agent, or scripted controller.
@@ -285,10 +285,10 @@ Decided in advance, so it is not decided in panic. Sacrifice in this order:
 
 1. **The city scene.** Revised 2026-08-02, when the project was reframed as a benchmark. The render
    is cosmetic — cut it to bare coloured tiles, or to nothing, before cutting anything else. The
-   **lever panel is not part of this cut**: without it the human arm cannot play.
+   **lever panel is not part of this cut**: without it the human mode cannot play.
 2. **Water and sewer.** Power and roads carry the same story.
-3. **The `human` arm.** Two agent arms still answer the metadata question, which is the headline.
-   Losing the human arm costs the automation comparison, not the thesis.
+3. **The `human` mode.** Two agent modes still answer the metadata question, which is the headline.
+   Losing the human mode costs the automation comparison, not the thesis.
 4. **Agent write-back to the catalog.** A bonus, not the thesis.
 5. **Multiple seeds.** One seed with an honest caveat beats none.
 

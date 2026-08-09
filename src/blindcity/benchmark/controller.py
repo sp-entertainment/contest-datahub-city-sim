@@ -22,7 +22,7 @@ class Controller(Protocol):
     def decide(self, state: CityState, turn: int, channel: dict[str, Any]) -> dict[str, float]:
         """Return a full or partial lever map for this turn.
 
-        `channel` is arm-specific: SQL rows, catalog context, or human intent. Scripted
+        `channel` is mode-specific: SQL rows, catalog context, or human intent. Scripted
         controllers may ignore it. Partial maps are merged onto current levers by the harness.
         """
         ...

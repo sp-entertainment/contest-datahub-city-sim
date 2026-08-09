@@ -13,10 +13,10 @@ from blindcity.console import configure_console
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="agent",
-        description="Play a Blind City scenario as one benchmark arm.",
+        description="Play a Blind City scenario as one benchmark mode.",
     )
     parser.add_argument(
-        "--arm",
+        "--mode",
         choices=("agent_datahub", "agent_raw"),
         default="agent_datahub",
         help="'agent_raw' is the A/B control: same model, prompt, seed, tool budget and SQL "
@@ -25,7 +25,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--model",
         default=None,
-        help="Model id. Defaults to $LLM_MODEL. Both arms must use the same one -- that is a "
+        help="Model id. Defaults to $LLM_MODEL. Both modes must use the same one -- that is a "
         "fairness requirement, not a preference.",
     )
     parser.add_argument(
@@ -69,7 +69,7 @@ def main() -> int:
 
     try:
         run = run_arm(
-            args.arm,
+            args.mode,
             llm=build_llm(args.provider, args.model),
             turns=args.turns,
             tool_budget=args.tool_budget or DEFAULT_TOOL_BUDGET,
@@ -85,7 +85,7 @@ def main() -> int:
     result, report = run.result, run.report
     played = len(result.turns)
     print(
-        f"agent: arm={result.arm} model={report['model']} catalog={report['catalog']} "
+        f"agent: mode={result.mode} model={report['model']} catalog={report['catalog']} "
         f"turns={played} recovered={result.recovered} green_turn={result.green_turn} "
         f"final_index={result.final_index:.4f}"
     )

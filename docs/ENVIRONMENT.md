@@ -225,7 +225,7 @@ each time someone runs the simulation. Find the id with
 | ticks, lever_monthly, budget_monthly, power_monthly, water_monthly, migration_monthly | 241 each |
 | **total** | **2,122,301** |
 
-**Column distributions in that run**, which is what the agent arms will actually query:
+**Column distributions in that run**, which is what the agent modes will actually query:
 
 | Column | min | mean | max | distinct (2dp) | at ceiling |
 | --- | ---: | ---: | ---: | ---: | ---: |
@@ -311,7 +311,7 @@ Invoke-RestMethod -Uri "https://generativelanguage.googleapis.com/v1beta/models"
 
 **Model split.** Use `gemini-2.5-flash` for dry runs, smoke tests, and harness verification, and
 `gemini-2.5-pro` for anything whose output is evidence — the auto-mode loop and the A/B evaluation.
-Both arms of the evaluation must use the same model; that is a fairness requirement, not a
+Both modes of the evaluation must use the same model; that is a fairness requirement, not a
 preference (`AGENTS.md`).
 
 Rules, for humans and agents alike:

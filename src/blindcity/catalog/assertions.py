@@ -38,9 +38,9 @@ class AssertionResult:
 def _scope(run_id: int | None) -> str:
     """Restrict an assertion to one simulation run.
 
-    `uv run sim` appends, so every table holds every run ever loaded and the benchmark arms
+    `uv run sim` appends, so every table holds every run ever loaded and the benchmark modes
     write concurrently. Unscoped, a row-count assertion gets easier each time anyone runs the
-    simulation, and a range assertion silently pools arms that are supposed to be compared.
+    simulation, and a range assertion silently pools modes that are supposed to be compared.
     The run id is bound as a parameter, never interpolated.
     """
     return " WHERE run_id = %(run_id)s" if run_id is not None else ""

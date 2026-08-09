@@ -300,7 +300,7 @@ def check_zoning_to_buildings() -> Result:
     """Zoned empty land must be a precondition for construction.
 
     The control has *every* empty tile un-zoned, so it has nowhere legal to build; the treatment
-    zones some of that same land. Both arms get the identical RNG stream, so any difference is the
+    zones some of that same land. Both modes get the identical RNG stream, so any difference is the
     zoning and nothing else. Construction is probabilistic, so several trials are run: the control
     must never build, and the treatment must build at least once.
     """
@@ -311,7 +311,7 @@ def check_zoning_to_buildings() -> Result:
         for state in (control, treatment):
             state.levers["zoning_release"] = 0.0
             occupied = {b.tile_id for b in state.buildings}
-            # Strip zoning from all empty land, so neither arm has leftover buildable tiles.
+            # Strip zoning from all empty land, so neither mode has leftover buildable tiles.
             for t in state.tiles:
                 if t.tile_id not in occupied:
                     t.zoning = "none"
@@ -328,7 +328,7 @@ def check_zoning_to_buildings() -> Result:
             return False, "no empty grass tiles available to zone"
 
         before_c, before_t = len(control.buildings), len(treatment.buildings)
-        # Identical stream for both arms — the only difference is the zoning.
+        # Identical stream for both modes — the only difference is the zoning.
         systems.apply_zoning_growth(control, _rng(f"zone.{i}"))
         systems.apply_zoning_growth(treatment, _rng(f"zone.{i}"))
         built_c = len(control.buildings) - before_c

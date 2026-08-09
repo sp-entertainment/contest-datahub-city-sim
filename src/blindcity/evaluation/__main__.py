@@ -10,7 +10,7 @@ from blindcity.console import configure_console
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="eval", description="Run the context A/B evaluation.")
-    parser.add_argument("--seeds", type=int, default=5, help="Number of seeds to run each arm on.")
+    parser.add_argument("--seeds", type=int, default=5, help="Number of seeds to run each mode on.")
     parser.add_argument("--years", type=int, default=20, help="Simulated years per run.")
     return parser
 

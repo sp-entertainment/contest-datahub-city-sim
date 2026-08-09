@@ -1,6 +1,6 @@
 """Benchmark substrate: scenario, health index, controllers, harness, results.
 
-This package is the product — see docs/DECISIONS.md, 2026-08-02. Agent arms (Slice 6)
+This package is the product — see docs/DECISIONS.md, 2026-08-02. Agent modes (Slice 6)
 implement the controller interface defined here.
 """
 

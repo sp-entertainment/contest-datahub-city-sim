@@ -133,7 +133,7 @@ def test_same_controller_same_seed_same_trajectory():
 
 
 def test_bad_policy_fails_scenario(tmp_path: Path):
-    result = run_scenario(INFRASTRUCTURE_CRISIS, bad_controller(), arm="scripted")
+    result = run_scenario(INFRASTRUCTURE_CRISIS, bad_controller(), mode="scripted")
     result.write_json(tmp_path / "scenario-bad.json")
     assert result.recovered is False, (
         f"bad policy must not reach green; final={result.final_index:.3f} "
@@ -143,7 +143,7 @@ def test_bad_policy_fails_scenario(tmp_path: Path):
 
 
 def test_good_policy_recovers_scenario(tmp_path: Path):
-    result = run_scenario(INFRASTRUCTURE_CRISIS, good_controller(), arm="scripted")
+    result = run_scenario(INFRASTRUCTURE_CRISIS, good_controller(), mode="scripted")
     result.write_json(tmp_path / "scenario-good.json")
     assert result.recovered is True, (
         f"good policy must reach green; final={result.final_index:.3f} "
@@ -183,7 +183,7 @@ def test_policies_differ_from_defaults():
 
 # --- Regressions from the 2026-08-02 benchmark review ---------------------------------
 #
-# Every failure below was live at the time: solvency rewarded the neglect arm, water capex
+# Every failure below was live at the time: solvency rewarded the neglect mode, water capex
 # could not move its own score, and the road lever was flat across the bottom of its range.
 # All three passed the range-style assertions above, which is the point — a component that
 # is constant, inverted, or saturated is still "in [0, 1]".
@@ -192,7 +192,7 @@ COMPONENTS = ("solvency", "satisfaction", "service", "population")
 
 
 def test_good_beats_bad_on_every_component():
-    """Not just on the composite. Solvency used to be *higher* for the neglect arm, which
+    """Not just on the composite. Solvency used to be *higher* for the neglect mode, which
     spends nothing, so it repays its debt and builds months of cash cover while the roads
     fail. A fifth of the index was rewarding the losing policy."""
     good = _run(tuple(sorted(GOOD_POLICY.items()))).turns[-1].components
@@ -248,7 +248,7 @@ def test_overspending_is_punished():
 
 
 def test_no_component_is_constant_over_a_run():
-    """A component that never moves cannot be diagnosed, and cannot distinguish two arms."""
+    """A component that never moves cannot be diagnosed, and cannot distinguish two modes."""
     good = _run(tuple(sorted(GOOD_POLICY.items())))
     for key in COMPONENTS:
         values = [t.components[key] for t in good.turns]

@@ -2,8 +2,8 @@
 
 One implementation, instantiated twice. `agent_datahub` and `agent_raw` are the *same object*
 with a different `CatalogSource`, which is the only way to make "they differ in exactly one thing"
-a property of the code rather than a promise in a document. There is no `if arm == ...` anywhere
-below, and there must never be: the moment behaviour branches on the arm, the headline result
+a property of the code rather than a promise in a document. There is no `if mode == ...` anywhere
+below, and there must never be: the moment behaviour branches on the mode, the headline result
 measures the branch instead of the metadata.
 
 The loop, per turn: hand the model the levers it currently holds and the turn number, let it
@@ -42,7 +42,7 @@ from blindcity.levers import LEVERS
 from blindcity.sim.model import CityState
 
 # Tool calls the model may make per turn before it must commit. A budget rather than a limit on
-# thinking: both arms get the same one, so a catalog that saves queries shows up as a better
+# thinking: both modes get the same one, so a catalog that saves queries shows up as a better
 # decision inside the budget, not as more queries.
 DEFAULT_TOOL_BUDGET = 12
 
@@ -100,7 +100,7 @@ class AgentController:
     def _build_system_prompt(self) -> str:
         """System prompt = shared instructions + (catalog block, or nothing).
 
-        The catalog block is appended, never interleaved, so the two arms' prompts are identical
+        The catalog block is appended, never interleaved, so the two modes' prompts are identical
         up to the byte where one of them stops.
         """
         block = self.catalog.context_block()
@@ -111,7 +111,7 @@ class AgentController:
     def decide(self, state: CityState, turn: int, channel: dict[str, Any]) -> dict[str, float]:
         """One turn of the loop. Returns the levers to apply."""
         ctx = ToolContext(conn=self.conn, run_id=self.run_id, levers=dict(state.levers), turn=turn)
-        # Provider-neutral: the controller never builds a wire format, so it cannot hand one arm
+        # Provider-neutral: the controller never builds a wire format, so it cannot hand one mode
         # a differently-shaped conversation than the other.
         history: list[Turn] = [user_turn(self._turn_prompt(state, turn))]
         declarations = tool_declarations()
@@ -127,7 +127,7 @@ class AgentController:
                 )
             except LLMError as exc:
                 # A failed turn must not abort the run: the harness still advances a month, and
-                # the arm is scored on a city it failed to steer. That is a real outcome, not an
+                # the mode is scored on a city it failed to steer. That is a real outcome, not an
                 # exception, and silently retrying forever would hide it.
                 error = str(exc)
                 break
@@ -148,7 +148,7 @@ class AgentController:
             history.append(Turn(role="user", results=results))
 
             # Committing ends the turn. Anything after this is the model second-guessing itself
-            # on a city it can no longer observe, and both arms are held to the same rule.
+            # on a city it can no longer observe, and both modes are held to the same rule.
             if any(c.name == "set_levers" for c in reply.calls):
                 break
 
@@ -182,7 +182,7 @@ class AgentController:
         )
 
     def report(self) -> dict[str, Any]:
-        """Everything needed to audit the arm after the fact."""
+        """Everything needed to audit the mode after the fact."""
         return {
             "controller": self.name,
             "model": self.llm.model,

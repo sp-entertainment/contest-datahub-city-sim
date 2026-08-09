@@ -10,7 +10,7 @@ how often, and what the agent concluded. The next reader of that dataset — hum
 it in DataHub.
 
 **Only `agent_datahub` writes back.** `agent_raw` has no catalog by construction; giving the
-control arm a write path would be a second difference between the arms and would invalidate the
+control mode a write path would be a second difference between the modes and would invalidate the
 headline result. Write-back happens after the run is scored, so it cannot affect the score
 either way.
 """
@@ -64,10 +64,10 @@ def tables_queried(queries: list[str]) -> dict[str, int]:
     return counts
 
 
-def _note(arm: str, run_id: str, hits: int, rationale: str) -> dict[str, str]:
+def _note(mode: str, run_id: str, hits: int, rationale: str) -> dict[str, str]:
     stamp = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     note = {
-        f"agent_finding.{run_id}.arm": arm,
+        f"agent_finding.{run_id}.mode": mode,
         f"agent_finding.{run_id}.queried_times": str(hits),
         f"agent_finding.{run_id}.at": stamp,
     }
@@ -88,7 +88,7 @@ def write_back(
     invalidate a completed run, and the run's own result is the evidence, not this.
     """
     if report.get("catalog") != "datahub":
-        return WriteBackResult(0, [], skipped="control arm has no catalog by construction")
+        return WriteBackResult(0, [], skipped="control mode has no catalog by construction")
 
     gms = (gms_url or config.DATAHUB_GMS_URL).rstrip("/")
     turns = report.get("turns") or []
@@ -105,7 +105,7 @@ def write_back(
             rationale = turn["rationale"]
             break
 
-    arm = report.get("controller", "agent")
+    mode = report.get("controller", "agent")
     written: list[str] = []
     failed: dict[str, str] = {}
     with httpx.Client(timeout=30.0) as client:
@@ -118,7 +118,7 @@ def write_back(
                 # and column documentation — the very thing agent_datahub depends on, degraded
                 # a little further by every run.
                 merged = dict(existing.get("customProperties") or {})
-                merged.update(_note(arm, run_id, hits, rationale))
+                merged.update(_note(mode, run_id, hits, rationale))
                 aspect: dict[str, Any] = {"customProperties": merged}
                 if existing.get("description"):
                     aspect["description"] = existing["description"]

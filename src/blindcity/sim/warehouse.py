@@ -1,7 +1,7 @@
 """Warehouse schema and bulk writers.
 
 Batch inserts keep a 20-year citizen-scale run practical. Rows are keyed by `run_id` so concurrent
-benchmark arms can share one database. Truncate is opt-in (`reset_warehouse` / `sim --reset-warehouse`);
+benchmark modes can share one database. Truncate is opt-in (`reset_warehouse` / `sim --reset-warehouse`);
 the default path is append-only via `start_run`.
 """
 

@@ -1,4 +1,4 @@
-"""Run isolation: multi-arm writes must not wipe each other via global truncate."""
+"""Run isolation: multi-mode writes must not wipe each other via global truncate."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ def test_reset_warehouse_is_explicit_not_implied_by_start_run():
 
 
 def test_all_history_tables_keyed_by_run_id():
-    """Every warehouse table carries run_id so arms can share one database."""
+    """Every warehouse table carries run_id so modes can share one database."""
     assert "run_id" in wh.DDL
     for table, cols in wh.TABLE_COLUMNS.items():
         assert cols[0] == "run_id", f"{table} must lead with run_id, got {cols[0]}"

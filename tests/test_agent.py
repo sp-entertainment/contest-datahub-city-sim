@@ -1,4 +1,4 @@
-"""The agent arms, tested without spending a token.
+"""The agent modes, tested without spending a token.
 
 The headline result is `agent_datahub` versus `agent_raw`, and it is only worth anything if the
 two differ in exactly one thing. That is a property of the code, so it is tested like one. Every
@@ -24,7 +24,7 @@ from blindcity.agent.llm import (
     Turn,
     Usage,
 )
-from blindcity.agent.run import ARMS
+from blindcity.agent.run import MODES
 from blindcity.agent.tools import ToolContext, dispatch, set_levers, tool_declarations
 from blindcity.levers import LEVERS, defaults
 
@@ -114,7 +114,7 @@ class FakeConn:
 
 @pytest.fixture
 def controllers(monkeypatch):
-    """Both arms, built identically apart from the catalog."""
+    """Both modes, built identically apart from the catalog."""
     monkeypatch.setattr("blindcity.agent.runscope.create_run_views", lambda conn, run_id: "run_1")
     monkeypatch.setattr("blindcity.agent.runscope.scope_connection", lambda conn, run_id: None)
 
@@ -126,7 +126,7 @@ def controllers(monkeypatch):
 
     def build(catalog, llm):
         return AgentController(
-            name="arm", llm=llm, conn=FakeConn(), run_id=1, catalog=catalog, turn_budget=36
+            name="mode", llm=llm, conn=FakeConn(), run_id=1, catalog=catalog, turn_budget=36
         )
 
     return build, StubCatalog()
@@ -155,7 +155,7 @@ def test_control_arm_gets_no_placeholder(controllers):
     raw = build(NoCatalog(), FakeLLM())
     lowered = raw._system.lower()
     for leak in ("catalog", "datahub", "glossary", "lineage", "metadata"):
-        assert leak not in lowered, f"control arm's prompt mentions {leak!r}"
+        assert leak not in lowered, f"control mode's prompt mentions {leak!r}"
 
 
 def test_both_arms_get_identical_tools(controllers):
@@ -169,7 +169,7 @@ def test_both_arms_get_identical_tools(controllers):
 
 
 def test_both_arms_get_identical_turn_prompts(controllers):
-    """The per-turn message carries no arm-specific content either."""
+    """The per-turn message carries no mode-specific content either."""
     build, catalog = controllers
     raw_llm, hub_llm = FakeLLM(), FakeLLM()
     build(NoCatalog(), raw_llm).decide(_state(), 3, {})
@@ -178,20 +178,20 @@ def test_both_arms_get_identical_turn_prompts(controllers):
 
 
 def test_arm_definitions_differ_only_in_context():
-    """Two arms, two context values, one implementation."""
-    assert set(ARMS) == {"agent_datahub", "agent_raw"}
-    assert ARMS["agent_datahub"] == "datahub"
-    assert ARMS["agent_raw"] == "none"
+    """Two modes, two context values, one implementation."""
+    assert set(MODES) == {"agent_datahub", "agent_raw"}
+    assert MODES["agent_datahub"] == "datahub"
+    assert MODES["agent_raw"] == "none"
     assert isinstance(build_catalog("none"), NoCatalog)
     assert isinstance(build_catalog("datahub"), DataHubCatalog)
 
 
-# --- Information parity with the human arm --------------------------------------------------
+# --- Information parity with the human mode --------------------------------------------------
 
 
 def test_turn_prompt_carries_no_city_state(controllers):
     """The agent must discover the city through SQL. A figure in the prompt is a channel the
-    other arms do not have — the same rule that forbids a dashboard in the viewer.
+    other modes do not have — the same rule that forbids a dashboard in the viewer.
 
     Scoped to the per-turn message. The system prompt is allowed to state the goal ("get the
     city healthy"), which is the task, not an observation of the city.
@@ -205,7 +205,7 @@ def test_turn_prompt_carries_no_city_state(controllers):
 
 
 def test_no_prompt_reveals_the_scoring_function(controllers):
-    """Neither arm may be told how it is graded. An agent that knows the weights optimises the
+    """Neither mode may be told how it is graded. An agent that knows the weights optimises the
     index; an agent that does not has to fix the city, which is the thing being measured."""
     build, catalog = controllers
     llm = FakeLLM()
@@ -354,7 +354,7 @@ def test_tool_budget_is_enforced(controllers):
 
 
 def test_llm_failure_costs_the_turn_rather_than_the_run(controllers):
-    """The arm is scored on a city it failed to steer. That is a real outcome, not a crash."""
+    """The mode is scored on a city it failed to steer. That is a real outcome, not a crash."""
     from blindcity.agent.llm import LLMError
 
     build, _ = controllers
@@ -400,12 +400,12 @@ def test_writeback_finds_only_real_tables():
 
 
 def test_writeback_skips_the_control_arm():
-    """Giving agent_raw a write path would be a second difference between the arms."""
+    """Giving agent_raw a write path would be a second difference between the modes."""
     from blindcity.agent.writeback import write_back
 
     out = write_back({"catalog": "none", "turns": []}, "1")
     assert out.datasets == 0
-    assert "control arm" in out.skipped
+    assert "control mode" in out.skipped
 
 
 def test_writeback_preserves_existing_documentation(monkeypatch):
@@ -425,7 +425,7 @@ def test_writeback_preserves_existing_documentation(monkeypatch):
         lambda client, gms, urn: {
             "name": "road_monthly",
             "description": "Traffic, wear, and congestion per segment per month.",
-            "customProperties": {"agent_finding.7.arm": "agent_datahub"},
+            "customProperties": {"agent_finding.7.mode": "agent_datahub"},
         },
     )
 
@@ -443,7 +443,7 @@ def test_writeback_preserves_existing_documentation(monkeypatch):
     assert aspect_name == "datasetProperties"
     assert aspect["description"] == "Traffic, wear, and congestion per segment per month."
     # The earlier run's finding survives alongside the new one.
-    assert aspect["customProperties"]["agent_finding.7.arm"] == "agent_datahub"
+    assert aspect["customProperties"]["agent_finding.7.mode"] == "agent_datahub"
     assert aspect["customProperties"]["agent_finding.9.conclusion"] == "Roads are the problem."
 
 
@@ -507,7 +507,7 @@ def test_exactly_full_page_is_not_reported_as_truncated():
 # --- Backends -------------------------------------------------------------------------------
 #
 # The controller holds the conversation in a provider-neutral form and each backend serialises
-# it. These assert the serialisation, so a backend cannot quietly hand one arm a differently
+# it. These assert the serialisation, so a backend cannot quietly hand one mode a differently
 # shaped conversation than the other.
 
 

@@ -56,8 +56,8 @@ WATER_RESTORE_COST_PER_UNIT = 6_000.0
 # Load ratio the water system is expected to be held at. Anything above it is a backlog.
 WATER_TARGET_RATIO = 0.7
 # Scale of effective debt per capita. The debt term decays exponentially with this constant
-# rather than clamping linearly to zero: a linear clamp pinned the neglect arm's solvency at a
-# constant for all 36 turns, and a component that cannot move is a component that cannot be
+# rather than clamping linearly to zero: a linear clamp pinned the neglect mode's solvency at a
+# constant for every turn, and a component that cannot move is a component that cannot be
 # diagnosed. Exponential decay stays responsive at every debt level.
 DEBT_PER_CAPITA_SCALE = 3_000.0
 
@@ -67,7 +67,7 @@ def deferred_maintenance_liability(state: CityState) -> float:
 
     Municipal finance calls this the deferred maintenance backlog, and it exists precisely
     because cash-only measures flatter a government that balances its books by letting the
-    assets rot. Without it, the neglect arm of the benchmark scored *perfect* solvency: it
+    assets rot. Without it, the neglect mode of the benchmark scored *perfect* solvency: it
     spends nothing, so it repays its debt and builds months of cover while the roads fail.
     """
     road_backlog = 0.0

@@ -29,7 +29,7 @@ The player's entire control surface. Eight scalars, no other input.
 The point of the project. See `docs/DECISIONS.md`, 2026-08-02.
 
 - **Scenario.** A defined crisis: the city starts in an unhealthy state with a fixed turn budget to
-  recover. Same seed, same crisis, same budget for every arm.
+  recover. Same seed, same crisis, same budget for every mode.
 - **Health index.** A composite 0–1 score over solvency, citizen satisfaction, service coverage, and
   population retention. "Green" is a threshold on the index; a run succeeds if it crosses green
   within the budget.
@@ -40,23 +40,23 @@ The point of the project. See `docs/DECISIONS.md`, 2026-08-02.
 - **Results.** Per-run health trajectory, turn at which green was reached (if ever), lever history,
   and the component breakdown. `agent_datahub` vs `agent_raw` measures the metadata;
   `human` vs `agent_datahub` measures the automation.
-- **Run isolation.** Arms run in parallel and all write history, so every row carries a run
-  identifier and no arm truncates another's data.
+- **Run isolation.** Modes run in parallel and all write history, so every row carries a run
+  identifier and no mode truncates another's data.
 
 ## Viewer
 
-Cosmetic, and the human arm's control surface. It is not a faithful representation of the city and
+Cosmetic, and the human mode's control surface. It is not a faithful representation of the city and
 does not need to be.
 
 - **City scene.** Enough to read as a city: an isometric grid, buildings as blocks, roads, citizens
   as dots. Low fidelity by design — see `viewer/README.md`.
 - **Lever panel.** The eight controls as real GUI inputs — sliders and selectors showing each
-  lever's current position. This part is functional, not cosmetic: without it the human arm cannot
+  lever's current position. This part is functional, not cosmetic: without it the human mode cannot
   play.
 - **Advance control.** Step the simulation a turn and see what happened.
 - **No instrumentation.** No charts, trend lines, counters, gauges, alerts, or numeric readouts of
   city state. This is an experimental control, not a style rule: a number on screen gives the human
-  arm an information channel the agent arms do not have and invalidates the comparison. Lever
+  mode an information channel the agent modes do not have and invalidates the comparison. Lever
   positions are the controller's own input and are exempt.
 
 ## Metadata layer
@@ -77,17 +77,17 @@ does not need to be.
 
 ## Agents
 
-- **Manual mode.** Upstream Analytics Agent answers questions. This is the tooling the `human` arm
+- **Manual mode.** Upstream Analytics Agent answers questions. This is the tooling the `human` mode
   gets — it does not pull levers itself.
 - **Auto mode.** Closed loop — read state, gather context, query Postgres, decide, actuate a lever,
   advance, observe. Runs as `agent_datahub` (with catalog context) and `agent_raw` (without); the
-  two arms differ only in that context.
+  two modes differ only in that context.
 - **Write-back.** The agent records findings into the catalog rather than working around gaps.
 
 ## Evaluation
 
-- **Three-arm comparison** on identical seed, crisis, and turn budget.
-- **Reported per arm:** health index trajectory, turn green was reached, whether it was reached at
+- **Three-mode comparison** on identical seed, crisis, and turn budget.
+- **Reported per mode:** health index trajectory, turn green was reached, whether it was reached at
   all, lever history, and the index components.
 - **Future, not now.** Seed the simulation from real historical city data so the benchmark runs
   against real conditions.

@@ -1,4 +1,4 @@
-"""Drive one agent arm through one scenario.
+"""Drive one agent mode through one scenario.
 
 The order here matters and is the reason `RunHarness.prepare` exists: the warehouse run must be
 created and the crisis history written *before* the controller is built, because the controller
@@ -22,8 +22,8 @@ from blindcity.benchmark.results import RunResult
 from blindcity.benchmark.scenario import INFRASTRUCTURE_CRISIS, Scenario
 from blindcity.sim.warehouse import connect, ensure_schema
 
-# The two arms. `context` is the only field that differs, and it is the only field that may.
-ARMS: dict[str, str] = {
+# The two modes. `context` is the only field that differs, and it is the only field that may.
+MODES: dict[str, str] = {
     "agent_datahub": "datahub",
     "agent_raw": "none",
 }
@@ -37,7 +37,7 @@ class ArmRun:
 
 
 def run_arm(
-    arm: str,
+    mode: str,
     *,
     scenario: Scenario = INFRASTRUCTURE_CRISIS,
     model: str | None = None,
@@ -47,9 +47,9 @@ def run_arm(
     keep_views: bool = False,
     write_back_findings: bool = True,
 ) -> ArmRun:
-    """Play one arm. `turns` truncates the scenario for smoke tests; None plays it in full."""
-    if arm not in ARMS:
-        raise ValueError(f"unknown arm {arm!r}; expected one of {sorted(ARMS)}")
+    """Play one mode. `turns` truncates the scenario for smoke tests; None plays it in full."""
+    if mode not in MODES:
+        raise ValueError(f"unknown mode {mode!r}; expected one of {sorted(MODES)}")
 
     if turns is not None and turns < scenario.turn_budget:
         # Only the horizon changes. Seed, crisis, levers and shock are untouched, so a truncated
@@ -65,7 +65,7 @@ def run_arm(
         )
 
     harness = RunHarness(scenario)
-    # One factory for both arms: they cannot end up on different providers or models.
+    # One factory for both modes: they cannot end up on different providers or models.
     client = llm or build_llm(model=model)
 
     # Two connections on purpose. The writer bulk-loads with COPY against the real tables in
@@ -82,20 +82,20 @@ def run_arm(
         warehouse_run_id = prepared.warehouse_run_id
 
         controller = AgentController(
-            name=arm,
+            name=mode,
             llm=client,
             conn=agent_conn,
             run_id=warehouse_run_id,
-            catalog=build_catalog(ARMS[arm]),
+            catalog=build_catalog(MODES[mode]),
             tool_budget=tool_budget,
             turn_budget=scenario.turn_budget,
         )
-        result = harness.run(controller, arm=arm, prepared=prepared)
+        result = harness.run(controller, mode=mode, prepared=prepared)
         report = controller.report()
 
         # After scoring, never before: write-back must not be able to influence the run it
-        # describes. The control arm is skipped inside `write_back` rather than here, so the
-        # decision stays in one place and no branch on the arm enters this loop.
+        # describes. The control mode is skipped inside `write_back` rather than here, so the
+        # decision stays in one place and no branch on the mode enters this loop.
         if write_back_findings:
             report["write_back"] = writeback.write_back(report, str(result.run_id)).to_dict()
     finally:

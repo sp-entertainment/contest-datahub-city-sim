@@ -57,8 +57,15 @@ INFRASTRUCTURE_CRISIS = Scenario(
     name="infrastructure_neglect",
     seed=42,
     crisis_months=60,  # 5 years of neglect
-    turn_budget=36,  # 3 years of recovery attempts
-    months_per_turn=1,
+    # Twelve quarterly decisions over the same three years of recovery. Monthly decisions were
+    # the original shape and they were wrong on three counts: a human playing this mode would
+    # face 36 rounds of lever-pulling, which is tedious rather than interesting; each agent turn
+    # costs several LLM round trips, so 36 turns ran to hundreds of calls per mode; and monthly
+    # re-planning is not how a city is actually governed. Quarterly review is both realistic and
+    # a sharper test, because fewer chances to correct put more weight on each diagnosis — which
+    # is precisely what the catalog is supposed to improve.
+    turn_budget=12,
+    months_per_turn=3,
     crisis_levers=_NEGLECT,
     description=(
         "Five years of infrastructure neglect, underfunded services, and high utility costs "
@@ -102,7 +109,7 @@ def build_crisis_state(
     of "100% of whoever is left at onset".
 
     `on_month` is called once at founding and after every simulated month of the crisis. The
-    agent arms use it to write the neglect history into the warehouse: they diagnose the city
+    agent modes use it to write the neglect history into the warehouse: they diagnose the city
     exclusively through SQL, so a city whose past does not exist in Postgres is a city with no
     discoverable cause. Without it the agent's first turn opens on an empty table.
 
@@ -142,5 +149,5 @@ def scenario_to_dict(scenario: Scenario) -> dict[str, Any]:
 
 
 def clone_state(state: CityState) -> CityState:
-    """Deep copy for isolation between arms / policies."""
+    """Deep copy for isolation between modes / policies."""
     return deepcopy(state)
