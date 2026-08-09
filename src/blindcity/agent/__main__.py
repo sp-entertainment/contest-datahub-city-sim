@@ -43,10 +43,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--provider",
-        choices=("local", "google"),
+        choices=("local", "openai", "google"),
         default=None,
-        help="Where inference runs. Defaults to $LLM_PROVIDER ('local' = an OpenAI-compatible "
-        "server such as LM Studio at $LLM_BASE_URL).",
+        help="Where inference runs. Defaults to $LLM_PROVIDER. 'local' and 'openai' use the same "
+        "OpenAI-compatible client and differ only in $LLM_BASE_URL and the key.",
     )
     parser.add_argument("--out", default=None, help="Write the run result JSON here.")
     parser.add_argument(

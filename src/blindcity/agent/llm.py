@@ -34,7 +34,7 @@ GEMINI_API_ROOT = "https://generativelanguage.googleapis.com/v1beta"
 
 # Both arms must use the same model. That is a fairness requirement, not a preference.
 DEFAULT_PROVIDER = os.environ.get("LLM_PROVIDER", "local")
-DEFAULT_LOCAL_MODEL = "qwen/qwen3.6-35b-a3b"
+DEFAULT_LOCAL_MODEL = os.environ.get("LLM_MODEL") or "qwen/qwen3.6-35b-a3b"
 DEFAULT_GEMINI_MODEL = "gemini-3.6-flash"
 DEFAULT_BASE_URL = os.environ.get("LLM_BASE_URL", "http://localhost:1234/v1")
 
@@ -190,11 +190,12 @@ class _HttpClient:
 # --- Local, OpenAI-compatible (LM Studio, llama.cpp, vLLM, Ollama) ------------------------------
 
 
-class LocalClient(_HttpClient):
+class OpenAIClient(_HttpClient):
     """Talks to any OpenAI-compatible `/chat/completions` endpoint.
 
-    Written against LM Studio, but nothing here is LM Studio specific — point `LLM_BASE_URL` at
-    llama.cpp's server, vLLM, or Ollama and it works the same.
+    Covers both the hosted OpenAI API and a local server (LM Studio, llama.cpp, vLLM, Ollama).
+    They differ only in `LLM_BASE_URL` and whether the key is real, so one client serves both and
+    the benchmark cannot accidentally behave differently depending on where inference happens.
     """
 
     def __init__(
@@ -214,8 +215,17 @@ class LocalClient(_HttpClient):
         self.model = model or os.environ.get("LLM_MODEL") or DEFAULT_LOCAL_MODEL
         self.base_url = (base_url or DEFAULT_BASE_URL).rstrip("/")
         self.temperature = temperature
-        # Local servers ignore it; a remote OpenAI-compatible gateway may not.
-        self._key = api_key or os.environ.get("LLM_API_KEY") or "not-needed"
+        # Local servers ignore the key entirely; the hosted API does not. OPENAI_API_KEY is
+        # accepted as a fallback because that is the name the provider's own tooling uses.
+        self._key = (
+            api_key
+            or os.environ.get("LLM_API_KEY")
+            or os.environ.get("OPENAI_API_KEY")
+            or "not-needed"
+        )
+        # Some newer hosted models accept only the default temperature and 400 on anything else.
+        # Detected from the error rather than from a model-name list, which would rot.
+        self._send_temperature = True
 
     @staticmethod
     def _tools(tools: list[dict[str, Any]] | None) -> list[dict[str, Any]] | None:
@@ -260,18 +270,27 @@ class LocalClient(_HttpClient):
         body: dict[str, Any] = {
             "model": self.model,
             "messages": self._messages(system, history),
-            "temperature": self.temperature,
         }
+        if self._send_temperature:
+            body["temperature"] = self.temperature
         converted = self._tools(tools)
         if converted:
             body["tools"] = converted
 
+        url = f"{self.base_url}/chat/completions"
+        headers = {"Authorization": f"Bearer {self._key}", "Content-Type": "application/json"}
         started = time.monotonic()
-        data = self.post(
-            f"{self.base_url}/chat/completions",
-            body,
-            {"Authorization": f"Bearer {self._key}", "Content-Type": "application/json"},
-        )
+        try:
+            data = self.post(url, body, headers)
+        except LLMError as exc:
+            # Retry once without temperature if that is what it objected to. Both arms share the
+            # client, so this flips for both at once and cannot become a difference between them.
+            if self._send_temperature and "temperature" in str(exc).lower():
+                self._send_temperature = False
+                body.pop("temperature", None)
+                data = self.post(url, body, headers)
+            else:
+                raise
         elapsed = time.monotonic() - started
 
         raw_usage = data.get("usage") or {}
@@ -307,6 +326,11 @@ class LocalClient(_HttpClient):
             )
 
         return Reply(text=(message.get("content") or "").strip(), calls=calls, usage=usage)
+
+
+# `local` and `openai` are the same client pointed at different hosts. The alias keeps the
+# name that reads correctly at each call site.
+LocalClient = OpenAIClient
 
 
 # --- Hosted Gemini ------------------------------------------------------------------------------
@@ -443,11 +467,15 @@ def build_llm(provider: str | None = None, model: str | None = None) -> LLM:
     which would make the headline comparison meaningless.
     """
     name = (provider or DEFAULT_PROVIDER or "local").strip().lower()
-    if name in {"local", "lmstudio", "openai-compatible", "openai_compatible"}:
-        return LocalClient(model)
+    if name in {"local", "lmstudio", "openai", "openai-compatible", "openai_compatible"}:
+        # One client for all of them: OpenAI's hosted API and a local LM Studio / llama.cpp /
+        # vLLM / Ollama server speak the same protocol. Only LLM_BASE_URL and the key differ.
+        return OpenAIClient(model)
     if name in {"google", "gemini"}:
         return GeminiClient(model)
-    raise LLMError(f"unknown LLM_PROVIDER {name!r}; expected 'local' or 'google'")
+    raise LLMError(
+        f"unknown LLM_PROVIDER {name!r}; expected 'local', 'openai', or 'google'"
+    )
 
 
 def user_turn(text: str) -> Turn:
