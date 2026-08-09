@@ -22,6 +22,7 @@ model reads a briefing.
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -75,6 +76,11 @@ class AgentTurn:
     levers_set: dict[str, float]
     rationale: str
     usage: dict[str, Any]
+    # Wall time for the whole turn, and the share of it spent executing tools. Everything not
+    # covered by these plus usage['seconds'] is the loop's own overhead, which is the only way
+    # to notice when time is going somewhere nobody is looking.
+    seconds: float = 0.0
+    tool_seconds: float = 0.0
     error: str | None = None
 
 
@@ -119,6 +125,7 @@ class AgentController:
         rationale = ""
         error: str | None = None
         turn_usage = Usage()
+        turn_started = time.monotonic()
 
         for _ in range(self.tool_budget):
             try:
@@ -161,6 +168,8 @@ class AgentController:
                 levers_set=dict(ctx.pending),
                 rationale=rationale[:2000],
                 usage=turn_usage.to_dict(),
+                seconds=round(time.monotonic() - turn_started, 2),
+                tool_seconds=round(sum(r.seconds for r in ctx.log), 2),
                 error=error,
             )
         )
@@ -198,6 +207,11 @@ class AgentController:
                     "levers_set": t.levers_set,
                     "rationale": t.rationale,
                     "usage": t.usage,
+                    "seconds": t.seconds,
+                    "tool_seconds": t.tool_seconds,
+                    "unaccounted_seconds": round(
+                        t.seconds - t.tool_seconds - float(t.usage.get("seconds", 0.0)), 2
+                    ),
                     "error": t.error,
                 }
                 for t in self.history

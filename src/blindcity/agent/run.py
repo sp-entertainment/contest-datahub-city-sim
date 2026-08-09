@@ -76,8 +76,10 @@ def run_arm(
     started = time.perf_counter()
     warehouse_run_id: int | None = None
     try:
+        phase_start = time.perf_counter()
         ensure_schema(conn)
         prepared = harness.prepare(warehouse_conn=conn, write_warehouse=True)
+        prepare_seconds = time.perf_counter() - phase_start
         assert prepared.warehouse_run_id is not None
         warehouse_run_id = prepared.warehouse_run_id
 
@@ -90,8 +92,14 @@ def run_arm(
             tool_budget=tool_budget,
             turn_budget=scenario.turn_budget,
         )
+        phase_start = time.perf_counter()
         result = harness.run(controller, mode=mode, prepared=prepared)
+        play_seconds = time.perf_counter() - phase_start
         report = controller.report()
+        report["phases"] = {
+            "prepare_seconds": round(prepare_seconds, 1),
+            "play_seconds": round(play_seconds, 1),
+        }
 
         # After scoring, never before: write-back must not be able to influence the run it
         # describes. The control mode is skipped inside `write_back` rather than here, so the

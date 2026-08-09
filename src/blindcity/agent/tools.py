@@ -15,6 +15,7 @@ at all would be a straw man and the result would be worthless.
 from __future__ import annotations
 
 import re
+import time
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -46,6 +47,9 @@ class ToolCallRecord:
     args: dict[str, Any]
     ok: bool
     summary: str
+    # Wall time for this call. Without it a run reports LLM seconds and total seconds with
+    # nothing in between, which is how ~90% of a run once went unaccounted for.
+    seconds: float = 0.0
 
 
 @dataclass
@@ -218,11 +222,14 @@ DISPATCH = {"sql_query": run_sql, "set_levers": set_levers}
 
 
 def dispatch(ctx: ToolContext, name: str, args: dict[str, Any]) -> dict[str, Any]:
-    """Route one model-issued call, recording it for the audit trail."""
+    """Route one model-issued call, recording it and its cost for the audit trail."""
+    started = time.monotonic()
     handler = DISPATCH.get(name)
     if handler is None:
         payload = {"error": f"unknown tool {name!r}; available: {sorted(DISPATCH)}"}
-        ctx.log.append(ToolCallRecord(ctx.turn, name, args, False, payload["error"]))
+        ctx.log.append(
+            ToolCallRecord(ctx.turn, name, args, False, payload["error"], time.monotonic() - started)
+        )
         return payload
 
     if name == "sql_query":
@@ -235,5 +242,10 @@ def dispatch(ctx: ToolContext, name: str, args: dict[str, Any]) -> dict[str, Any
         payload = handler(ctx, args.get("levers"))
         summary = payload.get("error") or f"applied={payload.get('applied')}"
 
-    ctx.log.append(ToolCallRecord(ctx.turn, name, args, "error" not in payload, str(summary)[:300]))
+    ctx.log.append(
+        ToolCallRecord(
+            ctx.turn, name, args, "error" not in payload, str(summary)[:300],
+            time.monotonic() - started,
+        )
+    )
     return payload
