@@ -37,6 +37,8 @@ _FORBIDDEN = re.compile(
 
 MAX_ROWS = 50
 MAX_CELL_CHARS = 200
+# Only for the message shown to the model; the limit itself lives in runscope.
+STATEMENT_TIMEOUT_HINT = 45
 
 
 @dataclass
@@ -154,6 +156,19 @@ def run_sql(ctx: ToolContext, query: str) -> dict[str, Any]:
             cur.execute(capped)
             columns = [d.name for d in (cur.description or [])]
             rows = cur.fetchall()
+    except psycopg.errors.QueryCanceled:
+        # A statement timeout. psycopg raises this as a subclass of OperationalError, so without
+        # catching it first it looks like a dead connection. Critically it also leaves the
+        # transaction aborted: in a live run one timed-out query poisoned every later query in
+        # the turn with "current transaction is aborted", turning one slow query into a lost turn.
+        ctx.conn.rollback()
+        return {
+            "error": (
+                f"query exceeded the {STATEMENT_TIMEOUT_HINT}s limit and was cancelled. "
+                "Narrow it with a WHERE on tick, or aggregate less data."
+            ),
+            "timed_out": True,
+        }
     except psycopg.OperationalError as exc:
         # The connection itself failed rather than the query. Rebuild it once and retry, so a
         # warehouse blip costs one query instead of the whole mode.

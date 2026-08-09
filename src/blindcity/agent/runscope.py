@@ -64,6 +64,22 @@ def drop_run_views(conn: psycopg.Connection, run_id: int) -> None:
     conn.commit()
 
 
+def analyze_run_tables(conn: psycopg.Connection) -> None:
+    """Refresh planner statistics after a run's rows are written.
+
+    Without this the planner has no statistics for a brand-new , so a filter selecting
+    ~465k rows is estimated at 1 row, and it chooses a nested loop that is O(n*m). Measured: the
+    same aggregate ran in 6ms with statistics and hit the 45s statement timeout without them.
+    Four such queries in one turn cost that turn three minutes.
+
+    Cheap relative to what it prevents, and run once per mode rather than per query.
+    """
+    with conn.cursor() as cur:
+        for table in TABLES:
+            cur.execute(sql.SQL("ANALYZE public.{}").format(sql.Identifier(table.name)))
+    conn.commit()
+
+
 def scope_connection(conn: psycopg.Connection, run_id: int) -> None:
     """Point this connection at one run's views.
 

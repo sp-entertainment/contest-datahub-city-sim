@@ -681,3 +681,33 @@ def test_every_llm_client_uses_the_thinking_budget():
     for client in (OpenAIClient, ResponsesClient, GeminiClient):
         default = inspect.signature(client.__init__).parameters["timeout"].default
         assert default == LLM_TIMEOUT_SECONDS, f"{client.__name__} has its own timeout: {default}"
+
+
+def test_a_timed_out_query_does_not_poison_the_rest_of_the_turn():
+    """psycopg raises QueryCanceled as a subclass of OperationalError, so a statement timeout
+    reads as a dead connection unless caught first — and it leaves the transaction aborted. In a
+    live run one slow query made every later query in that turn fail with 'current transaction is
+    aborted', turning a single timeout into a lost turn."""
+    import psycopg
+
+    conn = FakeConn()
+    calls = {"n": 0}
+
+    def sometimes_slow(sql, params=None):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise psycopg.errors.QueryCanceled("canceling statement due to statement timeout")
+
+    conn.cursor_obj.execute = sometimes_slow
+    conn.cursor_obj.description = [_Col("n")]
+    conn.cursor_obj.rows = [{"n": 1}]
+
+    ctx = ToolContext(conn=conn, run_id=1, levers=defaults())
+    first = dispatch(ctx, "sql_query", {"query": "SELECT slow FROM t"})
+    assert first.get("timed_out") is True
+    assert "cancelled" in first["error"]
+    assert conn.rollbacks >= 1, "aborted transaction was not rolled back"
+
+    # The turn continues: the next query still works.
+    second = dispatch(ctx, "sql_query", {"query": "SELECT n FROM t"})
+    assert second.get("rows") == [[1]], second

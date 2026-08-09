@@ -79,6 +79,9 @@ def run_arm(
         phase_start = time.perf_counter()
         ensure_schema(conn)
         prepared = harness.prepare(warehouse_conn=conn, write_warehouse=True)
+        # Statistics must exist before the agent queries, or the planner will choose nested
+        # loops over hundreds of thousands of rows and every interesting query will time out.
+        runscope.analyze_run_tables(conn)
         prepare_seconds = time.perf_counter() - phase_start
         assert prepared.warehouse_run_id is not None
         warehouse_run_id = prepared.warehouse_run_id
