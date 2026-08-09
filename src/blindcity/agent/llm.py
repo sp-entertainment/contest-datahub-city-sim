@@ -212,8 +212,22 @@ class OpenAIClient(_HttpClient):
         api_key: str | None = None,
     ) -> None:
         super().__init__(timeout=timeout, max_retries=max_retries, min_interval=min_interval)
-        self.model = model or os.environ.get("LLM_MODEL") or DEFAULT_LOCAL_MODEL
-        self.base_url = (base_url or DEFAULT_BASE_URL).rstrip("/")
+        # An unset LLM_MODEL used to fall back to a local model name, which would then be sent
+        # to a hosted API and 404. Silently guessing a model id is exactly the failure this
+        # project has already paid for twice, so a hosted endpoint demands an explicit one.
+        resolved = (model or os.environ.get("LLM_MODEL") or "").strip()
+        base = (base_url or DEFAULT_BASE_URL).rstrip("/")
+        if not resolved:
+            if "localhost" in base or "127.0.0.1" in base:
+                resolved = DEFAULT_LOCAL_MODEL
+            else:
+                raise LLMError(
+                    f"LLM_MODEL is not set and {base} is not a local server. Set LLM_MODEL to a "
+                    "model id the provider actually serves -- list them first rather than "
+                    "guessing; both arms must use the same one."
+                )
+        self.model = resolved
+        self.base_url = base
         self.temperature = temperature
         # Local servers ignore the key entirely; the hosted API does not. OPENAI_API_KEY is
         # accepted as a fallback because that is the name the provider's own tooling uses.
@@ -328,9 +342,159 @@ class OpenAIClient(_HttpClient):
         return Reply(text=(message.get("content") or "").strip(), calls=calls, usage=usage)
 
 
-# `local` and `openai` are the same client pointed at different hosts. The alias keeps the
+# `local` and `openai-chat` are the same client pointed at different hosts. The alias keeps the
 # name that reads correctly at each call site.
 LocalClient = OpenAIClient
+
+
+# --- Hosted OpenAI, Responses API --------------------------------------------------------------
+
+
+class ResponsesClient(_HttpClient):
+    """OpenAI's `/v1/responses`.
+
+    Reasoning models refuse function tools on `/chat/completions` unless reasoning is switched
+    off — `gpt-5.6-luna` says so in the error. Since diagnosing a failing city from its data is
+    precisely the reasoning being measured, disabling it to keep the simpler endpoint would
+    hollow out the benchmark. This endpoint gives tools and reasoning together.
+
+    Stateless on purpose: the conversation is resent each call rather than chained with
+    `previous_response_id`. Every turn already starts fresh, both other backends work that way,
+    and server-side state is one more thing that could quietly differ between the two arms.
+    """
+
+    def __init__(
+        self,
+        model: str | None = None,
+        *,
+        base_url: str | None = None,
+        temperature: float | None = None,
+        timeout: float = 600.0,
+        max_retries: int = 4,
+        min_interval: float = 0.0,
+        api_key: str | None = None,
+    ) -> None:
+        super().__init__(timeout=timeout, max_retries=max_retries, min_interval=min_interval)
+        self.base_url = (base_url or DEFAULT_BASE_URL).rstrip("/")
+        resolved = (model or os.environ.get("LLM_MODEL") or "").strip()
+        if not resolved:
+            raise LLMError(
+                "LLM_MODEL is not set. Set it to a model id the provider actually serves — list "
+                "them rather than guessing. Both arms must use the same one."
+            )
+        self.model = resolved
+        # Reasoning models reject a non-default temperature outright, so it is not sent at all.
+        self.temperature = temperature
+        self._key = (
+            api_key or os.environ.get("LLM_API_KEY") or os.environ.get("OPENAI_API_KEY") or ""
+        )
+        if not self._key:
+            raise LLMError("LLM_API_KEY is not set. Put it in .env, never on the command line.")
+
+    @staticmethod
+    def _tools(tools: list[dict[str, Any]] | None) -> list[dict[str, Any]] | None:
+        """Responses takes flat function tools, without the `{type, function: {...}}` nesting
+        that `/chat/completions` requires."""
+        if not tools:
+            return None
+        return [
+            {
+                "type": "function",
+                "name": t["name"],
+                "description": t.get("description", ""),
+                "parameters": t.get("parameters", {}),
+            }
+            for t in tools
+        ]
+
+    @staticmethod
+    def _input(history: list[Turn]) -> list[dict[str, Any]]:
+        items: list[dict[str, Any]] = []
+        for turn in history:
+            if turn.role == "model":
+                if turn.text:
+                    items.append(
+                        {"role": "assistant", "content": [{"type": "output_text", "text": turn.text}]}
+                    )
+                items.extend(
+                    {
+                        "type": "function_call",
+                        "call_id": c.id,
+                        "name": c.name,
+                        "arguments": json.dumps(c.args),
+                    }
+                    for c in turn.calls
+                )
+            elif turn.results:
+                # Matched back to the call by `call_id`; the payload travels as a JSON string.
+                items.extend(
+                    {
+                        "type": "function_call_output",
+                        "call_id": r.call.id,
+                        "output": json.dumps(r.payload),
+                    }
+                    for r in turn.results
+                )
+            else:
+                items.append(
+                    {"role": "user", "content": [{"type": "input_text", "text": turn.text}]}
+                )
+        return items
+
+    def generate(
+        self, *, system: str, history: list[Turn], tools: list[dict[str, Any]] | None = None
+    ) -> Reply:
+        body: dict[str, Any] = {
+            "model": self.model,
+            "instructions": system,
+            "input": self._input(history),
+        }
+        converted = self._tools(tools)
+        if converted:
+            body["tools"] = converted
+        if self.temperature is not None:
+            body["temperature"] = self.temperature
+
+        started = time.monotonic()
+        data = self.post(
+            f"{self.base_url}/responses",
+            body,
+            {"Authorization": f"Bearer {self._key}", "Content-Type": "application/json"},
+        )
+        elapsed = time.monotonic() - started
+
+        raw_usage = data.get("usage") or {}
+        usage = Usage(
+            prompt_tokens=int(raw_usage.get("input_tokens", 0)),
+            output_tokens=int(raw_usage.get("output_tokens", 0)),
+            total_tokens=int(raw_usage.get("total_tokens", 0)),
+            calls=1,
+            seconds=elapsed,
+        )
+        self.usage.add(usage)
+
+        text_chunks: list[str] = []
+        calls: list[ToolCall] = []
+        for item in data.get("output") or []:
+            kind = item.get("type")
+            if kind == "function_call":
+                arguments = item.get("arguments") or "{}"
+                try:
+                    args = json.loads(arguments)
+                except json.JSONDecodeError:
+                    # Surfaced as a tool error so the model can see and correct it, rather than
+                    # killing the turn outright.
+                    args = {"__malformed_arguments__": str(arguments)[:500]}
+                calls.append(
+                    ToolCall(name=item.get("name", ""), args=args, id=str(item.get("call_id") or ""))
+                )
+            elif kind == "message":
+                for part in item.get("content") or []:
+                    if part.get("type") == "output_text" and part.get("text"):
+                        text_chunks.append(part["text"])
+            # `reasoning` items carry no user-visible text and are deliberately not replayed.
+
+        return Reply(text="".join(text_chunks).strip(), calls=calls, usage=usage)
 
 
 # --- Hosted Gemini ------------------------------------------------------------------------------
@@ -467,9 +631,12 @@ def build_llm(provider: str | None = None, model: str | None = None) -> LLM:
     which would make the headline comparison meaningless.
     """
     name = (provider or DEFAULT_PROVIDER or "local").strip().lower()
-    if name in {"local", "lmstudio", "openai", "openai-compatible", "openai_compatible"}:
-        # One client for all of them: OpenAI's hosted API and a local LM Studio / llama.cpp /
-        # vLLM / Ollama server speak the same protocol. Only LLM_BASE_URL and the key differ.
+    if name in {"openai", "responses"}:
+        # Hosted OpenAI goes through the Responses API: the reasoning models this key serves
+        # will not use function tools on /chat/completions unless reasoning is turned off.
+        return ResponsesClient(model)
+    if name in {"local", "lmstudio", "openai-chat", "openai-compatible", "openai_compatible"}:
+        # A local server (LM Studio, llama.cpp, vLLM, Ollama) speaking /chat/completions.
         return OpenAIClient(model)
     if name in {"google", "gemini"}:
         return GeminiClient(model)

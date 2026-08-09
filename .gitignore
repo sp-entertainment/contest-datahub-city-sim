@@ -129,6 +129,10 @@ celerybeat.pid
 
 # Environments
 .env
+# Any local variant too: a `.env.backup` holding a live key is not gitignored by
+# `.env` alone, and that is exactly how a credential reaches a commit.
+.env.*
+!.env.example
 .venv
 env/
 venv/
