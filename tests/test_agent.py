@@ -650,3 +650,34 @@ def test_sql_reports_clearly_when_the_warehouse_is_gone():
     ctx = ToolContext(conn=dead, run_id=1, levers=defaults())
     out = dispatch(ctx, "sql_query", {"query": "SELECT 1"})
     assert "warehouse unavailable" in out["error"]
+
+
+def test_thinking_budget_is_not_an_infrastructure_timeout():
+    """Timeouts must be scoped to the resource they protect. A SQL query or a lock should never
+    be slow, so those are tight. The model's reasoning legitimately takes minutes, and cutting
+    it short would not measure the model — it would measure our patience, and would silently
+    handicap the thing being benchmarked."""
+    from blindcity.agent import runscope
+    from blindcity.agent.llm import LLM_TIMEOUT_SECONDS
+
+    assert LLM_TIMEOUT_SECONDS >= 600, "thinking budget is too tight for a reasoning model"
+    assert runscope.STATEMENT_TIMEOUT_SECONDS <= 120, "a SQL runaway guard should be tight"
+    # The gap is the point: the model may think for many times longer than any one query runs.
+    assert LLM_TIMEOUT_SECONDS > runscope.STATEMENT_TIMEOUT_SECONDS * 5
+
+
+def test_every_llm_client_uses_the_thinking_budget():
+    """A per-client default is how one backend ends up quietly stricter than another. The Gemini
+    client sat at 90s, which would have truncated a reasoning model mid-thought."""
+    import inspect
+
+    from blindcity.agent.llm import (
+        LLM_TIMEOUT_SECONDS,
+        GeminiClient,
+        OpenAIClient,
+        ResponsesClient,
+    )
+
+    for client in (OpenAIClient, ResponsesClient, GeminiClient):
+        default = inspect.signature(client.__init__).parameters["timeout"].default
+        assert default == LLM_TIMEOUT_SECONDS, f"{client.__name__} has its own timeout: {default}"

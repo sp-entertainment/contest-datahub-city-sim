@@ -39,6 +39,14 @@ DEFAULT_LOCAL_MODEL = os.environ.get("LLM_MODEL") or "qwen/qwen3.6-35b-a3b"
 DEFAULT_GEMINI_MODEL = "gemini-3.6-flash"
 DEFAULT_BASE_URL = os.environ.get("LLM_BASE_URL", "http://localhost:1234/v1")
 
+# How long the model may take to answer, in seconds. This is a *thinking budget*, and it is
+# deliberately generous: a reasoning model can spend minutes on one reply, and cutting it off
+# would not measure the model, it would measure our patience. Every other timeout in this
+# project bounds a piece of infrastructure -- a SQL query, a lock, an HTTP fetch of the catalog
+# -- and those are tight because they should never be slow. Do not conflate the two: shortening
+# this one silently handicaps the thing being benchmarked.
+LLM_TIMEOUT_SECONDS = float(os.environ.get("LLM_TIMEOUT", "900"))
+
 
 class LLMError(RuntimeError):
     """The provider refused, failed, or returned something unusable."""
@@ -223,9 +231,10 @@ class OpenAIClient(_HttpClient):
         *,
         base_url: str | None = None,
         temperature: float = 0.0,
-        # Generous: a large context on a partially-offloaded MoE can take a while to prefill,
-        # and a timeout here would be scored as the mode failing to steer the city.
-        timeout: float = 600.0,
+        # See LLM_TIMEOUT_SECONDS: a thinking budget, not an infrastructure limit. A large
+        # context on a partially-offloaded MoE can take minutes just to prefill, and a timeout
+        # here would be scored as the mode failing to steer the city.
+        timeout: float = LLM_TIMEOUT_SECONDS,
         max_retries: int = 3,
         min_interval: float = 0.0,
         api_key: str | None = None,
@@ -388,7 +397,7 @@ class ResponsesClient(_HttpClient):
         *,
         base_url: str | None = None,
         temperature: float | None = None,
-        timeout: float = 600.0,
+        timeout: float = LLM_TIMEOUT_SECONDS,
         max_retries: int = 4,
         min_interval: float = 0.0,
         api_key: str | None = None,
@@ -533,7 +542,9 @@ class GeminiClient(_HttpClient):
         *,
         api_key: str | None = None,
         temperature: float = 0.0,
-        timeout: float = 90.0,
+        # Was 90s, which would have cut a reasoning model off mid-thought. Thinking time is not
+        # an infrastructure concern and is not bounded like one.
+        timeout: float = LLM_TIMEOUT_SECONDS,
         max_retries: int = 5,
         min_interval: float = 6.5,
     ) -> None:
