@@ -50,7 +50,7 @@ plays without a code change, which is the workflow this is modelling.
 
 The cost is drift: the same number now exists here and in DataHub. `guidance_properties` and
 `parse_guidance` below are exact inverses, so there is one wire format rather than two, and
-`uv run datahub-emit --check-guidance` fails when what is published differs from what is written
+`uv run blindcity emit --check` reports when what is published differs from what is written
 here.
 """
 

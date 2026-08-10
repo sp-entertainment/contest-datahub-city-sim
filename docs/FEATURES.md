@@ -66,11 +66,11 @@ does not need to be.
 - **Generated lineage.** The simulation's causal graph, emitted as DataHub lineage, table and column
   level.
 - **Assertions.** Quality and range expectations on simulation outputs, **evaluated as SQL** against
-  the warehouse (`datahub-emit --evaluate-assertions`) with pass/fail emitted beside the metadata.
+  the warehouse (`blindcity emit --evaluate-assertions`) with pass/fail emitted beside the metadata.
 
 ## Control surface
 
-- **FastAPI** on `uv run sim --serve`: `GET /state`, `POST /lever`, `POST /advance`, `GET /scene`.
+- **FastAPI** on `uv run blindcity sim --serve`: `GET /state`, `POST /lever`, `POST /advance`, `GET /scene`.
 - **`GET /scene`** returns tiles, buildings, roads, citizens for rendering — no population totals,
   treasury, or health aggregates (information parity).
 - **Static `viewer/`** served from the same process.

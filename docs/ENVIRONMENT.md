@@ -158,53 +158,53 @@ uv run ruff check .
 uv run pytest -q
 # 93 passed
 
-uv run sim --seed 42 --years 20
+uv run blindcity sim --seed 42 --years 20
 # Writes warehouse rows under a new run_id (append). Use --reset-warehouse for a clean demo load.
 
-uv run sim --seed 42 --years 1 --no-warehouse
+uv run blindcity sim --seed 42 --years 1 --no-warehouse
 # In-memory only (no Postgres). Useful for lever sweeps and CI without Docker.
 
-uv run sim --serve
+uv run blindcity sim --serve
 # FastAPI control surface on http://127.0.0.1:8000
 # GET /state  POST /lever  POST /advance  GET /scene  static viewer/ at /
 
-uv run datahub-emit
+uv run blindcity emit
 # Full catalog: schemas + descriptions + glossary + generated lineage + assertions → GMS :8080
 
-uv run datahub-emit --evaluate-assertions
+uv run blindcity emit --evaluate-assertions
 # Run each catalog assertion as SQL against the warehouse; emit pass/fail with the metadata
 
-uv run datahub-emit --evaluate-only
+uv run blindcity emit --evaluate-only
 # Evaluate assertions only (exit 2 if any fail); no GMS write
 
-uv run datahub-emit --evaluate-only --run-id 35
-uv run datahub-emit --evaluate-only --all-runs
+uv run blindcity emit --evaluate-only --run-id 35
+uv run blindcity emit --evaluate-only --all-runs
 # Assertions are scoped to the most recent run by default. --run-id picks another;
 # --all-runs pools every run, which makes the row-count assertions meaningless.
 
-uv run datahub-emit --baseline
+uv run blindcity emit --baseline
 # Control catalog: opaque table names, schemas only (no glossary/lineage/descriptions)
 
-uv run datahub-emit --dump-lineage lineage.json --dump-only
+uv run blindcity emit --dump-lineage lineage.json --dump-only
 # Serialize the causal graph without talking to GMS
 ```
 
 ### Agent modes
 
 ```powershell
-uv run agent --mode agent_datahub --out results\datahub.json
-uv run agent --mode agent_raw     --out results\raw.json
+uv run blindcity run --mode agent_datahub --out results\datahub.json
+uv run blindcity run --mode agent_raw     --out results\raw.json
 # One mode, full turn budget. --turns N truncates for a smoke test.
 # Writes the RunResult to --out and the agent's own report to <out>.agent.json.
 
-uv run agent --mode agent_raw --keep-warehouse
+uv run blindcity run --mode agent_raw --keep-warehouse
 # Append instead of clearing. See below.
 
-uv run agent --mode agent_raw --keep-views
+uv run blindcity run --mode agent_raw --keep-views
 # Leave the per-run SQL views behind so you can inspect exactly what the agent could see.
 ```
 
-**`uv run agent` clears the warehouse first, by default.** This is the opposite of `uv run sim`,
+**`uv run blindcity run` clears the warehouse first, by default.** This is the opposite of `uv run blindcity sim`,
 which appends, and the difference is deliberate: `sim` is a demo load that must never destroy a
 benchmark, while an agent run is a measurement that must not inherit anything. A warehouse holding
 twenty previous cities changes which plan Postgres picks, how long `ANALYZE` takes, and how much a
@@ -237,7 +237,7 @@ Full JSON captured during implementer run (`run_fingerprint(42, 20)`). Cross-pro
 **Observed seed-42 / 20-year warehouse rows, per run** — re-recorded 2026-08-03 against
 PostgreSQL 16.14, after the health-index review.
 
-These are counts for **one `run_id`**, not whole-table counts. `uv run sim` appends, so the tables
+These are counts for **one `run_id`**, not whole-table counts. `uv run blindcity sim` appends, so the tables
 accumulate every run ever loaded; scope any count with `WHERE run_id = <id>` or the number grows
 each time someone runs the simulation. Find the id with
 `SELECT run_id, seed, years, started_at FROM sim_run`.
@@ -297,7 +297,7 @@ H1 is done (`GOOGLE_API_KEY` in local `.env`). Manual mode uses the upstream Ana
 Hands-on confirmation that the Analytics Agent issues SQL against this warehouse still needs the
 agent process started with those settings and a sample question — blocked here only by Docker/agent
 process availability in the implementer session, not by missing credentials. Non-agent SQL path is
-proven by `uv run sim` writers and `datahub-emit --evaluate-only` assertion SQL.
+proven by `uv run blindcity sim` writers and `blindcity emit --evaluate-only` assertion SQL.
 
 **Lineage in the UI.** Open http://localhost:9002, search `budget_monthly`, open the **Lineage**
 tab. Upstream includes `lever_monthly` with column-level edge `income_tax_rate` →
@@ -314,7 +314,7 @@ Each edge is a separate parametrised case, so a failure names the exact edge tha
 true. Adding an edge to `CAUSAL_EDGES` without adding its experiment to
 `blindcity.sim.causal_check.CHECKS` fails the suite by design.
 
-The remaining commands — `agent`, `eval` — still exit 1 pointing at later slices.
+The remaining subcommands — `run`, `compare` — still exit 1 pointing at later slices.
 
 ## Credentials
 

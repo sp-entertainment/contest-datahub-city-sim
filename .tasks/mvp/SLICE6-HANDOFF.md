@@ -25,13 +25,13 @@ Once the key is replaced:
 1. Set `LLM_MIN_INTERVAL=0` in `.env`. The 6.5s pacing exists only for the free tier and is pure
    waiting on a paid one.
 2. Re-check which models actually answer — availability has moved under this project twice.
-3. `uv run agent --mode agent_raw --turns 2` then the same for `agent_datahub`.
+3. `uv run blindcity run --mode agent_raw --turns 2` then the same for `agent_datahub`.
 
 Nothing else blocks. The stack is up, the warehouse is loaded, the tests are green.
 
 ## State: built, tested, not yet proven live
 
-`uv run agent --mode agent_datahub|agent_raw` runs the closed loop against the live stack. 133
+`uv run blindcity run --mode agent_datahub|agent_raw` runs the closed loop against the live stack. 133
 tests pass, ruff clean, everything pushed to `main` (`0dd11bd`).
 
 What exists:
@@ -103,7 +103,7 @@ saturated columns in `docs/ERRORS.md`, in a new costume.
 over GraphQL, because the MCP path needs a second process alongside a Docker stack that restarted
 repeatedly on this host, and a transport failure mid-run corrupts a measurement rather than merely
 inconveniencing it. The metadata is identical — the descriptions, glossary terms and lineage that
-`datahub-emit` wrote.
+`blindcity emit` wrote.
 
 `CatalogSource` is a Protocol precisely so an MCP-backed implementation can replace
 `DataHubCatalog` without touching the controller or the parity tests. If using MCP matters for

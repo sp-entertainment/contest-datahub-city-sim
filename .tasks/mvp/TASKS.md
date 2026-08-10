@@ -134,7 +134,7 @@ The tick loop and the economy. Nothing else can be verified until rows exist.
       distributions and an `at ceiling` figure per column — re-check that table after any
       calibration change.
 
-**Verified when:** `uv run sim --seed 42 --years 20` completes twice with byte-identical output, the
+**Verified when:** `uv run blindcity sim --seed 42 --years 20` completes twice with byte-identical output, the
 row counts in Postgres are in the millions, and the city's state at any tick can be reconstructed
 into a map — tiles, buildings, and where every citizen is.
 
@@ -174,27 +174,27 @@ The thesis of the entry. Do not cut.
       demonstrated or has no experiment. 29/29 currently pass.
 - [x] Assertions on ranges and volumes.
 - [x] The stripped baseline catalog for the evaluation control: schemas only, realistic table names,
-      no descriptions, no glossary, no lineage. `uv run datahub-emit --baseline`.
+      no descriptions, no glossary, no lineage. `uv run blindcity emit --baseline`.
 
 **Verified when:** the lineage graph is traversable in the DataHub UI and traces tax rate through to
 revenue, and every edge in it can be demonstrated against the simulation.
 
 **Verified 2026-08-02.** Lineage generated from `blindcity.sim.causal.CAUSAL_EDGES`; the emitter
-never hand-writes an edge. `uv run datahub-emit` / `--baseline` implemented. Tax→revenue edge proven
+never hand-writes an edge. `uv run blindcity emit` / `--baseline` implemented. Tax→revenue edge proven
 via `--dump-lineage`. All 29 edges pass validation. Live GMS emit requires DataHub containers up
 (see ENVIRONMENT).
 
 **Reopened 2026-08-02 in review — two items below are unchecked. Do them before Slice 4.**
 
 - [x] **Evaluate the assertions against Postgres.** `blindcity.catalog.assertions` runs each
-      ASSERTIONS entry as SQL; `datahub-emit --evaluate-assertions` / `--evaluate-only` reports
+      ASSERTIONS entry as SQL; `blindcity emit --evaluate-assertions` / `--evaluate-only` reports
       pass/fail and emit attaches results. Tests force fail cases so always-pass cannot hide.
 - [x] **Document the baseline naming in the README.** Fairness section with `t_person_m` mapping
       and control-mode rationale.
 
 ### Slice 4 — Control surface and manual mode
 
-- [x] FastAPI: `GET /state`, `POST /lever`, `POST /advance`. (`uv run sim --serve`)
+- [x] FastAPI: `GET /state`, `POST /lever`, `POST /advance`. (`uv run blindcity sim --serve`)
 - [x] `GET /scene` — tiles, buildings, roads, citizens; no health aggregates.
 - [x] Static file serving for the viewer (`viewer/index.html` stub + mount).
 - [x] Analytics Agent wiring documented (H1 key present). Full SSE demo still needs agent process
@@ -240,7 +240,7 @@ The original contribution. Do not cut.
 **In progress. See `.tasks/mvp/SLICE6-HANDOFF.md` before continuing.**
 
 - [x] Agent loop: read state, catalog for context, SQL, decide, actuate, advance.
-      `uv run agent --mode agent_datahub|agent_raw`.
+      `uv run blindcity run --mode agent_datahub|agent_raw`.
 - [x] `agent_datahub` and `agent_raw` as two controllers over one implementation — identical model,
       prompt, tool budget, and SQL access, differing only in catalog context. **Any other difference
       between them is a bug that invalidates the headline result.** No branch on the mode exists in
@@ -305,14 +305,14 @@ looks flat and schematic, it is correct.
 
 ### Slice 8 — Run the comparison
 
-- [x] `uv run eval` drives all three modes through one scenario on one seed.
+- [x] `uv run blindcity compare` drives all three modes through one scenario on one seed.
 - [x] Per-mode results captured: trajectory, green turn, lever history, component breakdown.
 - [x] Results comparable across seeds and days — provenance (model, seed, threshold, git commit)
       is written into every comparison.
-- [x] Verified without spending a real evaluation: `uv run eval --dry-run` plays the scripted
-      policies through the entire harness for free. A bare `uv run eval` refuses to do either,
+- [x] Verified without spending a real evaluation: `uv run blindcity run --mode good_policy` plays the scripted
+      policies through the entire harness for free. A bare `uv run blindcity compare` refuses to do either,
       rather than defaulting to one and misleading about the other.
-- [x] H3 handed off: `uv run eval --live --repeat 3`, roughly 2 minutes and ~300k tokens per
+- [x] H3 handed off: a bash loop over `uv run blindcity run`, roughly 2 minutes and ~300k tokens per
       mode-run, so ~18 minutes and ~2.7M tokens for three repeats of three modes.
 
 **The comparison is built not to flatter the result.** Ordering is reported, never enforced; every

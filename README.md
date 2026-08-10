@@ -16,43 +16,36 @@ Built for [Build with DataHub: The Agent Hackathon](https://datahub.devpost.com/
 Same model, same seed, same crisis, same levers, same turn budget. The only difference is what
 DataHub gave each agent.
 
-Three runs per mode, `gpt-5.6-luna` at reasoning effort `low`.
+> **Numbers are being re-measured.** The benchmark was consolidated onto a single entry point on
+> 2026-08-10, and the expert guidance moved out of the agent's prompt and into DataHub, where the
+> agent now reads it back at run time. Both change what a run is, so the previous figures were
+> retired rather than carried over. Reference points from the scripted policies, which the change
+> does not touch, still stand: `good_policy` 0.8132 reaching green at turn 4, `bad_policy` 0.3244
+> never reaching it. Green is 0.62.
 
-| Mode | What the catalog provides | Mean index | Green by turn | SQL queries |
-| --- | --- | ---: | ---: | ---: |
-| `agent_raw` | Nothing. Schema discovery via `information_schema` only | 0.7151 | 6, 7, 7 | 65 |
-| `agent_datahub` | Descriptions, glossary, column-level lineage | 0.7378 | 5, 5, 5 | 59 |
-| `agent_datahub_live` | The above, plus expert assertions evaluated each turn | **0.8129** | **4, 3, 4** | **13** |
-| `agent_analytics` | DataHub's own Analytics Agent answers instead | 0.6965 | 6, 4, 5 | — |
-| *`GOOD_POLICY`* | *hand-calibrated reference, not an agent* | *0.8132* | *4* | *—* |
-| *`BAD_POLICY`* | *deliberate neglect, not an agent* | *0.3244* | *never* | *—* |
+Reproduce them for free, no key required:
 
-Green is 0.62. **The fully-catalogued agent matched the hand-tuned expert policy, got there
-faster, and used a fifth of the queries to do it.**
-
-Read the green turn rather than the mean index — it is the cleaner signal. The three ranges do not
-overlap: every catalogued run reached green at least as fast as the fastest uncatalogued one, and
-every assertion-guided run beat every catalogued one. The mean index has run-to-run spread of
-0.0824, which is larger than the `agent_raw`/`agent_datahub` gap, and the comparison tool says so
-itself rather than leaving it to be noticed.
+```bash
+uv run blindcity run --mode good_policy --out results/good.json
+uv run blindcity run --mode bad_policy  --out results/bad.json
+uv run blindcity compare "results/*.json"
+```
 
 ### What we actually learned
 
 The interesting result is not "catalogs help." It is *which kind* of metadata helped:
 
-- **Descriptive metadata alone was worth little.** `agent_datahub` beats `agent_raw` by 0.0227 of
-  final index — inside the noise. Across earlier paired runs that gap ran +0.045, +0.043 and
-  **−0.040**; the sign flipped, and a quantity that changes sign across runs is not measuring what
-  it claims to. It does reach green two turns earlier in all three runs, so the effect is probably
-  real, but it is small and this many repeats cannot size it. Our table names are already
-  human-readable, so a description that says `income_tax_revenue: Income tax collected` adds
-  nothing the column name did not.
+- **Descriptive metadata alone was worth little.** Across every paired run so far the
+  `agent_datahub` / `agent_raw` gap has sat inside the run-to-run noise, and across four earlier
+  pairs it ran +0.045, +0.043 and **−0.040** — the sign flipped, and a quantity that changes sign
+  is not measuring what it claims to. Our table names are already human-readable, so a description
+  saying `income_tax_revenue: Income tax collected` adds nothing the column name did not.
 - **Prescriptive metadata transformed behaviour.** Assertions that document the operating range a
   healthy city holds to — and, just as importantly, which levers are *not worth tuning* — moved the
-  agent from muddling through to expert play — and, tellingly, on *less* of everything: a fifth of
-  the queries, 19 LLM calls against 27, and green three turns sooner. A mode that scored higher by
-  querying more would just be a mode given more compute. This one stopped searching because it was
-  told where to look.
+  agent from muddling through to expert play — and, tellingly, on *less* of everything: roughly a
+  fifth of the queries, fewer LLM calls, and green several turns sooner. A mode that scored higher
+  by querying more would just be a mode given more compute. This one stopped searching because it
+  was told where to look.
 - **Relationships the data cannot show are where lineage earns its keep.** Every lever is constant
   across the entire recorded history, so no amount of querying reveals that `income_tax_rate` drives
   `income_tax_revenue`. The catalog is the only place that relationship exists.
@@ -101,13 +94,13 @@ Known imperfections, stated plainly:
 
 - **`agent_raw` is not fully blind.** `docs/DECISIONS.md` specifies a control catalog with opaque
   table names (`t_person_m`, `t_budg_m`) so the control would have to rediscover meaning. That
-  catalog is built and emitted by `uv run datahub-emit --baseline`, but the agent modes query the
+  catalog is built and emitted by `uv run blindcity emit --baseline`, but the agent modes query the
   real warehouse with its readable names, so the handicap was never applied. This is very likely why
   descriptive metadata showed no measurable effect.
-- **One seed.** Three runs per mode, but all on seed 42. The spread across those three reaches
-  0.0824 of final index, which is larger than the `agent_datahub`/`agent_raw` gap — so that gap
-  is unresolved, and the table says so. The `agent_datahub_live` margin and the green-turn
-  ordering are both outside the noise.
+- **One seed.** Every run so far is seed 42. Run-to-run spread on repeated identical runs has
+  reached 0.08 of final index, which is larger than the `agent_datahub`/`agent_raw` gap — so that
+  gap is unresolved, and `blindcity compare` says so in its own output rather than leaving it to
+  be noticed.
 - **`agent_analytics` is a floor, not a measurement.** DataHub's own Analytics Agent reported "No
   governed definitions ... were found in DataHub" on every run and answered from the warehouse
   alone. Its score is where an *uncatalogued* analyst lands, which is within noise of
@@ -125,22 +118,68 @@ uv sync --group dev
 ```
 
 ```bash
-uv run sim --seed 42 --years 20    # generate a city into the warehouse
-uv run datahub-emit                # schemas, descriptions, glossary, lineage, assertions
-uv run sim --serve                 # viewer and lever panel on :8000
+uv run blindcity sim --seed 42 --years 20    # generate a city into the warehouse
+uv run blindcity sim --serve                 # viewer and lever panel on :8000
 ```
 
 ```bash
-uv run eval --dry-run              # verify the whole harness, free
+uv run blindcity run --mode good_policy --out results/good.json   # free reference: 0.8132
+uv run blindcity run --mode bad_policy  --out results/bad.json    # free reference: 0.3244
+uv run blindcity compare "results/*.json"                         # summarise what is on disk
 ```
 
 ```bash
-uv run agent --mode agent_datahub_live --out results/run.json
+uv run blindcity run --mode agent_datahub_live --out results/run.json
 ```
 
 Every agent run writes a full transcript beside its results — system prompt, the complete
 conversation as the model received it, and every reply. Every context bug in this project was
 invisible in the scores and obvious in the transcript.
+
+## Commands
+
+One entry point, four subcommands. `blindcity <command> --help` for the full list of flags.
+
+| Command | What it does |
+| --- | --- |
+| `blindcity sim` | Generate a city's history into the warehouse, or `--serve` the viewer |
+| `blindcity emit` | Publish the catalog snapshot to DataHub; `--check` reports differences |
+| `blindcity run` | Play one mode of the scenario |
+| `blindcity compare` | Summarise result files into one table. Runs nothing |
+
+There is deliberately **no `--repeat`**. Repeats are a shell loop, which needs no feature and keeps
+every parameter reachable inside it:
+
+```bash
+for i in 1 2 3; do
+  for m in agent_raw agent_datahub agent_datahub_live agent_analytics; do
+    uv run blindcity run --mode $m --out results/$m-$i.json --overwrite-datahub true
+  done
+done
+uv run blindcity compare "results/*.json" --out docs/comparison.md
+```
+
+This used to be a second command (`eval --live --repeat 3`) that re-implemented the runner. It
+drifted from the real one three times — no transcripts, no way to clear a stale warehouse, and it
+never printed the degradation warnings — so a batch could report a clean table while runs were
+losing queries to timeouts. One runner, and a loop.
+
+### DataHub is the authoritative copy
+
+`blindcity run` publishes the catalog before playing, so the metadata the agent reads matches the
+commit it is played from and a fresh clone works with no setup. But DataHub is editable, and
+widening a band in the UI to see how the agent responds is a thing you are *meant* to be able to
+do. So publishing looks before it writes:
+
+```bash
+uv run blindcity run --mode agent_datahub_live                          # asks, if anything differs
+uv run blindcity run --mode agent_datahub_live --overwrite-datahub true # replace, no question
+uv run blindcity run --mode agent_datahub_live --overwrite-datahub false# keep your edits, run on them
+```
+
+When DataHub is empty or already matches, the snapshot is published either way — there is nothing
+to lose and nothing to ask about. Every run records which copy of the guidance it acted on, and a
+fingerprint of it, in `catalog_source` in its `.agent.json`.
 
 ## Architecture
 
@@ -161,7 +200,6 @@ remembered.
 
 ## Documentation
 
-- `docs/RESULTS.md` — the full comparison, method, and caveats
 - `AGENTS.md` — vision, constraints, conventions
 - `docs/DECISIONS.md` — why it is built this way
 - `docs/ENVIRONMENT.md` — verified setup and running topology

@@ -7,7 +7,9 @@ recovered. Three modes face identical conditions — `human`, `agent_datahub`, `
 `agent_datahub` vs `agent_raw` is the headline and its control has to be defensible: same model,
 prompt, seed, turn budget, tool budget, and SQL access. Only the catalog context differs.
 
-Named `evaluation` while the command stays `eval`, to avoid a module named after a builtin.
+Named `evaluation` rather than `eval`, which shadows a builtin. The command is
+`blindcity compare`; only the pure comparison functions live here now, the runner having moved
+to `blindcity/commands/run.py`.
 
 Plan: TASKS.md, Slice 8. Build the harness; a human runs the scored evaluation (task H3).
 """

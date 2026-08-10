@@ -119,7 +119,7 @@ daemon records when it kills a *running* container during its own shutdown; it i
 the containers are not unstable. See "DataHub containers never come back after a Docker restart"
 below for what was actually happening.
 
-**Stale advice removed.** This entry used to say a partial run was not fatal because `uv run sim`
+**Stale advice removed.** This entry used to say a partial run was not fatal because `uv run blindcity sim`
 truncates and rewrites the warehouse. It no longer truncates — append-by-`run_id` became the
 default so benchmark modes can write in parallel. A partial run now leaves a partial `run_id` in the
 warehouse. Use `--reset-warehouse` if you want the old behaviour, or just ignore the stray run,
@@ -193,7 +193,7 @@ component**.
 
 ### `UnicodeEncodeError` on the final status line of a command that worked
 
-**Symptom.** `uv run datahub-emit --evaluate-assertions` wrote all 17 tables, 20 glossary terms,
+**Symptom.** `uv run blindcity emit --evaluate-assertions` wrote all 17 tables, 20 glossary terms,
 29 lineage edges and 9 assertion results, then died with
 `'charmap' codec can't encode character '\u2192'` and exited non-zero.
 
@@ -246,17 +246,17 @@ is far outside anything the simulation produces — but it is a real bound, not 
 
 ### Assertions pooled every run in the warehouse
 
-**Symptom.** `datahub-emit --evaluate-only` reported `n=1614574` for `citizen_monthly` when a
+**Symptom.** `blindcity emit --evaluate-only` reported `n=1614574` for `citizen_monthly` when a
 single run holds 808,597 rows. All nine assertions passed.
 
-**Cause.** The assertion SQL had no `WHERE run_id`, dating from when `uv run sim` truncated on
+**Cause.** The assertion SQL had no `WHERE run_id`, dating from when `uv run blindcity sim` truncated on
 every launch and the warehouse only ever held one run. Once append became the default, the two
 row-count assertions (`minimum=1000`, `minimum=10000`) got easier every time anyone loaded the
 simulation, and the range assertions silently pooled runs that exist to be compared. With three
 benchmark modes writing concurrently this would have reported one verdict over all three.
 
 **Fix.** Every predicate takes an optional `run_id`, bound as a parameter rather than
-interpolated. `datahub-emit` defaults to the most recent run, `--run-id` selects another, and
+interpolated. `blindcity emit` defaults to the most recent run, `--run-id` selects another, and
 `--all-runs` opts into the old pooled behaviour deliberately. The evaluated scope is printed with
 the summary line so a pooled result cannot be mistaken for a scoped one.
 
@@ -343,7 +343,7 @@ kernel objects.
 
 **Do NOT click "Reset to factory defaults".** It sits next to Quit in that dialog and destroys
 every container and volume — the warehouse's run history and the entire DataHub catalog — to fix
-three empty files. Both are rebuildable (the simulation is deterministic and `datahub-emit`
+three empty files. Both are rebuildable (the simulation is deterministic and `blindcity emit`
 reruns) but it is hours of work for nothing.
 
 ### `infra/stack.ps1` threw instead of starting a stopped Docker

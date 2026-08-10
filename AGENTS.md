@@ -68,7 +68,7 @@ src/blindcity/
                Runs as both the agent_datahub and agent_raw modes.
   benchmark/   Scenario definition, health index, turn budget, controller interface,
                run harness, results. The measurement, and the point of the project.
-  evaluation/  Runs the modes and compares them. `uv run eval`.
+  evaluation/  Runs the modes and compares them. `uv run blindcity compare`.
   levers.py    The eight levers. Single source of truth for ranges and defaults.
   rng.py       Seeded randomness. Determinism is a hard rule.
   config.py    Connection settings.
@@ -84,7 +84,7 @@ Two naming notes, both deliberate:
 - **`catalog/`, not `datahub/`.** A top-level `datahub` package would shadow the installed
   `acryl-datahub` module and break every import of the DataHub SDK.
 - **`evaluation/`, not `eval/`.** Avoids a module named after a builtin. The *command* is still
-  `uv run eval`.
+  `uv run blindcity compare`.
 
 Manual mode uses the upstream `datahub-analytics-agent` unmodified. Auto mode is our own agent and is
 the original contribution.
@@ -125,16 +125,16 @@ Auth stays off. DataHub OSS quickstart accepts unauthenticated writes to
 datahub docker quickstart
 
 # Simulation
-uv run sim --seed 42 --years 20
+uv run blindcity sim --seed 42 --years 20
 
 # Metadata ingestion
-uv run datahub-emit
+uv run blindcity emit
 
 # Agent, auto mode
-uv run agent --mode auto
+uv run blindcity run --mode agent_datahub_live --out results/live.json
 
 # Evaluation
-uv run eval --seeds 5
+uv run blindcity compare "results/*.json"
 ```
 
 ## Conventions

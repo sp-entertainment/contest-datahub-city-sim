@@ -97,7 +97,7 @@ def fetch_guidance(
     if not guidance:
         raise GuidanceUnavailable(
             f"DataHub at {base} holds no Blind City operating guidance. Publish it with "
-            "`uv run datahub-emit` before running --mode agent_datahub_live; the mode reads its "
+            "`uv run blindcity emit` before running --mode agent_datahub_live; the mode reads its "
             "assertions from the catalog and has nothing to fall back on by design."
         )
     return guidance

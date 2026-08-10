@@ -119,7 +119,8 @@ Scaffolding the Python project forced the question of whether those are importab
 - **`datahub/` as a top-level package is a landmine.** It shadows the installed `acryl-datahub`
   module, so `import datahub` inside our own code silently resolves to us instead of the SDK. Renamed
   to `catalog`.
-- `eval` as a module name shadows a builtin. Renamed to `evaluation`; the command stays `uv run eval`.
+- `eval` as a module name shadows a builtin. Renamed to `evaluation`; the command is now
+  `uv run blindcity compare`.
 - src layout means tests run against the installed package, so a packaging mistake fails locally
   rather than after the submission is cloned by a judge.
 
@@ -313,7 +314,7 @@ without making a 20-year run impractical.
 
 **Decision.** Monthly ticks. 32×32 grid. ~1,400 initial households (~3,100 citizens at seed 42),
 growing via migration. History tables snapshot citizens, tiles, buildings, roads, and commutes every
-month. Each `uv run sim` truncates the warehouse then rewrites.
+month. Each `uv run blindcity sim` truncates the warehouse then rewrites.
 
 **Rationale.** Monthly grain × a few thousand citizens × ~241 snapshots (initial + 20×12) yields
 about 2.1M rows across warehouse tables in under 30s on this host — enough volume for the agent to
@@ -338,7 +339,7 @@ column-level DataHub lineage. No hand-authored GraphQL lineage blobs.
 longer satisfaction → migration → population → revenue edges remain for exploration.
 
 **Consequences.** Adding a system requires adding causal edges if the catalog should show it. The
-baseline (`datahub-emit --baseline`) skips glossary, lineage, and descriptions entirely.
+baseline (`blindcity emit --baseline`) skips glossary, lineage, and descriptions entirely.
 
 ## 2026-08-02 — Baseline catalog table names
 
@@ -422,7 +423,7 @@ stale again (alongside the `SEGMENT_CAPACITY` change). Re-record when Postgres i
 
 **Context.** Modes write history in parallel; global truncate made multi-mode runs impossible.
 
-**Decision.** Default `uv run sim` calls `ensure_schema` and `start_run` only. Truncate is opt-in
+**Decision.** Default `uv run blindcity sim` calls `ensure_schema` and `start_run` only. Truncate is opt-in
 via `--reset-warehouse` for clean demo loads.
 
 **Rationale.** Every table already carries `run_id`. Truncating was a convenience that became a
@@ -501,7 +502,7 @@ is close to the identity for ratios under 1, so previously-informative values ba
 commute-time and service-score calibrations held without adjustment.
 
 **Decision 2: assertions evaluate one `run_id` by default.** The SQL had no run filter, a holdover
-from when `uv run sim` truncated on launch. `--run-id` selects a specific run, `--all-runs` opts
+from when `uv run blindcity sim` truncated on launch. `--run-id` selects a specific run, `--all-runs` opts
 back into pooling, and the scope is printed with the results.
 
 **Rationale.** Append-by-`run_id` was adopted so modes could write in parallel; leaving the
@@ -643,3 +644,61 @@ carried a model-name fallback that would send a local model id to a hosted API.
 **Consequences.** `LLM_PROVIDER` and `--provider` are gone; `LLM_BASE_URL` remains, and whatever
 answers it must speak `/v1/responses`. A test asserts there is exactly one client class, so a
 second backend cannot reappear unreachable and be wired up later.
+
+## 2026-08-10 (later still) — Four commands become one
+
+**Context.** The project exposed four console scripts: `sim`, `datahub-emit`, `agent`, `eval`. Two
+of them — `agent` and `eval` — were separate hand-written wrappers around the same engine,
+`agent/run.py::run_mode`. They diverged three times, and every divergence was invisible until
+something had already gone wrong:
+
+- `eval --live` wrote no transcripts, so the path that produced the submission's numbers was the
+  only unauditable way to produce a score.
+- `eval --live` had no way past the in-flight warehouse guard, so a twelve-run batch could not be
+  started after an abandoned run.
+- `eval --live` never printed the query-error count or the `DEGRADED` block. A batch could report a
+  clean comparison table while runs were losing queries to timeouts.
+
+The next feature — publishing the catalog before a run — would have had to be added to both, and
+would have been the fourth divergence, this time one that silently overwrote a user's DataHub
+edits.
+
+**Decision.** One entry point: `blindcity`, with `sim`, `emit`, `run` and `compare`. `run` is the
+only runner. `--repeat` is deleted; repeats are a bash loop.
+
+**Rationale.** The duplication was never in the engine, which both commands shared correctly. It
+was in the ~50 lines of wrapper around it — defaults, output, error reporting — which nothing forced
+to agree. Two hand-written wrappers around one engine will drift; the only fix that holds is having
+one.
+
+A loop is not a feature. `for i in 1 2 3; do blindcity run ...; done` needs no code, keeps every
+parameter reachable inside it, and cannot fall behind the single-run path because it *is* the
+single-run path.
+
+**Consequences.**
+
+- The scripted reference policies (`GOOD_POLICY`, `BAD_POLICY`) stop being a separate `--dry-run`
+  code path and become modes, `good_policy` and `bad_policy`. The yardstick is now produced by the
+  same harness, scoring and file format as the scores it is the yardstick for. They build no LLM
+  client, so they still run with no key and no network, and both reference numbers are unchanged.
+- `compare` stays a separate command. Comparing is a pure function over files already on disk;
+  folding it into the runner is what produced the second runner.
+- The "bare command refuses to spend money" guard is gone with `eval`. It existed because a bare
+  `uv run eval` would have run every mode; `blindcity` with no subcommand prints help and exits 2,
+  which is the stronger version of the same rule.
+- Roughly sixty command references across the README, `AGENTS.md`, `docs/`, `.tasks/` and
+  `.claude/launch.json` were updated. Two in `AGENTS.md` had been invalid for some time —
+  `--mode auto` and `--seeds 5` name a mode and a flag that do not exist.
+
+**Decision 2: `--overwrite-datahub`, and DataHub as the authoritative copy.**
+
+Every `run` publishes the catalog first, so a fresh clone works end to end and a run's metadata
+matches the commit it was played from. But DataHub is editable, and editing a band in the UI to see
+how the agent responds is the point of having put the guidance there. So publishing looks before it
+writes: `true` replaces, `false` keeps DataHub's values and runs against them, absent shows the
+difference and asks. Empty or already-matching DataHub publishes either way — there is nothing to
+lose, and a fresh clone must not stop to ask a question about a state it cannot be in.
+
+The run report records which copy of the guidance the run acted on and a fingerprint of it. Once
+DataHub is editable, "the published snapshot" and "someone's edits" are different experiments and
+must not look alike in a result file.

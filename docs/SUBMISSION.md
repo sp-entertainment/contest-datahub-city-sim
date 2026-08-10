@@ -78,7 +78,7 @@ warehouse agent-ready. Documenting what *good* looks like might.
   own `run_id`, with `search_path` pointed at it, so run isolation is structural rather than
   remembered.
 - **DataHub Core** via the OSS quickstart. Schemas, descriptions, a 20-term business glossary,
-  assertions, and 29 column-level lineage edges — all emitted by `uv run datahub-emit`.
+  assertions, and 29 column-level lineage edges — all emitted by `uv run blindcity emit`.
 - **The lineage is generated from the simulation's own causal graph**, and every edge is validated
   against the running model: `blindcity.sim.causal_check` perturbs each source, runs the code that
   computes the target, and requires the target to move. "Derived from" states a demonstrated

@@ -33,7 +33,7 @@ OPENAI_REASONING_EFFORT=low
 
 ```bash
 docker compose up -d --build
-uv run agent --mode agent_analytics --out results/analytics.json
+uv run blindcity run --mode agent_analytics --out results/analytics.json
 ```
 
 **Check `context_tools` in the log before trusting any run.** The seeded DataHub row is the source

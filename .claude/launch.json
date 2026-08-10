@@ -4,7 +4,7 @@
     {
       "name": "blindcity",
       "runtimeExecutable": "uv",
-      "runtimeArgs": ["run", "sim", "--serve"],
+      "runtimeArgs": ["run", "blindcity", "sim", "--serve"],
       "port": 8000
     }
   ]
