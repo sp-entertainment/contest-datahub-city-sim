@@ -28,6 +28,22 @@ Withholding them was not neutrality, it was a handicap, and it showed up in the 
   * **What its last recommendation became.** The other modes open every turn with the result of
     their last decision, including anything clamped. Every figure restated here is one the advisor
     itself produced, so this is parity rather than a hint.
+
+**On the output contract and the clarification rounds.** This mode is asked to end every answer
+with a JSON block, and when it does not, `lever_review` reads the answer and may ask up to three
+times for a usable number before the run is abandoned. That looks like an allowance the other modes
+do not get. It is the opposite:
+
+  * They call `set_levers` with a **JSON schema that makes vagueness impossible** -- the tool will
+    not accept "a moderate level".
+  * When they emit malformed arguments they get a tool error back and **retry inside the same
+    turn**.
+
+The advisor has neither, because it answers in prose into a service we do not control. A
+clarification round is the prose equivalent of the tool error the others get for free. Without it,
+this mode alone would be scored on whether our reader happened to understand its formatting -- and
+it once was: `road_maintenance_budget = 2e6` was read as `2`, and the mode spent three turns
+leaving the roads unfunded because of it.
 """
 
 from __future__ import annotations
@@ -39,6 +55,7 @@ from pathlib import Path
 from typing import Any
 
 from blindcity.agent.advisor import Advice, AnalyticsAgentAdvisor
+from blindcity.agent.lever_review import read_decision
 from blindcity.levers import LEVERS
 from blindcity.sim.model import CityState
 
@@ -64,9 +81,39 @@ The manager controls exactly eight levers and nothing else:
 
 {levers}
 
-Investigate the data and tell the manager which levers to change and to what values. Be specific: \
-give a number for every lever you want changed, written as `lever_name = value`. Levers you do \
-not mention will be left where they are.\
+Investigate the data and tell the manager which levers to change and to what values. Explain your \
+reasoning in prose, then end your answer with the decision block described below.
+
+{contract}\
+"""
+
+# The output contract, restated on every turn. It is repeated rather than stated once at the start
+# because it is the one part of the brief that must survive twelve turns of accumulated context --
+# and because a single misread value is not a worse answer, it is a different experiment.
+#
+# Each rule is here because the free-text parser it replaces got that exact case wrong: `6e6` read
+# as 6, `6M` read as 6, and `11%` read as 11 and then clamped to the legal maximum, which looks
+# deliberate in a result file. See `advisor.parse_levers`.
+CONTRACT = """\
+End your answer with a fenced JSON block and nothing after it:
+
+```json
+{"income_tax_rate": 0.11, "road_maintenance_budget": 6000000}
+```
+
+The block is the decision. The prose above it is only your reasoning. Rules, all of them strict:
+
+  * Include ONLY the levers you want to change. A lever you leave out keeps its current value --
+    that is how you say "leave this one alone". Do not name a lever you are not changing.
+  * `{}` is a valid answer. It means change nothing this turn.
+  * Every value must be a plain decimal number: `6000000`. Never `6e6`, never `6M`, never
+    `6 million`, never `6,000,000`.
+  * Rates are fractions, never percentages: `0.11`, never `11%` and never `11`.
+  * No words, no ranges, no nulls, no comments. "moderate", "high", "3-5 million" and `null` are
+    all rejected. A value you cannot write as a single number is not a decision.
+
+If the block is missing or a value is not a number, you will be asked again, and a run that still
+cannot be read after three attempts is abandoned.\
 """
 
 
@@ -76,6 +123,10 @@ class AdvisorController:
 
     name: str
     advisor: AnalyticsAgentAdvisor
+    # Used only to read an answer that broke the output contract -- never to decide anything. It
+    # is the same client and model every other mode runs on, because it is infrastructure like the
+    # SQL tool rather than a player: see `lever_review`.
+    llm: Any = None
     turn_budget: int | None = None
     history: list[dict[str, Any]] = field(default_factory=list)
     # Where to record every exchange. The other modes get this from `RecordingLLM`, which wraps
@@ -105,7 +156,7 @@ class AdvisorController:
         current = "\n".join(f"  {n}: {state.levers.get(n, LEVERS[n].default):g}" for n in LEVERS)
 
         if turn == 0:
-            head = BRIEF.format(levers=levers, objective=OBJECTIVE)
+            head = BRIEF.format(levers=levers, objective=OBJECTIVE, contract=CONTRACT)
         else:
             # After the first turn the advisor has the conversation; restating the brief each time
             # would crowd its own accumulated context. What must be restated is the instruction to
@@ -114,7 +165,11 @@ class AdvisorController:
             # recommendations drifted on memory of a city three, six, nine months out of date.
             head = (
                 "Three months have passed since your last recommendation and the city has moved. "
-                "Query the warehouse again before answering -- the earlier figures are stale."
+                "Query the warehouse again before answering -- the earlier figures are stale.\n\n"
+                # The contract is repeated every turn rather than trusted to survive from turn 0.
+                # It is the one instruction whose failure is not a worse answer but an unreadable
+                # one, and twelve turns of accumulated context is a long way from where it was said.
+                + CONTRACT
             )
 
         remaining = ""
@@ -176,18 +231,50 @@ class AdvisorController:
                 "seconds": round(advice.seconds, 2),
             }
         )
-        self.history.append(
-            {
-                "turn": turn,
-                **advice.to_dict(),
-                "seconds": round(time.monotonic() - started, 2),
-            }
+        # A turn the advisor never answered is a lost turn, not an unreadable one. There is no
+        # text to parse and nothing to clarify, so it passes with no change exactly as before.
+        record = {
+            "turn": turn,
+            **advice.to_dict(),
+            "seconds": round(time.monotonic() - started, 2),
+        }
+        if advice.error:
+            self.history.append(record)
+            return {}
+
+        outcome = read_decision(
+            advice.answer,
+            turn=turn,
+            llm=self.llm,
+            ask_again=self._ask_again,
+            record=lambda entry: self._record({"mode": self.name, **entry}),
         )
-        return dict(advice.levers)
+        # The decision is what the block said, not what the prose regex guessed. `advice.levers`
+        # stays in the record as the weaker reading, so a disagreement between them is auditable
+        # after the fact rather than only at the moment it happens.
+        record["levers"] = outcome.levers
+        record["regex_levers"] = advice.levers
+        record["parse"] = {
+            "source": outcome.source,
+            "clarifications": outcome.clarifications,
+            "vague": outcome.vague,
+            "disagreements": outcome.disagreements,
+        }
+        self.history.append(record)
+        return dict(outcome.levers)
+
+    def _ask_again(self, prompt: str) -> str:
+        """Put a follow-up to the advisor inside its existing conversation.
+
+        The same session, so the clarification arrives with everything the original answer had --
+        the city it just queried, its own reasoning, and the turn it is answering for.
+        """
+        return self.advisor.ask(prompt).answer
 
     def report(self) -> dict[str, Any]:
         answered = [t for t in self.history if not t["error"]]
         acted = [t for t in self.history if t["levers"]]
+        parses = [t["parse"] for t in self.history if t.get("parse")]
         return {
             "controller": self.name,
             "model": f"analytics-agent@{self.advisor.base_url}",
@@ -199,6 +286,17 @@ class AdvisorController:
             "answered_turns": len(answered),
             "acting_turns": len(acted),
             "advisor_errors": [t["error"] for t in self.history if t["error"]],
+            # How each decision was read. This is a result, not plumbing: a third-party agent that
+            # needs clarifying on a third of its turns is telling you something about using it,
+            # and until now that was invisible in every artifact the run produced.
+            "parsing": {
+                "on_contract": sum(1 for p in parses if p["source"] == "contract"),
+                "needed_reviewer": sum(1 for p in parses if p["source"] == "reviewed"),
+                "needed_clarifying": sum(1 for p in parses if p["source"] == "clarified"),
+                "clarification_rounds": sum(p["clarifications"] for p in parses),
+                "vague_levers": sorted({v for p in parses for v in p["vague"]}),
+                "regex_disagreements": [d for p in parses for d in p["disagreements"]],
+            },
             # Tokens are the advisor's own, reported back over its stream. We never call the
             # model here, but the mode is not free and must not read as though it were.
             "usage": {

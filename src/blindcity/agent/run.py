@@ -206,6 +206,9 @@ def run_mode(
             controller = AdvisorController(
                 name=mode,
                 advisor=advisor,
+                # Reads an answer that broke the output contract, and nothing else. The same
+                # client every other mode plays on, because it decides nothing.
+                llm=client,
                 turn_budget=scenario.turn_budget,
                 # This mode never touches `RecordingLLM`, because it never calls a model itself.
                 # Without this it produced a 0-byte transcript beside a run that spent 1.2M

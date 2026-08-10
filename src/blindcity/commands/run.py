@@ -21,6 +21,7 @@ from typing import Any
 
 def run(args: Any) -> int:
     from blindcity.agent.controller import DEFAULT_TOOL_BUDGET
+    from blindcity.agent.lever_review import LeverParseFailure
     from blindcity.agent.llm import LLMError, build_llm
     from blindcity.agent.run import SCRIPTED_MODES, run_mode
     from blindcity.benchmark.scenario import INFRASTRUCTURE_CRISIS
@@ -65,6 +66,21 @@ def run(args: Any) -> int:
             transcript=transcript_path,
             advisor_url=args.advisor_url,
         )
+    except LeverParseFailure as exc:
+        # The advisor's decision could not be read, so this run measured our parser rather than the
+        # catalog and its score means nothing. Finishing would be worse than stopping: it would
+        # produce a plausible number indistinguishable from a real one. The transcript is already
+        # on disk from the controller, and the result file is deliberately never written, so a
+        # later `blindcity compare "results/*.json"` cannot sweep a void run into a table.
+        print(f"run: ABANDONED -- {exc}", file=sys.stderr)
+        print(f"run: levers left unreadable: {', '.join(exc.vague) or '(none named)'}", file=sys.stderr)
+        for i, attempt in enumerate(exc.attempts):
+            label = "answer" if i == 0 else f"clarification {i}"
+            print(f"run: --- {label} ---\n{attempt.strip()[:800]}", file=sys.stderr)
+        if transcript_path:
+            print(f"run: full exchange at {transcript_path}", file=sys.stderr)
+        print("run: no result file written; this run must not be scored.", file=sys.stderr)
+        return 1
     except LLMError as exc:
         print(f"run: {exc}", file=sys.stderr)
         return 1
@@ -162,3 +178,21 @@ def _print_diagnostics(report: dict[str, Any]) -> None:
     advisor_errors = report.get("advisor_errors") or []
     if advisor_errors:
         print(f"run: {len(advisor_errors)} turn(s) got no advice; first: {advisor_errors[0][:200]}")
+
+    # How the advisor's decisions had to be read. A run entirely on the contract is the quiet
+    # case and says nothing; anything else is a fact about using this agent, and the reason the
+    # numbers are trustworthy at all.
+    parsing = report.get("parsing")
+    if parsing and (parsing["needed_reviewer"] or parsing["needed_clarifying"]):
+        print(
+            f"run: {parsing['on_contract']} turn(s) followed the output contract; "
+            f"{parsing['needed_reviewer']} needed the reviewer, "
+            f"{parsing['needed_clarifying']} needed clarifying "
+            f"({parsing['clarification_rounds']} round(s))"
+        )
+        if parsing["vague_levers"]:
+            print(f"run: levers the advisor left vague: {', '.join(parsing['vague_levers'])}")
+    for note in (parsing or {}).get("regex_disagreements", []):
+        # Never fatal -- the prose regex is the weaker reader and loses every argument -- but this
+        # is the line that would have caught `2e6` being taken as `2` on the day it happened.
+        print(f"run: prose/block disagreement (block wins): {note}")

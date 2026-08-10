@@ -91,13 +91,78 @@ class Advice:
         }
 
 
+# Two patterns, and the difference matters. A block the advisor *labelled* `json` is held to it --
+# whatever is inside was offered as the decision, so garbage there is a broken contract rather than
+# an absent one. An unlabelled fence is only considered when it plainly contains an object, because
+# the advisor also emits SQL in fenced blocks and running `json.loads` over a SELECT would turn
+# ordinary output into a parse failure.
+#
+# Non-greedy so several blocks stay separate, and the *last* is taken: an analyst who shows a
+# worked example first and the recommendation last is answering with the last one.
+_LABELLED_BLOCK = re.compile(r"```json\s*(.*?)```", re.DOTALL | re.IGNORECASE)
+_BRACED_BLOCK = re.compile(r"```\s*(\{.*?\})\s*```", re.DOTALL)
+
+
+class LeverBlockInvalid(ValueError):
+    """A JSON block was present but is not a usable set of lever values."""
+
+
+def extract_lever_block(text: str) -> dict[str, float] | None:
+    """The advisor's decision, read from the JSON block the brief asks it to emit.
+
+    This is the primary reader. It is deterministic, it cannot confuse `6e6` with `6`, and it
+    cannot read `11%` as `11`, because it never sees a number that was not written as one.
+
+    Three outcomes, and they must stay distinct:
+
+      * a dict -- the levers to change. `{}` is a real decision meaning "change nothing this turn",
+        not an absence.
+      * `None` -- no block at all. The contract was not followed and a reader that can cope with
+        prose has to look at it.
+      * `LeverBlockInvalid` -- a block exists but says something unusable.
+
+    Omission carries meaning: a lever absent from the block keeps its current value. That is why
+    words are refused rather than interpreted. "moderate" in a value position could mean the
+    advisor wants a change it failed to quantify, and guessing which would be us playing the game
+    on its behalf.
+    """
+    matches = _LABELLED_BLOCK.findall(text) or _BRACED_BLOCK.findall(text)
+    if not matches:
+        return None
+    try:
+        payload = json.loads(matches[-1].strip())
+    except (TypeError, ValueError) as exc:
+        raise LeverBlockInvalid(f"the JSON block does not parse: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise LeverBlockInvalid(f"expected an object, got {type(payload).__name__}")
+
+    out: dict[str, float] = {}
+    for name, value in payload.items():
+        if name not in LEVERS:
+            raise LeverBlockInvalid(f"{name!r} is not one of the eight levers")
+        # `bool` is an `int` in Python and `true` is not a lever value in any sense.
+        if isinstance(value, bool) or not isinstance(value, int | float):
+            raise LeverBlockInvalid(
+                f"{name} = {value!r} is not a number. Values must be plain decimals; a value the "
+                "advisor could not write as a number is not a decision."
+            )
+        out[name] = LEVERS[name].clamp(float(value))
+    return out
+
+
 def parse_levers(text: str) -> dict[str, float]:
     """Pull lever settings out of an analyst's prose.
 
-    Deliberately forgiving about formatting and strict about names and ranges: the advisor is a
-    third-party component answering in free text, and a brittle parser would silently score the
-    mode on the parser rather than on the advice. Anything not named as a real lever is ignored,
-    and every value goes through the same clamp the other modes' `set_levers` uses.
+    **No longer the primary reader** -- `extract_lever_block` is. This is kept as a cross-check on
+    the prose surrounding the block, because a disagreement between the two is the cheapest signal
+    that something was misread, and it is the signal that would have caught `road_maintenance_budget
+    = 2e6` being taken as `2` on the day it happened rather than three runs later.
+
+    It is forgiving about formatting and strict about names and ranges, and it is *wrong* often
+    enough that nothing should depend on it alone: it truncates scientific notation (`6e6` -> 6),
+    ignores magnitude suffixes (`6M` -> 6), and reads a percentage as its bare number (`11%` -> 11,
+    then clamped to the legal maximum, which looks deliberate). Those are the reasons the contract
+    exists.
 
     Accepts `income_tax_rate = 0.11`, `income_tax_rate: 0.11`, `**income_tax_rate**: 0.11`,
     `- income_tax_rate → 0.11`, and the same with thousands separators or a currency prefix.

@@ -478,7 +478,9 @@ def test_the_advisor_writes_its_own_transcript(tmp_path):
         tokens: ClassVar[dict] = {"input_tokens": 1, "output_tokens": 2, "total_tokens": 3}
 
         def ask(self, question):
-            return Advice(question=question, answer="income_tax_rate = 0.11",
+            # The contract: prose reasoning, then a fenced JSON block carrying the decision.
+            answer = 'Roads are worn.\n\n```json\n{"income_tax_rate": 0.11}\n```'
+            return Advice(question=question, answer=answer,
                           levers={"income_tax_rate": 0.11}, queries=["SELECT 1"])
 
     controller = AdvisorController(

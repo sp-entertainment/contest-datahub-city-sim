@@ -516,3 +516,59 @@ outstanding.
 **The lesson.** Every one of these was invisible in the score and obvious in the artifacts. A mode
 that comes last is a claim about that mode, and it has to be earned by checking the mode was
 actually given what it was supposed to have.
+
+## 2026-08-11 — `2e6` was read as `2`, and the feedback loop made it stick
+
+`agent_analytics` scored 0.6825 in the recorded run. Part of that was our parser, not the advisor.
+
+At turn 9 it wrote `road_maintenance_budget = 2e6`. `advisor.parse_levers` matched
+`([0-9][0-9,_]*(?:\.[0-9]+)?)`, which stops at the `e`, and took **`2`** — two dollars a year
+instead of two million. Roads went unfunded for the rest of the run.
+
+Then it compounded. The parity feedback block, added days earlier so the advisor could see what its
+last decision became, told it *"in force now: road_maintenance_budget=2"*. At turn 10 the advisor
+wrote `road_maintenance_budget = 2`. It had not made a mistake — it read our report of reality and
+agreed with it. A one-turn parse failure became a three-turn policy, and the mode's index flatlined
+at 0.682 for exactly those turns after gaining 0.056 over the four before.
+
+**Nothing detected it, and the check built for this could not.** `decide` compares
+`advice.levers` against `state.levers` to report clamping — but `advice.levers` is *already the
+parsed value*, so it compared 2.0 against 2.0 and found nothing wrong. Both sides of the comparison
+were downstream of the bug. The corruption lives between the answer text and the parsed dict, and
+nothing looked there.
+
+Probing the parser afterwards, **6 of 12 realistic cases failed**:
+
+| Written | Parsed | Meant |
+| --- | ---: | ---: |
+| `= 6e6` | 6 | 6,000,000 |
+| `= 6M` | 6 | 6,000,000 |
+| `= $6 million` | 6 | 6,000,000 |
+| `= 11%` | 0.4 *(clamped to max)* | 0.11 |
+| `to 11 percent` | 0.4 *(clamped to max)* | 0.11 |
+
+The percentage case is worse than the one that bit us: a correct recommendation of 11% becomes the
+highest legal tax rate, and the clamp makes it look deliberate in a result file.
+
+**The fix is not more regex.** Regex also cannot represent *"leave `transit_fare` where it is"* — a
+clear decision that read as silence — or reject *"a moderate level"*, which is bad advice that
+should be surfaced rather than dropped. So:
+
+1. The advisor is told to end every answer with a fenced JSON block, restated every turn, with
+   explicit rules against scientific notation, magnitude suffixes and percentages. Omission means
+   "leave unchanged"; `{}` means "change nothing".
+2. `extract_lever_block` reads it deterministically and refuses anything that is not a number.
+3. Only when the contract is broken does an LLM reviewer read the prose — and it may report only
+   numbers the advisor actually wrote. Anything else is `vague`, which asks rather than guesses.
+4. Three clarifications, then the run is **abandoned**: no result file is written, so
+   `blindcity compare` cannot sweep a void run into a table.
+5. The prose regex is retained purely as a cross-check, and a disagreement with the block is
+   printed. That is the line that would have caught this on day one.
+
+Verified against the recorded failure: the old path applied `2`, the new one refuses the answer and
+the reviewer recovers `2000000`. Given "raise it to a moderate level" the reviewer returns `vague`
+and declines to invent a number.
+
+**The lesson.** A parser sitting between a component and its score is part of the measurement, and
+this one had no test, no cross-check and no way to report doubt. The failure was not that the regex
+was weak — it was that nothing anywhere could tell us it had been wrong.
