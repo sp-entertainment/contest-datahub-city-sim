@@ -40,6 +40,13 @@ MODES: dict[str, tuple[str, str]] = {
     "agent_datahub_live": ("datahub", "assertions"),
 }
 
+# Not one of the above, because it is not our agent at all. `agent_analytics` delegates the whole
+# analysis to DataHub's Analytics Agent running as a separate service, and asks it in plain English
+# which levers to move. It shares the scenario, the seed, the turn budget and the lever set, so its
+# score is comparable -- but it does not share the controller, so it cannot share their parity
+# guarantee, and it is reported as a separate line rather than a fourth point on the same axis.
+ADVISOR_MODE = "agent_analytics"
+
 
 @dataclass
 class ModeRun:
@@ -61,10 +68,13 @@ def run_mode(
     clean_warehouse: bool = True,
     force_clean: bool = False,
     transcript: str | None = None,
+    advisor_url: str | None = None,
 ) -> ModeRun:
     """Play one mode. `turns` truncates the scenario for smoke tests; None plays it in full."""
-    if mode not in MODES:
-        raise ValueError(f"unknown mode {mode!r}; expected one of {sorted(MODES)}")
+    if mode not in MODES and mode != ADVISOR_MODE:
+        raise ValueError(
+            f"unknown mode {mode!r}; expected one of {sorted([*MODES, ADVISOR_MODE])}"
+        )
 
     if turns is not None and turns < scenario.turn_budget:
         # Only the horizon changes. Seed, crisis, levers and shock are untouched, so a truncated
@@ -121,17 +131,28 @@ def run_mode(
         assert prepared.warehouse_run_id is not None
         warehouse_run_id = prepared.warehouse_run_id
 
-        controller = AgentController(
-            name=mode,
-            llm=client,
-            conn=agent_conn,
-            run_id=warehouse_run_id,
-            catalog=build_catalog(MODES[mode][0]),
-            monitor=build_monitor(MODES[mode][1]),
-            tool_budget=tool_budget,
-            turn_budget=scenario.turn_budget,
-            reconnect=connect,
-        )
+        controller: Any
+        if mode == ADVISOR_MODE:
+            from blindcity.agent.advisor import AnalyticsAgentAdvisor
+            from blindcity.agent.advisor_controller import AdvisorController
+
+            controller = AdvisorController(
+                name=mode,
+                advisor=AnalyticsAgentAdvisor(advisor_url),
+                turn_budget=scenario.turn_budget,
+            )
+        else:
+            controller = AgentController(
+                name=mode,
+                llm=client,
+                conn=agent_conn,
+                run_id=warehouse_run_id,
+                catalog=build_catalog(MODES[mode][0]),
+                monitor=build_monitor(MODES[mode][1]),
+                tool_budget=tool_budget,
+                turn_budget=scenario.turn_budget,
+                reconnect=connect,
+            )
         phase_start = time.perf_counter()
         result = harness.run(controller, mode=mode, prepared=prepared)
         play_seconds = time.perf_counter() - phase_start
@@ -144,7 +165,7 @@ def run_mode(
         # After scoring, never before: write-back must not be able to influence the run it
         # describes. The control mode is skipped inside `write_back` rather than here, so the
         # decision stays in one place and no branch on the mode enters this loop.
-        if write_back_findings:
+        if write_back_findings and mode != ADVISOR_MODE:
             report["write_back"] = writeback.write_back(report, str(result.run_id)).to_dict()
     finally:
         # Close the agent's connection FIRST. It is the one that read through the views, and

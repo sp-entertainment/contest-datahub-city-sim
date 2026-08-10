@@ -17,7 +17,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--mode",
-        choices=("agent_datahub", "agent_raw", "agent_datahub_live"),
+        choices=("agent_datahub", "agent_raw", "agent_datahub_live", "agent_analytics"),
         default="agent_datahub",
         help="'agent_raw' is the A/B control: same model, prompt, seed, tool budget and SQL "
         "access, with only the DataHub catalog context removed. 'agent_datahub_live' adds the "
@@ -51,6 +51,12 @@ def build_parser() -> argparse.ArgumentParser:
         "OpenAI-compatible client and differ only in $LLM_BASE_URL and the key.",
     )
     parser.add_argument("--out", default=None, help="Write the run result JSON here.")
+    parser.add_argument(
+        "--advisor-url",
+        default=None,
+        help="Base URL of a running DataHub Analytics Agent, for --mode agent_analytics. "
+        "Defaults to http://localhost:8100.",
+    )
     parser.add_argument(
         "--transcript",
         default=None,
@@ -105,6 +111,7 @@ def main() -> int:
             clean_warehouse=not args.keep_warehouse,
             force_clean=args.force_clean,
             transcript=transcript_path,
+            advisor_url=args.advisor_url,
         )
     except LLMError as exc:
         print(f"agent: {exc}", file=sys.stderr)
