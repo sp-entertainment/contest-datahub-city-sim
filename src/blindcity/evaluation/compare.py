@@ -129,10 +129,16 @@ def _model_line(summaries: dict[str, ModeSummary], fallback: str) -> tuple[str, 
     is excluded from the comparison: it reports its advisor's endpoint rather than a model id,
     because the model is configured inside a service we do not own. Its parity is enforced at
     runtime instead, by `AnalyticsAgentAdvisor.preflight`.
+
+    `good_policy` and `bad_policy` are excluded for the opposite reason: they are fixed lever sets
+    that call no model at all, so "scripted" is the honest thing for them to report and is not a
+    disagreement with anything. Flagging it would fire the mismatch warning on every complete run
+    -- and a warning that is always wrong is a warning nobody reads when it is right.
     """
+    exempt = {"agent_analytics", "good_policy", "bad_policy"}
     seen: dict[str, list[str]] = {}
     for name, s in summaries.items():
-        if name == "agent_analytics":
+        if name in exempt:
             continue
         for m in s.models:
             seen.setdefault(m, []).append(name)
