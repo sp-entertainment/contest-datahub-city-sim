@@ -1,0 +1,164 @@
+"""`blindcity run` — play one mode of one scenario. The only runner.
+
+There were two of these until 2026-08-10: `uv run agent` and `uv run eval --live`, each a
+hand-written wrapper around `agent/run.py::run_mode`. They drifted three times -- the eval path
+lost transcripts, lost `--force-clean`, and never printed the query-error count or the DEGRADED
+block -- so a twelve-run batch could report a clean table while runs were losing queries to
+timeouts. One runner means a flag added here is a flag every run gets, and diagnostics cannot be
+missing from the path that produces the published numbers.
+
+Repeats are deliberately not a flag. `for i in 1 2 3; do blindcity run ...; done` needs no feature,
+and every parameter stays available inside the loop.
+"""
+
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+from typing import Any
+
+
+def run(args: Any) -> int:
+    from blindcity.agent.controller import DEFAULT_TOOL_BUDGET
+    from blindcity.agent.llm import LLMError, build_llm
+    from blindcity.agent.run import SCRIPTED_MODES, run_mode
+    from blindcity.benchmark.scenario import INFRASTRUCTURE_CRISIS
+    from blindcity.catalog.apply import apply_catalog
+
+    scripted = args.mode in SCRIPTED_MODES
+
+    # On by default whenever results are being written: the runs that mattered were the ones
+    # nobody thought to record.
+    transcript_path = args.transcript
+    if transcript_path is None and args.out and not scripted:
+        transcript_path = str(Path(args.out).with_suffix(".transcript.jsonl"))
+
+    # The catalog is published before the scenario is played, so the metadata the agent reads
+    # matches the commit it is being played from. Skipped for the scripted reference policies,
+    # which read no catalog and must stay runnable with no DataHub at all.
+    catalog_provenance: dict[str, Any] = {"applied": False, "source": "none"}
+    if not scripted:
+        try:
+            applied, _, drift = apply_catalog(args.gms, overwrite=args.overwrite_datahub)
+        except Exception as exc:  # noqa: BLE001 — CLI surface
+            print(f"run: {exc}", file=sys.stderr)
+            return 1
+        catalog_provenance = {
+            "applied": applied,
+            # Which copy of the guidance this run acted on. Once DataHub is editable a score
+            # cannot be read without it: "published snapshot" and "someone's edits" are different
+            # experiments and must not look alike in a result file.
+            "source": "snapshot" if applied else "datahub",
+            "drift_items": len(drift.lines()),
+        }
+
+    try:
+        run_result = run_mode(
+            args.mode,
+            llm=None if scripted else build_llm(args.model),
+            turns=args.turns,
+            tool_budget=args.tool_budget or DEFAULT_TOOL_BUDGET,
+            keep_views=args.keep_views,
+            clean_warehouse=not args.keep_warehouse,
+            force_clean=args.force_clean,
+            transcript=transcript_path,
+            advisor_url=args.advisor_url,
+        )
+    except LLMError as exc:
+        print(f"run: {exc}", file=sys.stderr)
+        return 1
+    except Exception as exc:  # noqa: BLE001 — CLI surface
+        print(f"run: failed: {exc}", file=sys.stderr)
+        return 1
+
+    result, report = run_result.result, run_result.report
+    report["catalog_source"] = catalog_provenance
+    _record_guidance(report, args.mode)
+
+    played = len(result.turns)
+    print(
+        f"run: mode={result.mode} model={report['model']} catalog={report['catalog']} "
+        f"turns={played} recovered={result.recovered} green_turn={result.green_turn} "
+        f"final_index={result.final_index:.4f}"
+    )
+    usage = report["usage"]
+    print(
+        f"run: tokens prompt={usage['prompt_tokens']:,} output={usage['output_tokens']:,} "
+        f"total={usage['total_tokens']:,} llm_calls={usage['calls']} "
+        f"llm_seconds={usage['seconds']} wall_seconds={run_result.wall_seconds:.1f}"
+    )
+
+    if played and played < INFRASTRUCTURE_CRISIS.turn_budget:
+        from blindcity.agent.run import estimate_full_run
+
+        est = estimate_full_run(report, played, INFRASTRUCTURE_CRISIS.turn_budget)
+        print(
+            f"run: extrapolated full run ({est['turn_budget']} turns) "
+            f"total_tokens={est['total_tokens']:,} llm_calls={est['llm_calls']} "
+            f"llm_seconds={est['llm_seconds']}"
+        )
+
+    _print_diagnostics(report)
+
+    if args.out:
+        result.write_json(args.out)
+        side = Path(args.out).with_suffix(".agent.json")
+        side.write_text(json.dumps(report, indent=2), encoding="utf-8")
+        print(f"run: wrote {args.out} and {side}")
+    if transcript_path:
+        print(f"run: transcript at {transcript_path}")
+    return 0
+
+
+def _record_guidance(report: dict[str, Any], mode: str) -> None:
+    """Fingerprint the guidance the run actually used, for modes that read it."""
+    if mode != "agent_datahub_live":
+        return
+    try:
+        from blindcity.agent.guidance import fetch_guidance
+        from blindcity.catalog.apply import guidance_fingerprint
+
+        guidance = fetch_guidance()
+        report["catalog_source"].update(
+            {
+                "guidance_fingerprint": guidance_fingerprint(guidance),
+                "levers": len(guidance.levers),
+                "outcomes": len(guidance.outcomes),
+                "lags": len(guidance.lags),
+            }
+        )
+    except Exception as exc:  # noqa: BLE001 — provenance must never cost a finished run
+        report["catalog_source"]["guidance_fingerprint_error"] = str(exc)[:200]
+
+
+def _print_diagnostics(report: dict[str, Any]) -> None:
+    """Everything that went wrong without failing the run.
+
+    This block is why there is only one runner. The eval path never printed it, so a batch of
+    twelve runs could show a clean comparison table while queries were being lost to timeouts.
+    """
+    failed = [t for t in report["turns"] if t.get("error")]
+    if failed:
+        print(f"run: {len(failed)} turn(s) hit an LLM error; first: {failed[0]['error'][:200]}")
+
+    # A model asking for a table that does not exist is exploration, not damage — report it flatly.
+    query_errors = report.get("tool_failures", 0) - report.get("infrastructure_failures", 0)
+    if query_errors:
+        print(f"run: {query_errors} query error(s) the model recovered from (bad table or column)")
+
+    # Degradation is different and must never read as a clean run: these do not fail the turn, the
+    # model adapts and carries on, so this is the only trace that a diagnosis it asked for never
+    # came back. One live run lost four queries and three minutes and printed "0 errors".
+    infra = report.get("infrastructure_failures", 0)
+    if infra:
+        turns_hit = [t["turn"] for t in report["turns"] if t.get("infrastructure_errors")]
+        print(
+            f"run: DEGRADED -- {infra} query/queries lost to timeouts or a dead warehouse "
+            f"on turn(s) {turns_hit}"
+        )
+        print("run: the score stands, but the model was denied data it asked for.")
+
+    advisor_errors = report.get("advisor_errors") or []
+    if advisor_errors:
+        print(f"run: {len(advisor_errors)} turn(s) got no advice; first: {advisor_errors[0][:200]}")

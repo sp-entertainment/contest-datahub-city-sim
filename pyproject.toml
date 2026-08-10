@@ -14,10 +14,7 @@ dependencies = [
 ]
 
 [project.scripts]
-sim = "blindcity.sim.__main__:main"
-datahub-emit = "blindcity.catalog.__main__:main"
-agent = "blindcity.agent.__main__:main"
-eval = "blindcity.evaluation.__main__:main"
+blindcity = "blindcity.cli:main"
 
 [dependency-groups]
 dev = [

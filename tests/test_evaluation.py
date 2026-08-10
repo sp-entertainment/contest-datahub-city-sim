@@ -8,6 +8,7 @@ for, and printing a single figure for a difference smaller than the run-to-run n
 from __future__ import annotations
 
 import json
+from typing import ClassVar
 
 import pytest
 
@@ -30,21 +31,22 @@ def _write(tmp_path, mode, index, green, tokens=1000, name=None, model="gpt-5.6-
     return path
 
 
-def test_bare_eval_neither_spends_nor_pretends(capsys):
-    """Defaulting to --live would spend money on a bare command; defaulting to --dry-run would let
-    someone believe they had run the scored evaluation when they had not. So it refuses."""
-    from blindcity.evaluation.__main__ import main
+def test_a_bare_command_prints_help_rather_than_doing_anything(capsys):
+    """`blindcity` with no subcommand must not pick one. The old `eval` guarded this by refusing
+    a bare invocation because it would otherwise have run every mode and spent real money; the
+    single CLI has no default action at all, which is the stronger version of the same rule."""
+    import sys
 
-    with pytest.raises(SystemExit) as exit_info:
-        import sys
-        argv = sys.argv
-        sys.argv = ["eval"]
-        try:
-            raise SystemExit(main())
-        finally:
-            sys.argv = argv
-    assert exit_info.value.code == 2
-    assert "--dry-run" in capsys.readouterr().err
+    from blindcity.cli import main
+
+    argv = sys.argv
+    sys.argv = ["blindcity"]
+    try:
+        code = main()
+    finally:
+        sys.argv = argv
+    assert code == 2
+    assert "compare" in capsys.readouterr().out
 
 
 def test_ordering_is_reported_not_enforced(tmp_path):
@@ -305,3 +307,149 @@ class _NullClient:
 
     def __exit__(self, *a):
         return False
+
+
+# --- Publishing the catalog must not silently destroy someone's edits --------------------------
+
+
+class _Drift:
+    """Stands in for a DataHub that differs from the snapshot."""
+
+    empty = False
+
+    def __bool__(self):
+        return True
+
+    def lines(self):
+        return ["  lever income_tax_rate: DataHub 0.12-0.16 | snapshot 0.1-0.14"]
+
+
+def _apply(monkeypatch, *, overwrite, answer=None, drift=None):
+    """Run apply_catalog against a fake GMS, returning (applied, prompted, log lines)."""
+    from blindcity.catalog import apply as apply_mod
+
+    drift = _Drift() if drift is None else drift
+
+    monkeypatch.setattr(apply_mod, "catalog_drift", lambda gms: drift)
+    published = {"n": 0}
+    monkeypatch.setattr(
+        apply_mod, "emit_all",
+        lambda gms, **kw: published.__setitem__("n", published["n"] + 1) or "emitted",
+    )
+    asked, lines = [], []
+
+    def ask(prompt):
+        asked.append(prompt)
+        return answer
+
+    applied, _, _ = apply_mod.apply_catalog(
+        "http://gms", overwrite=overwrite, ask=ask, log=lines.append
+    )
+    return applied, bool(asked), lines, published["n"]
+
+
+def test_overwrite_true_replaces_without_asking(monkeypatch):
+    applied, prompted, _, published = _apply(monkeypatch, overwrite=True)
+    assert applied and not prompted and published == 1
+
+
+def test_overwrite_false_keeps_datahub_without_asking(monkeypatch):
+    """The run still happens -- it just uses DataHub's values. That is the point of the flag:
+    edit a band in the UI, see how the agent responds, without the runner undoing the edit."""
+    applied, prompted, lines, published = _apply(monkeypatch, overwrite=False)
+    assert not applied and not prompted and published == 0
+    assert any("leaving DataHub as it is" in line for line in lines)
+
+
+def test_an_absent_flag_asks_and_shows_the_difference(monkeypatch):
+    applied, prompted, lines, published = _apply(monkeypatch, overwrite=None, answer="y")
+    assert applied and prompted and published == 1
+    assert any("income_tax_rate" in line for line in lines), "the diff was not shown"
+
+
+def test_answering_no_leaves_datahub_alone(monkeypatch):
+    applied, prompted, _, published = _apply(monkeypatch, overwrite=None, answer="n")
+    assert not applied and prompted and published == 0
+
+
+def test_anything_other_than_yes_is_no(monkeypatch):
+    """A prompt whose default is destructive is a prompt nobody should trust. Enter means no."""
+    for answer in ("", "  ", "maybe", "Y E S"):
+        applied, _, _, published = _apply(monkeypatch, overwrite=None, answer=answer)
+        assert not applied and published == 0, f"{answer!r} was treated as consent"
+
+
+def test_an_empty_datahub_is_filled_without_a_prompt(monkeypatch):
+    """A fresh clone has nothing to lose, so it must not stop to ask. This is the case that has to
+    work with no explanation for someone who just cloned the repo."""
+
+    class Empty(_Drift):
+        empty = True
+
+        def lines(self):
+            return []
+
+    applied, prompted, _, published = _apply(monkeypatch, overwrite=None, drift=Empty())
+    assert applied and not prompted and published == 1
+
+
+def test_a_matching_datahub_is_republished_without_a_prompt(monkeypatch):
+    class Same(_Drift):
+        def __bool__(self):
+            return False
+
+        def lines(self):
+            return []
+
+    applied, prompted, _, published = _apply(monkeypatch, overwrite=None, drift=Same())
+    assert applied and not prompted and published == 1
+
+
+def test_the_tristate_flag_parses_both_words():
+    from blindcity.cli import _tristate
+
+    assert _tristate("true") is True and _tristate("TRUE") is True and _tristate("1") is True
+    assert _tristate("false") is False and _tristate("no") is False and _tristate("0") is False
+    import argparse
+
+    with pytest.raises(argparse.ArgumentTypeError):
+        _tristate("perhaps")
+
+
+def test_the_run_command_defaults_are_all_usable(monkeypatch, tmp_path):
+    """Every `--flag` default must be something run_mode will actually accept.
+
+    `--tool-budget` defaulted to None and was passed straight through, so the very first real
+    invocation died with "NoneType cannot be interpreted as an integer" -- after publishing the
+    catalog and seeding the warehouse. Parser defaults are code, and this is the cheapest place to
+    prove they compose.
+    """
+    from blindcity.agent.controller import DEFAULT_TOOL_BUDGET
+    from blindcity.cli import build_parser
+    from blindcity.commands import run as run_cmd
+
+    args = build_parser().parse_args(["run", "--mode", "good_policy", "--out", str(tmp_path / "r.json")])
+    seen = {}
+
+    class FakeRun:
+        result = type("R", (), {
+            "turns": [], "recovered": True, "green_turn": 1, "final_index": 0.5,
+            "mode": "good_policy", "write_json": lambda self, p: None,
+        })()
+        report: ClassVar[dict] = {
+            "model": "scripted", "catalog": "none", "turns": [],
+            "usage": {"prompt_tokens": 0, "output_tokens": 0, "total_tokens": 0,
+                      "calls": 0, "seconds": 0.0},
+        }
+        wall_seconds = 1.0
+
+    def fake_run_mode(mode, **kw):
+        seen.update(kw)
+        return FakeRun()
+
+    monkeypatch.setattr("blindcity.agent.run.run_mode", fake_run_mode)
+    assert run_cmd.run(args) == 0
+
+    assert isinstance(seen["tool_budget"], int) and seen["tool_budget"] == DEFAULT_TOOL_BUDGET
+    # The scripted policies must never reach for a model or a catalog.
+    assert seen["llm"] is None

@@ -1,57 +1,24 @@
-"""Entry point for `uv run sim`."""
+"""`blindcity sim` — generate a city's history, or serve the interactive control surface."""
 
 from __future__ import annotations
 
-import argparse
 import sys
 import time
-
-from blindcity.console import configure_console
-from blindcity.sim.city_init import GRID_H, GRID_W
-from blindcity.sim.engine import run_simulation
-from blindcity.sim.warehouse import (
-    WarehouseWriter,
-    connect,
-    ensure_schema,
-    reset_warehouse,
-    row_counts,
-    start_run,
-)
+from typing import Any
 
 
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="sim", description="Run the Blind City simulation.")
-    parser.add_argument("--seed", type=int, default=42, help="Seed. Same seed, same city, always.")
-    parser.add_argument("--years", type=int, default=20, help="Simulated years to run.")
-    parser.add_argument("--serve", action="store_true", help="Expose the FastAPI control surface.")
-    parser.add_argument(
-        "--host",
-        default="127.0.0.1",
-        help="Bind host for --serve (default 127.0.0.1).",
+def run(args: Any) -> int:
+    from blindcity.sim.city_init import GRID_H, GRID_W
+    from blindcity.sim.engine import run_simulation
+    from blindcity.sim.warehouse import (
+        WarehouseWriter,
+        connect,
+        ensure_schema,
+        reset_warehouse,
+        row_counts,
+        start_run,
     )
-    parser.add_argument(
-        "--port",
-        type=int,
-        default=8000,
-        help="Bind port for --serve (default 8000).",
-    )
-    parser.add_argument(
-        "--no-warehouse",
-        action="store_true",
-        help="Run in-memory only (no Postgres writes). Useful for tests and lever sweeps.",
-    )
-    parser.add_argument(
-        "--reset-warehouse",
-        action="store_true",
-        help="Drop and recreate warehouse tables before writing. Default is append-by-run_id "
-        "so concurrent benchmark modes do not wipe each other. Use this for a clean demo load.",
-    )
-    return parser
 
-
-def main() -> int:
-    configure_console()
-    args = build_parser().parse_args()
     if args.serve:
         import uvicorn
 
@@ -89,6 +56,9 @@ def main() -> int:
         return 1
 
     try:
+        # Appending is the default here and clearing is the default for `blindcity run` -- the
+        # opposite way round, on purpose. This command builds history to keep; a benchmark run
+        # needs a warehouse nobody else's rows can influence.
         if args.reset_warehouse:
             reset_warehouse(conn)
         else:
@@ -122,7 +92,3 @@ def main() -> int:
         return 0
     finally:
         conn.close()
-
-
-if __name__ == "__main__":
-    sys.exit(main())

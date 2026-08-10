@@ -1,0 +1,322 @@
+{
+  "scenario_name": "infrastructure_neglect",
+  "seed": 42,
+  "controller_name": "bad_policy",
+  "mode": "bad_policy",
+  "run_id": "1",
+  "turn_budget": 12,
+  "green_threshold": 0.62,
+  "baseline_population": 3133,
+  "recovered": false,
+  "green_turn": null,
+  "final_index": 0.32442618809508306,
+  "turns": [
+    {
+      "turn": 0,
+      "tick": 63,
+      "levers": {
+        "income_tax_rate": 0.03,
+        "property_tax_rate": 0.003,
+        "electricity_tariff": 0.85,
+        "road_maintenance_budget": 0.0,
+        "water_sewer_capex": 0.0,
+        "transit_fare": 9.0,
+        "zoning_release": 0.0,
+        "power_contract_mode": 0
+      },
+      "components": {
+        "solvency": 0.522676426755931,
+        "satisfaction": 0.17047787347047505,
+        "service": 0.24914781876501665,
+        "population": 0.7238612010396243,
+        "index": 0.37519523322975856
+      },
+      "index": 0.37519523322975856,
+      "green": false
+    },
+    {
+      "turn": 1,
+      "tick": 66,
+      "levers": {
+        "income_tax_rate": 0.03,
+        "property_tax_rate": 0.003,
+        "electricity_tariff": 0.85,
+        "road_maintenance_budget": 0.0,
+        "water_sewer_capex": 0.0,
+        "transit_fare": 9.0,
+        "zoning_release": 0.0,
+        "power_contract_mode": 0
+      },
+      "components": {
+        "solvency": 0.5227617415235729,
+        "satisfaction": 0.1317639634397847,
+        "service": 0.24539015764398217,
+        "population": 0.6887510829419543,
+        "index": 0.3554488012182355
+      },
+      "index": 0.3554488012182355,
+      "green": false
+    },
+    {
+      "turn": 2,
+      "tick": 69,
+      "levers": {
+        "income_tax_rate": 0.03,
+        "property_tax_rate": 0.003,
+        "electricity_tariff": 0.85,
+        "road_maintenance_budget": 0.0,
+        "water_sewer_capex": 0.0,
+        "transit_fare": 9.0,
+        "zoning_release": 0.0,
+        "power_contract_mode": 0
+      },
+      "components": {
+        "solvency": 0.5228445404050752,
+        "satisfaction": 0.12919707815338966,
+        "service": 0.24187595307984724,
+        "population": 0.6422415758515343,
+        "index": 0.34433913262129295
+      },
+      "index": 0.34433913262129295,
+      "green": false
+    },
+    {
+      "turn": 3,
+      "tick": 72,
+      "levers": {
+        "income_tax_rate": 0.03,
+        "property_tax_rate": 0.003,
+        "electricity_tariff": 0.85,
+        "road_maintenance_budget": 0.0,
+        "water_sewer_capex": 0.0,
+        "transit_fare": 9.0,
+        "zoning_release": 0.0,
+        "power_contract_mode": 0
+      },
+      "components": {
+        "solvency": 0.5236600266832012,
+        "satisfaction": 0.12533030065140974,
+        "service": 0.19822378360537737,
+        "population": 0.5961880443208244,
+        "index": 0.32103583947784126
+      },
+      "index": 0.32103583947784126,
+      "green": false
+    },
+    {
+      "turn": 4,
+      "tick": 75,
+      "levers": {
+        "income_tax_rate": 0.03,
+        "property_tax_rate": 0.003,
+        "electricity_tariff": 0.85,
+        "road_maintenance_budget": 0.0,
+        "water_sewer_capex": 0.0,
+        "transit_fare": 9.0,
+        "zoning_release": 0.0,
+        "power_contract_mode": 0
+      },
+      "components": {
+        "solvency": 0.5246905639861038,
+        "satisfaction": 0.14522776154082942,
+        "service": 0.21589006459603943,
+        "population": 0.5505904883498244,
+        "index": 0.3233915583082463
+      },
+      "index": 0.3233915583082463,
+      "green": false
+    },
+    {
+      "turn": 5,
+      "tick": 78,
+      "levers": {
+        "income_tax_rate": 0.03,
+        "property_tax_rate": 0.003,
+        "electricity_tariff": 0.85,
+        "road_maintenance_budget": 0.0,
+        "water_sewer_capex": 0.0,
+        "transit_fare": 9.0,
+        "zoning_release": 0.0,
+        "power_contract_mode": 0
+      },
+      "components": {
+        "solvency": 0.5261235583326243,
+        "satisfaction": 0.1633504647534211,
+        "service": 0.22167648739229148,
+        "population": 0.5068168346176645,
+        "index": 0.3220961642337715
+      },
+      "index": 0.3220961642337715,
+      "green": false
+    },
+    {
+      "turn": 6,
+      "tick": 81,
+      "levers": {
+        "income_tax_rate": 0.03,
+        "property_tax_rate": 0.003,
+        "electricity_tariff": 0.85,
+        "road_maintenance_budget": 0.0,
+        "water_sewer_capex": 0.0,
+        "transit_fare": 9.0,
+        "zoning_release": 0.0,
+        "power_contract_mode": 0
+      },
+      "components": {
+        "solvency": 0.5280607494430576,
+        "satisfaction": 0.1866565109160257,
+        "service": 0.23674924794800067,
+        "population": 0.4644111075646345,
+        "index": 0.32551609906074636
+      },
+      "index": 0.32551609906074636,
+      "green": false
+    },
+    {
+      "turn": 7,
+      "tick": 84,
+      "levers": {
+        "income_tax_rate": 0.03,
+        "property_tax_rate": 0.003,
+        "electricity_tariff": 0.85,
+        "road_maintenance_budget": 0.0,
+        "water_sewer_capex": 0.0,
+        "transit_fare": 9.0,
+        "zoning_release": 0.0,
+        "power_contract_mode": 0
+      },
+      "components": {
+        "solvency": 0.5306660471368205,
+        "satisfaction": 0.19473409844874234,
+        "service": 0.19143817648252873,
+        "population": 0.42565318498928467,
+        "index": 0.30711552890460236
+      },
+      "index": 0.30711552890460236,
+      "green": false
+    },
+    {
+      "turn": 8,
+      "tick": 87,
+      "levers": {
+        "income_tax_rate": 0.03,
+        "property_tax_rate": 0.003,
+        "electricity_tariff": 0.85,
+        "road_maintenance_budget": 0.0,
+        "water_sewer_capex": 0.0,
+        "transit_fare": 9.0,
+        "zoning_release": 0.0,
+        "power_contract_mode": 0
+      },
+      "components": {
+        "solvency": 0.5341077171378248,
+        "satisfaction": 0.21696806357211074,
+        "service": 0.25072489578826124,
+        "population": 0.3873512379736447,
+        "index": 0.32459967883040547
+      },
+      "index": 0.32459967883040547,
+      "green": false
+    },
+    {
+      "turn": 9,
+      "tick": 90,
+      "levers": {
+        "income_tax_rate": 0.03,
+        "property_tax_rate": 0.003,
+        "electricity_tariff": 0.85,
+        "road_maintenance_budget": 0.0,
+        "water_sewer_capex": 0.0,
+        "transit_fare": 9.0,
+        "zoning_release": 0.0,
+        "power_contract_mode": 0
+      },
+      "components": {
+        "solvency": 0.5384497565811258,
+        "satisfaction": 0.23135402218734286,
+        "service": 0.246022930079869,
+        "population": 0.35680087547307465,
+        "index": 0.32226321209100367
+      },
+      "index": 0.32226321209100367,
+      "green": false
+    },
+    {
+      "turn": 10,
+      "tick": 93,
+      "levers": {
+        "income_tax_rate": 0.03,
+        "property_tax_rate": 0.003,
+        "electricity_tariff": 0.85,
+        "road_maintenance_budget": 0.0,
+        "water_sewer_capex": 0.0,
+        "transit_fare": 9.0,
+        "zoning_release": 0.0,
+        "power_contract_mode": 0
+      },
+      "components": {
+        "solvency": 0.5409425249030473,
+        "satisfaction": 0.2313922049823396,
+        "service": 0.19726748567547783,
+        "population": 0.3257945374127946,
+        "index": 0.30194531966051363
+      },
+      "index": 0.30194531966051363,
+      "green": false
+    },
+    {
+      "turn": 11,
+      "tick": 96,
+      "levers": {
+        "income_tax_rate": 0.03,
+        "property_tax_rate": 0.003,
+        "electricity_tariff": 0.85,
+        "road_maintenance_budget": 0.0,
+        "water_sewer_capex": 0.0,
+        "transit_fare": 9.0,
+        "zoning_release": 0.0,
+        "power_contract_mode": 0
+      },
+      "components": {
+        "solvency": 0.5401699933000665,
+        "satisfaction": 0.26335867826118137,
+        "service": 0.25990323508834123,
+        "population": 0.29706807715106476,
+        "index": 0.32442618809508306
+      },
+      "index": 0.32442618809508306,
+      "green": false
+    }
+  ],
+  "meta": {
+    "crisis_months": 60,
+    "months_per_turn": 3,
+    "warehouse_run_id": 1,
+    "agent": {
+      "controller": "bad_policy",
+      "model": "scripted",
+      "catalog": "none",
+      "monitor": "none",
+      "turns": [],
+      "usage": {
+        "prompt_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "calls": 0,
+        "seconds": 0.0
+      },
+      "tool_failures": 0,
+      "timeouts": 0,
+      "infrastructure_failures": 0,
+      "phases": {
+        "prepare_seconds": 7.5,
+        "play_seconds": 3.7
+      },
+      "catalog_source": {
+        "applied": false,
+        "source": "none"
+      }
+    },
+    "wall_seconds": 11.2
+  }
+}

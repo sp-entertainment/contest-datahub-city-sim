@@ -47,12 +47,62 @@ MODES: dict[str, tuple[str, str]] = {
 # guarantee, and it is reported as a separate line rather than a fourth point on the same axis.
 ADVISOR_MODE = "agent_analytics"
 
+# The calibrated reference policies, playable through the same runner as everything else. They are
+# fixed lever sets rather than agents: `good_policy` is what the scenario looks like handled well,
+# `bad_policy` is continued neglect, and between them they show the crisis is both winnable and
+# losable. Neither calls a model, so both are free.
+#
+# They were a separate `eval --dry-run` code path until 2026-08-10. Folding them in means there is
+# exactly one way to play a scenario and one way to write a result -- the reference numbers are
+# produced by the same harness, scoring and file format as the scores they are the yardstick for,
+# rather than by a parallel path that could drift away from it.
+SCRIPTED_MODES: dict[str, str] = {
+    "good_policy": "good_recovery",
+    "bad_policy": "bad_neglect",
+}
+
+# Everything `--mode` accepts, in the order a reader wants them.
+ALL_MODES: tuple[str, ...] = (*MODES, ADVISOR_MODE, *SCRIPTED_MODES)
+
 
 @dataclass
 class ModeRun:
     result: RunResult
     report: dict[str, Any]
     wall_seconds: float
+
+
+@dataclass
+class _ScriptedRun:
+    """Wraps a fixed-lever controller so it reports like every other mode.
+
+    `compare` reads `usage`, `turns` and the failure counters out of each run's sidecar. A
+    reference policy that omitted them would need a special case in the reporting path, which is
+    exactly the kind of second code path this consolidation exists to remove -- so it reports zeros
+    and an empty turn list rather than nothing. The zeros are true: no model was called.
+    """
+
+    name: str
+    inner: Any
+
+    def decide(self, state: Any, turn: int, channel: dict[str, Any]) -> dict[str, float]:
+        return self.inner.decide(state, turn, channel)
+
+    def report(self) -> dict[str, Any]:
+        return {
+            "controller": self.name,
+            "model": "scripted",
+            "catalog": "none",
+            "monitor": "none",
+            "turns": [],
+            "usage": {
+                "prompt_tokens": 0, "output_tokens": 0, "total_tokens": 0,
+                "calls": 0, "seconds": 0.0,
+            },
+            "tool_failures": 0,
+            "timeouts": 0,
+            "infrastructure_failures": 0,
+        }
 
 
 def run_mode(
@@ -71,10 +121,8 @@ def run_mode(
     advisor_url: str | None = None,
 ) -> ModeRun:
     """Play one mode. `turns` truncates the scenario for smoke tests; None plays it in full."""
-    if mode not in MODES and mode != ADVISOR_MODE:
-        raise ValueError(
-            f"unknown mode {mode!r}; expected one of {sorted([*MODES, ADVISOR_MODE])}"
-        )
+    if mode not in ALL_MODES:
+        raise ValueError(f"unknown mode {mode!r}; expected one of {sorted(ALL_MODES)}")
 
     if turns is not None and turns < scenario.turn_budget:
         # Only the horizon changes. Seed, crisis, levers and shock are untouched, so a truncated
@@ -90,11 +138,18 @@ def run_mode(
         )
 
     harness = RunHarness(scenario)
-    # One factory for both modes: they cannot end up on different providers or models.
-    client = llm or build_llm(model=model)
-    if transcript:
-        # Wrapped last, so the recording is of exactly what the controller sent.
-        client = RecordingLLM(client, transcript, mode=mode)
+    # One factory for every agent mode: they cannot end up on different providers or models.
+    #
+    # Built lazily, because the scripted reference policies call no model and must stay runnable
+    # with no API key and no network -- that is what makes them a yardstick anyone can reproduce
+    # from a clone. `build_llm` raises when LLM_MODEL is unset, so constructing it here
+    # unconditionally would make the free path require a paid one.
+    client: Any = None
+    if mode not in SCRIPTED_MODES:
+        client = llm or build_llm(model=model)
+        if transcript:
+            # Wrapped last, so the recording is of exactly what the controller sent.
+            client = RecordingLLM(client, transcript, mode=mode)
 
     # Two connections on purpose. The writer bulk-loads with COPY against the real tables in
     # `public`; the agent reads through a per-run view schema with `search_path` pointed at it.
@@ -132,7 +187,15 @@ def run_mode(
         warehouse_run_id = prepared.warehouse_run_id
 
         controller: Any
-        if mode == ADVISOR_MODE:
+        if mode in SCRIPTED_MODES:
+            # A fixed lever set played through the same harness as every agent mode. It reports
+            # like one too -- an empty usage block rather than no usage block -- so `compare` does
+            # not need a branch for the reference rows.
+            from blindcity.benchmark.controller import bad_controller, good_controller
+
+            builder = good_controller if mode == "good_policy" else bad_controller
+            controller = _ScriptedRun(mode, builder())
+        elif mode == ADVISOR_MODE:
             from blindcity.agent.advisor import AnalyticsAgentAdvisor
             from blindcity.agent.advisor_controller import AdvisorController
 
@@ -169,7 +232,7 @@ def run_mode(
         # After scoring, never before: write-back must not be able to influence the run it
         # describes. The control mode is skipped inside `write_back` rather than here, so the
         # decision stays in one place and no branch on the mode enters this loop.
-        if write_back_findings and mode != ADVISOR_MODE:
+        if write_back_findings and mode != ADVISOR_MODE and mode not in SCRIPTED_MODES:
             report["write_back"] = writeback.write_back(report, str(result.run_id)).to_dict()
     finally:
         # Close the agent's connection FIRST. It is the one that read through the views, and

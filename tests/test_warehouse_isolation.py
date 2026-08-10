@@ -61,10 +61,12 @@ def test_reset_warehouse_is_explicit_not_implied_by_start_run():
     """Benchmark/default path uses ensure_schema + start_run; truncate is opt-in."""
     import inspect
 
-    main_src = inspect.getsource(__import__("blindcity.sim.__main__", fromlist=["main"]).main)
+    from blindcity.commands import sim as sim_cmd
+
+    main_src = inspect.getsource(sim_cmd.run)
     # Default CLI path must not always reset; --reset-warehouse is the opt-in.
     assert "reset_warehouse" in main_src
-    assert "args.reset_warehouse" in main_src or "reset_warehouse" in main_src
+    assert "args.reset_warehouse" in main_src
     assert "ensure_schema" in main_src
 
 
@@ -162,13 +164,17 @@ def test_drop_all_run_views_does_not_consult_run_state():
     assert runscope.drop_all_run_views(conn) == ["run_3", "run_9"]
 
 
-def test_agent_cli_clears_by_default_and_can_opt_out():
-    """The default is the clean slate; --keep-warehouse is the escape hatch, not the reverse."""
+def test_run_cli_clears_by_default_and_can_opt_out():
+    """The default is the clean slate; --keep-warehouse is the escape hatch, not the reverse.
+
+    The two defaults are deliberately opposite: `blindcity sim` appends because it builds history
+    worth keeping, `blindcity run` clears because a benchmark run must not inherit another run's
+    rows, planner statistics or leftover views.
+    """
     import inspect
 
-    from blindcity.agent import __main__ as agent_main
+    from blindcity import cli
+    from blindcity.commands import run as run_cmd
 
-    parser_src = inspect.getsource(agent_main.build_parser)
-    assert "--keep-warehouse" in parser_src
-    main_src = inspect.getsource(agent_main.main)
-    assert "clean_warehouse=not args.keep_warehouse" in main_src
+    assert "--keep-warehouse" in inspect.getsource(cli.build_parser)
+    assert "clean_warehouse=not args.keep_warehouse" in inspect.getsource(run_cmd.run)
