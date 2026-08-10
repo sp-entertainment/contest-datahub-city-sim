@@ -1,4 +1,4 @@
-# Blind City
+# City Sim Agent Benchmark
 
 **A benchmark for whether data catalogs make AI agents better at their job.**
 
