@@ -16,9 +16,8 @@ import pytest
 from blindcity.agent.catalog import DataHubCatalog, NoCatalog, build_catalog
 from blindcity.agent.controller import SYSTEM_PROMPT, AgentController
 from blindcity.agent.llm import (
-    GeminiClient,
-    LocalClient,
     Reply,
+    ResponsesClient,
     ToolCall,
     ToolResult,
     Turn,
@@ -528,11 +527,11 @@ def test_exactly_full_page_is_not_reported_as_truncated():
     assert out["row_count"] == MAX_ROWS
 
 
-# --- Backends -------------------------------------------------------------------------------
+# --- The backend ----------------------------------------------------------------------------
 #
-# The controller holds the conversation in a provider-neutral form and each backend serialises
-# it. These assert the serialisation, so a backend cannot quietly hand one mode a differently
-# shaped conversation than the other.
+# The controller holds the conversation in a provider-neutral form and the client serialises it.
+# These assert that serialisation, so the client cannot quietly hand one mode a differently
+# shaped conversation than another.
 
 
 def _history():
@@ -546,50 +545,40 @@ def _history():
 
 
 
-def test_local_backend_serialises_a_tool_round_trip():
-    messages = LocalClient._messages("SYS", _history())
-    assert messages[0] == {"role": "system", "content": "SYS"}
-    assert messages[1] == {"role": "user", "content": "Turn 1."}
-    assistant = messages[2]
-    assert assistant["role"] == "assistant"
-    assert assistant["tool_calls"][0]["function"]["name"] == "sql_query"
+def test_the_backend_serialises_a_tool_round_trip():
+    items = ResponsesClient._input(_history())
+    assert items[0] == {"role": "user", "content": [{"type": "input_text", "text": "Turn 1."}]}
+    # The assistant's own words and its calls are separate items, not one message.
+    assert items[1]["role"] == "assistant"
+    assert items[2]["type"] == "function_call"
+    assert items[2]["name"] == "sql_query"
     # Arguments go over the wire as a JSON *string*, not an object.
-    assert json.loads(assistant["tool_calls"][0]["function"]["arguments"]) == {"query": "SELECT 1"}
-    # Results are keyed back to the call id, or the server cannot match them up.
-    assert messages[3]["role"] == "tool"
-    assert messages[3]["tool_call_id"] == "c1"
+    assert json.loads(items[2]["arguments"]) == {"query": "SELECT 1"}
+    # Results are keyed back to the call id, or the server cannot match them up. Getting this
+    # wrong is not a crash: the model simply never learns what its own query returned.
+    assert items[3]["type"] == "function_call_output"
+    assert items[3]["call_id"] == "c1"
+    assert json.loads(items[3]["output"]) == {"rows": [[1]]}
 
 
-def test_gemini_backend_serialises_a_tool_round_trip():
-    contents = GeminiClient._contents(_history())
-    assert contents[0] == {"role": "user", "parts": [{"text": "Turn 1."}]}
-    assert contents[1]["role"] == "model"
-    assert contents[1]["parts"][-1]["functionCall"]["name"] == "sql_query"
-    # Gemini returns tool output in the *user* role, as functionResponse parts.
-    assert contents[2]["role"] == "user"
-    assert contents[2]["parts"][0]["functionResponse"]["name"] == "sql_query"
+def test_the_system_prompt_is_not_smuggled_into_the_conversation():
+    """Responses carries the system prompt in `instructions`, beside the input rather than
+    inside it. A stray system turn in `_input` would be a second, differently-placed copy."""
+    assert all(item.get("role") != "system" for item in ResponsesClient._input(_history()))
 
 
-def test_backends_agree_on_the_tool_set():
-    """One declaration, two wire formats. Gemini wants upper-case OpenAPI type names; an
-    OpenAI-compatible server wants plain JSON Schema nested under a `function` key."""
+def test_the_tool_set_survives_the_wire_format():
+    """One declaration, one wire format. The declarations are built once in `tools.py` so no
+    mode can be handed a differently-worded tool than another; this checks the client does not
+    quietly reshape them on the way out."""
     declared = tool_declarations()
-    local = LocalClient._tools(declared)
-    gemini = GeminiClient._tools(declared)
+    converted = ResponsesClient._tools(declared)
 
-    assert [t["function"]["name"] for t in local] == [d["name"] for d in declared]
-    assert local[0]["function"]["parameters"]["type"] == "object"
-    assert gemini[0]["parameters"]["type"] == "OBJECT"
-    # Same tools, same descriptions - only the casing and nesting differ.
-    assert [t["name"] for t in gemini] == [d["name"] for d in declared]
-    assert gemini[0]["description"] == declared[0]["description"]
-
-
-def test_provider_factory_rejects_an_unknown_provider():
-    from blindcity.agent.llm import LLMError, build_llm
-
-    with pytest.raises(LLMError, match="unknown LLM_PROVIDER"):
-        build_llm("hal9000")
+    # Responses takes flat function tools, without the {type, function: {...}} nesting that
+    # /chat/completions required.
+    assert [t["name"] for t in converted] == [d["name"] for d in declared]
+    assert converted[0]["parameters"] == declared[0]["parameters"]
+    assert converted[0]["description"] == declared[0]["description"]
 
 
 def test_sql_tool_ends_its_transaction():
@@ -689,21 +678,36 @@ def test_thinking_budget_is_not_an_infrastructure_timeout():
     assert LLM_TIMEOUT_SECONDS > runscope.STATEMENT_TIMEOUT_SECONDS * 5
 
 
-def test_every_llm_client_uses_the_thinking_budget():
-    """A per-client default is how one backend ends up quietly stricter than another. The Gemini
-    client sat at 90s, which would have truncated a reasoning model mid-thought."""
+def test_the_llm_client_uses_the_shared_thinking_budget():
+    """A per-client default is how a backend ends up quietly stricter than the setting says. One
+    client once sat at 90s, which would have truncated a reasoning model mid-thought."""
     import inspect
 
-    from blindcity.agent.llm import (
-        LLM_TIMEOUT_SECONDS,
-        GeminiClient,
-        OpenAIClient,
-        ResponsesClient,
-    )
+    from blindcity.agent.llm import LLM_TIMEOUT_SECONDS, ResponsesClient
 
-    for client in (OpenAIClient, ResponsesClient, GeminiClient):
-        default = inspect.signature(client.__init__).parameters["timeout"].default
-        assert default == LLM_TIMEOUT_SECONDS, f"{client.__name__} has its own timeout: {default}"
+    default = inspect.signature(ResponsesClient.__init__).parameters["timeout"].default
+    assert default == LLM_TIMEOUT_SECONDS, f"ResponsesClient has its own timeout: {default}"
+
+
+def test_there_is_exactly_one_llm_backend():
+    """OpenAI is the only supported provider, and the local `/chat/completions` client and the
+    Gemini client are gone. They were routes no published number ever came from, and an untested
+    branch in the module that decides what the model sees is where two arms silently diverge.
+
+    Asserted structurally rather than by reading the factory: a second client that exists but is
+    unreachable today is a second client someone wires up tomorrow.
+    """
+    from blindcity.agent import llm as llm_module
+
+    clients = {
+        name
+        for name, obj in vars(llm_module).items()
+        if isinstance(obj, type)
+        and issubclass(obj, llm_module._HttpClient)
+        and obj is not llm_module._HttpClient
+    }
+    assert clients == {"ResponsesClient"}, f"unexpected LLM client(s): {sorted(clients)}"
+    assert isinstance(llm_module.build_llm.__doc__, str)
 
 
 def test_a_timed_out_query_does_not_poison_the_rest_of_the_turn():

@@ -43,13 +43,6 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Tool calls the model may make per turn before it must commit.",
     )
-    parser.add_argument(
-        "--provider",
-        choices=("local", "openai", "google"),
-        default=None,
-        help="Where inference runs. Defaults to $LLM_PROVIDER. 'local' and 'openai' use the same "
-        "OpenAI-compatible client and differ only in $LLM_BASE_URL and the key.",
-    )
     parser.add_argument("--out", default=None, help="Write the run result JSON here.")
     parser.add_argument(
         "--advisor-url",
@@ -104,7 +97,7 @@ def main() -> int:
     try:
         run = run_mode(
             args.mode,
-            llm=build_llm(args.provider, args.model),
+            llm=build_llm(args.model),
             turns=args.turns,
             tool_budget=args.tool_budget or DEFAULT_TOOL_BUDGET,
             keep_views=args.keep_views,

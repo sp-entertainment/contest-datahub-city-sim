@@ -1,20 +1,20 @@
-"""LLM clients behind one interface: hosted Gemini, or a local OpenAI-compatible server.
+"""The one client every arm talks to: OpenAI's Responses API.
 
-Two things drove the shape of this module.
+The benchmark's validity rests on its arms being byte-identical apart from one block of context.
+So the conversation is held in a **provider-neutral** form and the client serialises it. The
+controller never sees a wire format and cannot accidentally send one mode something subtly
+different from another.
 
-First, the benchmark's validity rests on `agent_datahub` and `agent_raw` being byte-identical
-apart from one block of context. So the conversation is held in a **provider-neutral** form and
-each client serialises it. The controller never sees a wire format and cannot accidentally send
-one mode something subtly different from the other.
+**OpenAI is the only supported provider.** A local OpenAI-compatible server (LM Studio, vLLM,
+Ollama) used to be reachable through a second client speaking `/chat/completions`, and Gemini
+through a third. Both are gone. Every published number came from the hosted path, so the others
+were routes nothing verified — and an untested route in the one module that decides what the
+model sees is a place for the two arms to silently diverge, which is the single failure this
+benchmark cannot survive. One provider, one client, one wire format.
 
-Second, the hosted path turned out to be unusable on a free-tier key: a scored run is roughly 216
-calls per mode, and the daily quota dies long before that (see `.tasks/mvp/SLICE6-HANDOFF.md`).
-Local inference removes the quota, the cost, and the network — and lets a judge reproduce the
-whole benchmark from a clone, which is a stronger claim than asking them to trust our numbers.
-
-An API key, where one is used at all, is read from the environment. It is never logged, never
-echoed into a prompt, never written to a result file, and travels in a header rather than a query
-string, where it would land in proxy logs and shell history.
+The API key is read from the environment. It is never logged, never echoed into a prompt, never
+written to a result file, and travels in a header rather than a query string, where it would land
+in proxy logs and shell history.
 """
 
 from __future__ import annotations
@@ -22,8 +22,10 @@ from __future__ import annotations
 import json
 import os
 import random
+import re
 import time
 import uuid
+from collections import deque
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -31,13 +33,13 @@ import httpx
 
 from blindcity import config  # noqa: F401  -- imported for its .env loading side effect
 
-GEMINI_API_ROOT = "https://generativelanguage.googleapis.com/v1beta"
-
-# Both modes must use the same model. That is a fairness requirement, not a preference.
-DEFAULT_PROVIDER = os.environ.get("LLM_PROVIDER", "local")
-DEFAULT_LOCAL_MODEL = os.environ.get("LLM_MODEL") or "qwen/qwen3.6-35b-a3b"
-DEFAULT_GEMINI_MODEL = "gemini-3.6-flash"
-DEFAULT_BASE_URL = os.environ.get("LLM_BASE_URL", "http://localhost:1234/v1")
+# Every arm must use the same model. That is a fairness requirement, not a preference.
+#
+# There is deliberately no default model. An unset LLM_MODEL used to fall back to a local model
+# name, which then got sent to a hosted API and 404'd; guessing a model id is a failure this
+# project has already paid for twice. The base URL is overridable only so an OpenAI-compatible
+# gateway can be put in front of the real thing -- it must still speak `/v1/responses`.
+DEFAULT_BASE_URL = os.environ.get("LLM_BASE_URL", "https://api.openai.com/v1")
 
 # How long the model may take to answer, in seconds. This is a *thinking budget*, and it is
 # deliberately generous: a reasoning model can spend minutes on one reply, and cutting it off
@@ -59,6 +61,15 @@ LLM_TIMEOUT_SECONDS = float(os.environ.get("LLM_TIMEOUT", "900"))
 # more, which compresses the very difference being measured.
 LLM_REASONING_EFFORT = os.environ.get("LLM_REASONING_EFFORT", "low").strip().lower()
 
+# Tokens per minute the provider will accept before it starts refusing. Zero disables pacing.
+#
+# Reacting to 429s is not enough on a tokens-per-minute limit. The window is a full minute, and a
+# run that has already spent its budget will be refused for the rest of it no matter how politely
+# it retries -- gpt-4o on a 30,000 TPM org lost the last four turns of a twelve-turn run that way,
+# because memory makes late turns the most expensive ones and they arrive after the budget is
+# already gone. So the limit is respected before the request rather than discovered after it.
+LLM_TOKENS_PER_MINUTE = int(os.environ.get("LLM_TOKENS_PER_MINUTE", "0") or 0)
+
 
 class LLMError(RuntimeError):
     """The provider refused, failed, or returned something unusable."""
@@ -71,8 +82,8 @@ class LLMError(RuntimeError):
 class ToolCall:
     name: str
     args: dict[str, Any]
-    # Gemini matches tool results to calls by name; OpenAI needs an explicit id. Minting one
-    # here keeps both backends fed from the same structure.
+    # OpenAI matches a tool result to its call by an explicit id. Minting one here keeps the
+    # conversation type independent of any particular wire format.
     id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
 
 
@@ -150,6 +161,7 @@ class _HttpClient:
         min_interval: float,
         backoff_base: float = 4.0,
         backoff_cap: float = 90.0,
+        tokens_per_minute: int = 0,
     ) -> None:
         self.timeout = timeout
         self.max_retries = max_retries
@@ -161,6 +173,41 @@ class _HttpClient:
         self.backoff_cap = backoff_cap
         self._last_request = 0.0
         self.usage = Usage()
+        self.tokens_per_minute = int(
+            os.environ.get("LLM_TOKENS_PER_MINUTE", tokens_per_minute or LLM_TOKENS_PER_MINUTE)
+        )
+        # (timestamp, tokens) for the last minute of traffic, oldest first.
+        self._spend: deque[tuple[float, int]] = deque()
+        # How much the next request is assumed to cost, from the largest seen so far. Assuming the
+        # largest rather than the average is deliberate: under-estimating means being refused,
+        # which costs a whole minute, while over-estimating only costs a short wait.
+        self._largest_call = 0
+        self.rate_limited = 0
+        self.throttled_seconds = 0.0
+
+    def record_spend(self, tokens: int) -> None:
+        """Note what a completed call actually cost, for the token budget."""
+        if tokens <= 0:
+            return
+        self._spend.append((time.monotonic(), tokens))
+        self._largest_call = max(self._largest_call, tokens)
+
+    def _await_token_budget(self) -> None:
+        """Wait until the next call is expected to fit inside the per-minute allowance."""
+        if self.tokens_per_minute <= 0:
+            return
+        for _ in range(120):  # bounded so a mis-set budget cannot hang a run forever
+            now = time.monotonic()
+            while self._spend and now - self._spend[0][0] >= 60.0:
+                self._spend.popleft()
+            spent = sum(tokens for _, tokens in self._spend)
+            if spent + self._largest_call <= self.tokens_per_minute or not self._spend:
+                return
+            # Sleep until the oldest call falls out of the window, which is the soonest the
+            # budget can free up.
+            wait = max(0.1, 60.0 - (now - self._spend[0][0]) + 0.25)
+            self.throttled_seconds += wait
+            time.sleep(wait)
 
     def _pace(self) -> None:
         if self.min_interval <= 0:
@@ -170,8 +217,24 @@ class _HttpClient:
             time.sleep(wait)
 
     @staticmethod
-    def _retry_after(payload: dict[str, Any]) -> float | None:
-        """Providers that state their own backoff are believed in preference to a guess."""
+    def _retry_after(payload: dict[str, Any], headers: Any = None) -> float | None:
+        """Providers that state their own backoff are believed in preference to a guess.
+
+        Three formats, because the two providers state it three different ways and reading only
+        one of them means every OpenAI 429 fell through to a blind guess:
+
+          * the `Retry-After` header, which is standard and authoritative
+          * a nested `error.details[].retryDelay`
+          * OpenAI's prose -- "Please try again in 1.007s" -- which is the only place the number
+            appears on some responses
+        """
+        if headers is not None:
+            raw = headers.get("retry-after") or headers.get("Retry-After")
+            if raw:
+                try:
+                    return float(raw)
+                except (TypeError, ValueError):
+                    pass
         for detail in (payload.get("error") or {}).get("details") or []:
             delay = detail.get("retryDelay")
             if isinstance(delay, str) and delay.endswith("s"):
@@ -179,6 +242,12 @@ class _HttpClient:
                     return float(delay[:-1])
                 except ValueError:
                     continue
+        message = (payload.get("error") or {}).get("message")
+        if isinstance(message, str):
+            match = re.search(r"try again in ([0-9.]+)\s*(ms|s)", message)
+            if match:
+                value = float(match.group(1))
+                return value / 1000.0 if match.group(2) == "ms" else value
         return None
 
     def _backoff(self, attempt: int, suggested: float | None) -> float:
@@ -200,6 +269,7 @@ class _HttpClient:
     def post(self, url: str, body: dict[str, Any], headers: dict[str, str]) -> dict[str, Any]:
         last: Exception | None = None
         for attempt in range(self.max_retries):
+            self._await_token_budget()
             self._pace()
             sleep_for: float | None = None
             try:
@@ -214,177 +284,21 @@ class _HttpClient:
                     raise LLMError(f"HTTP {r.status_code}: {r.text[:300]}")
                 last = LLMError(f"HTTP {r.status_code}: {r.text[:300]}")
                 if r.status_code == 429:
+                    self.rate_limited += 1
                     try:
-                        sleep_for = self._retry_after(r.json())
+                        sleep_for = self._retry_after(r.json(), r.headers)
                     except ValueError:
-                        sleep_for = None
+                        sleep_for = self._retry_after({}, r.headers)
+                    # A tokens-per-minute refusal clears when the window rolls, so a delay the
+                    # provider suggests can be far shorter than the wait actually required.
+                    if self.tokens_per_minute > 0:
+                        sleep_for = max(sleep_for or 0.0, 5.0)
             except httpx.HTTPError as exc:
                 last = exc
                 self._last_request = time.monotonic()
             if attempt < self.max_retries - 1:
                 time.sleep(self._backoff(attempt, sleep_for))
         raise LLMError(f"request failed after {self.max_retries} attempts: {last}")
-
-
-# --- Local, OpenAI-compatible (LM Studio, llama.cpp, vLLM, Ollama) ------------------------------
-
-
-class OpenAIClient(_HttpClient):
-    """Talks to any OpenAI-compatible `/chat/completions` endpoint.
-
-    Covers both the hosted OpenAI API and a local server (LM Studio, llama.cpp, vLLM, Ollama).
-    They differ only in `LLM_BASE_URL` and whether the key is real, so one client serves both and
-    the benchmark cannot accidentally behave differently depending on where inference happens.
-    """
-
-    def __init__(
-        self,
-        model: str | None = None,
-        *,
-        base_url: str | None = None,
-        temperature: float = 0.0,
-        # See LLM_TIMEOUT_SECONDS: a thinking budget, not an infrastructure limit. A large
-        # context on a partially-offloaded MoE can take minutes just to prefill, and a timeout
-        # here would be scored as the mode failing to steer the city.
-        timeout: float = LLM_TIMEOUT_SECONDS,
-        max_retries: int = 3,
-        min_interval: float = 0.0,
-        api_key: str | None = None,
-    ) -> None:
-        super().__init__(timeout=timeout, max_retries=max_retries, min_interval=min_interval)
-        # An unset LLM_MODEL used to fall back to a local model name, which would then be sent
-        # to a hosted API and 404. Silently guessing a model id is exactly the failure this
-        # project has already paid for twice, so a hosted endpoint demands an explicit one.
-        resolved = (model or os.environ.get("LLM_MODEL") or "").strip()
-        base = (base_url or DEFAULT_BASE_URL).rstrip("/")
-        if not resolved:
-            if "localhost" in base or "127.0.0.1" in base:
-                resolved = DEFAULT_LOCAL_MODEL
-            else:
-                raise LLMError(
-                    f"LLM_MODEL is not set and {base} is not a local server. Set LLM_MODEL to a "
-                    "model id the provider actually serves -- list them first rather than "
-                    "guessing; both modes must use the same one."
-                )
-        self.model = resolved
-        self.base_url = base
-        self.temperature = temperature
-        # Local servers ignore the key entirely; the hosted API does not. OPENAI_API_KEY is
-        # accepted as a fallback because that is the name the provider's own tooling uses.
-        self._key = (
-            api_key
-            or os.environ.get("LLM_API_KEY")
-            or os.environ.get("OPENAI_API_KEY")
-            or "not-needed"
-        )
-        # Some newer hosted models accept only the default temperature and 400 on anything else.
-        # Detected from the error rather than from a model-name list, which would rot.
-        self._send_temperature = True
-
-    @staticmethod
-    def _tools(tools: list[dict[str, Any]] | None) -> list[dict[str, Any]] | None:
-        if not tools:
-            return None
-        return [{"type": "function", "function": t} for t in tools]
-
-    @staticmethod
-    def _messages(system: str, history: list[Turn]) -> list[dict[str, Any]]:
-        messages: list[dict[str, Any]] = [{"role": "system", "content": system}]
-        for turn in history:
-            if turn.role == "model":
-                message: dict[str, Any] = {"role": "assistant", "content": turn.text or None}
-                if turn.calls:
-                    message["tool_calls"] = [
-                        {
-                            "id": c.id,
-                            "type": "function",
-                            "function": {"name": c.name, "arguments": json.dumps(c.args)},
-                        }
-                        for c in turn.calls
-                    ]
-                messages.append(message)
-            elif turn.results:
-                # OpenAI wants one message per result, keyed back to the call id.
-                messages.extend(
-                    {
-                        "role": "tool",
-                        "tool_call_id": r.call.id,
-                        "name": r.call.name,
-                        "content": json.dumps(r.payload),
-                    }
-                    for r in turn.results
-                )
-            else:
-                messages.append({"role": "user", "content": turn.text})
-        return messages
-
-    def generate(
-        self, *, system: str, history: list[Turn], tools: list[dict[str, Any]] | None = None
-    ) -> Reply:
-        body: dict[str, Any] = {
-            "model": self.model,
-            "messages": self._messages(system, history),
-        }
-        if self._send_temperature:
-            body["temperature"] = self.temperature
-        converted = self._tools(tools)
-        if converted:
-            body["tools"] = converted
-
-        url = f"{self.base_url}/chat/completions"
-        headers = {"Authorization": f"Bearer {self._key}", "Content-Type": "application/json"}
-        started = time.monotonic()
-        try:
-            data = self.post(url, body, headers)
-        except LLMError as exc:
-            # Retry once without temperature if that is what it objected to. Both modes share the
-            # client, so this flips for both at once and cannot become a difference between them.
-            if self._send_temperature and "temperature" in str(exc).lower():
-                self._send_temperature = False
-                body.pop("temperature", None)
-                data = self.post(url, body, headers)
-            else:
-                raise
-        elapsed = time.monotonic() - started
-
-        raw_usage = data.get("usage") or {}
-        usage = Usage(
-            prompt_tokens=int(raw_usage.get("prompt_tokens", 0)),
-            output_tokens=int(raw_usage.get("completion_tokens", 0)),
-            total_tokens=int(raw_usage.get("total_tokens", 0)),
-            calls=1,
-            seconds=elapsed,
-        )
-        self.usage.add(usage)
-
-        choices = data.get("choices") or []
-        if not choices:
-            raise LLMError("model returned no choices")
-        message = choices[0].get("message") or {}
-
-        calls: list[ToolCall] = []
-        for raw in message.get("tool_calls") or []:
-            fn = raw.get("function") or {}
-            arguments = fn.get("arguments")
-            if isinstance(arguments, str):
-                try:
-                    args = json.loads(arguments or "{}")
-                except json.JSONDecodeError:
-                    # A small model can emit malformed JSON. Surfacing it as a tool error lets
-                    # the model see the problem and retry, rather than killing the turn.
-                    args = {"__malformed_arguments__": arguments[:500]}
-            else:
-                args = dict(arguments or {})
-            calls.append(
-                ToolCall(name=fn.get("name", ""), args=args, id=str(raw.get("id") or uuid.uuid4().hex[:12]))
-            )
-
-        return Reply(text=(message.get("content") or "").strip(), calls=calls, usage=usage)
-
-
-# `local` and `openai-chat` are the same client pointed at different hosts. The alias keeps the
-# name that reads correctly at each call site.
-LocalClient = OpenAIClient
 
 
 # --- Hosted OpenAI, Responses API --------------------------------------------------------------
@@ -557,154 +471,17 @@ class ResponsesClient(_HttpClient):
         return Reply(text="".join(text_chunks).strip(), calls=calls, usage=usage)
 
 
-# --- Hosted Gemini ------------------------------------------------------------------------------
-
-
-class GeminiClient(_HttpClient):
-    """Google Generative Language API.
-
-    Availability has moved under this project twice: `gemini-2.5-flash` now 404s for new keys
-    while still appearing in the models listing, and `pro` models 429 without billing. Re-check
-    before trusting a model name here.
-    """
-
-    def __init__(
-        self,
-        model: str | None = None,
-        *,
-        api_key: str | None = None,
-        temperature: float = 0.0,
-        # Was 90s, which would have cut a reasoning model off mid-thought. Thinking time is not
-        # an infrastructure concern and is not bounded like one.
-        timeout: float = LLM_TIMEOUT_SECONDS,
-        max_retries: int = 5,
-        min_interval: float = 6.5,
-    ) -> None:
-        super().__init__(timeout=timeout, max_retries=max_retries, min_interval=min_interval)
-        self.model = model or os.environ.get("LLM_MODEL") or DEFAULT_GEMINI_MODEL
-        self.temperature = temperature
-        key = api_key or os.environ.get("GOOGLE_API_KEY")
-        if not key:
-            raise LLMError(
-                "GOOGLE_API_KEY is not set. Copy .env.example to .env and fill it in, or use "
-                "LLM_PROVIDER=local. Never pass the key on the command line."
-            )
-        self._key = key
-
-    @staticmethod
-    def _tools(tools: list[dict[str, Any]] | None) -> list[dict[str, Any]] | None:
-        """Gemini wants OpenAPI-style upper-case type names in its function declarations."""
-        if not tools:
-            return None
-
-        def upper(node: Any) -> Any:
-            if isinstance(node, dict):
-                out = {k: upper(v) for k, v in node.items()}
-                if isinstance(out.get("type"), str):
-                    out["type"] = out["type"].upper()
-                return out
-            if isinstance(node, list):
-                return [upper(v) for v in node]
-            return node
-
-        return [upper(t) for t in tools]
-
-    @staticmethod
-    def _contents(history: list[Turn]) -> list[dict[str, Any]]:
-        contents: list[dict[str, Any]] = []
-        for turn in history:
-            if turn.role == "model":
-                parts: list[dict[str, Any]] = []
-                if turn.text:
-                    parts.append({"text": turn.text})
-                parts.extend({"functionCall": {"name": c.name, "args": c.args}} for c in turn.calls)
-                contents.append({"role": "model", "parts": parts or [{"text": ""}]})
-            elif turn.results:
-                # Gemini returns tool output in the `user` role as functionResponse parts.
-                contents.append(
-                    {
-                        "role": "user",
-                        "parts": [
-                            {"functionResponse": {"name": r.call.name, "response": r.payload}}
-                            for r in turn.results
-                        ],
-                    }
-                )
-            else:
-                contents.append({"role": "user", "parts": [{"text": turn.text}]})
-        return contents
-
-    def generate(
-        self, *, system: str, history: list[Turn], tools: list[dict[str, Any]] | None = None
-    ) -> Reply:
-        body: dict[str, Any] = {
-            "system_instruction": {"parts": [{"text": system}]},
-            "contents": self._contents(history),
-            "generationConfig": {"temperature": self.temperature},
-        }
-        converted = self._tools(tools)
-        if converted:
-            body["tools"] = [{"function_declarations": converted}]
-
-        started = time.monotonic()
-        data = self.post(
-            f"{GEMINI_API_ROOT}/models/{self.model}:generateContent",
-            body,
-            {"x-goog-api-key": self._key, "Content-Type": "application/json"},
-        )
-        elapsed = time.monotonic() - started
-
-        meta = data.get("usageMetadata") or {}
-        usage = Usage(
-            prompt_tokens=int(meta.get("promptTokenCount", 0)),
-            output_tokens=int(meta.get("candidatesTokenCount", 0)),
-            total_tokens=int(meta.get("totalTokenCount", 0)),
-            calls=1,
-            seconds=elapsed,
-        )
-        self.usage.add(usage)
-
-        candidates = data.get("candidates") or []
-        if not candidates:
-            # A blocked prompt returns no candidates at all, with the reason alongside.
-            reason = (data.get("promptFeedback") or {}).get("blockReason", "no candidates")
-            raise LLMError(f"model returned nothing: {reason}")
-
-        parts = (candidates[0].get("content") or {}).get("parts") or []
-        text_chunks: list[str] = []
-        calls: list[ToolCall] = []
-        for part in parts:
-            if "text" in part:
-                text_chunks.append(part["text"])
-            fn = part.get("functionCall")
-            if fn:
-                calls.append(ToolCall(name=fn.get("name", ""), args=dict(fn.get("args") or {})))
-
-        return Reply(text="".join(text_chunks).strip(), calls=calls, usage=usage)
-
-
 # --- Selection ----------------------------------------------------------------------------------
 
 
-def build_llm(provider: str | None = None, model: str | None = None) -> LLM:
-    """Construct the client named by `LLM_PROVIDER`.
+def build_llm(model: str | None = None) -> LLM:
+    """Construct the one client every mode uses.
 
-    One factory, shared by both modes, so they cannot end up on different models or providers —
-    which would make the headline comparison meaningless.
+    A factory with a single branch looks like a candidate for inlining, and it is kept anyway: it
+    is the seam that makes "every mode is on the same model" a structural fact rather than a
+    convention. Every arm calls this, so none of them can end up somewhere else.
     """
-    name = (provider or DEFAULT_PROVIDER or "local").strip().lower()
-    if name in {"openai", "responses"}:
-        # Hosted OpenAI goes through the Responses API: the reasoning models this key serves
-        # will not use function tools on /chat/completions unless reasoning is turned off.
-        return ResponsesClient(model)
-    if name in {"local", "lmstudio", "openai-chat", "openai-compatible", "openai_compatible"}:
-        # A local server (LM Studio, llama.cpp, vLLM, Ollama) speaking /chat/completions.
-        return OpenAIClient(model)
-    if name in {"google", "gemini"}:
-        return GeminiClient(model)
-    raise LLMError(
-        f"unknown LLM_PROVIDER {name!r}; expected 'local', 'openai', or 'google'"
-    )
+    return ResponsesClient(model)
 
 
 def user_turn(text: str) -> Turn:

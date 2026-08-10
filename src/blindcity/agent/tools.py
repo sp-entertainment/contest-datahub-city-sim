@@ -80,9 +80,8 @@ class ToolContext:
 def tool_declarations() -> list[dict[str, Any]]:
     """The function declarations sent to the model. Identical for both modes.
 
-    Plain JSON Schema, which is what OpenAI-compatible servers expect. The Gemini client
-    upper-cases the type names on its way out, so this stays the single definition and neither
-    backend can hand one mode a differently-worded tool than the other.
+    Plain JSON Schema, which is what OpenAI-compatible servers expect. Defined once here so no
+    backend can hand one mode a differently-worded tool than another.
     """
     lever_lines = "\n".join(
         f"  {name}: {lev.minimum} to {lev.maximum} ({lev.unit}) - {lev.description}"
