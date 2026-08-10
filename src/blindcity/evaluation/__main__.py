@@ -62,6 +62,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Skip running and just summarise existing result files, e.g. 'results/*.json'.",
     )
     parser.add_argument("--model", default=None, help="Model id. Defaults to $LLM_MODEL.")
+    parser.add_argument(
+        "--force-clean",
+        action="store_true",
+        help="Clear the warehouse even when a run looks like it is still playing. An abandoned "
+        "run leaves its rows behind and blocks every later one, and only the first run of the "
+        "batch can be affected -- the rest follow runs this process watched finish.",
+    )
     return parser
 
 
@@ -85,14 +92,27 @@ def _dry_run(out_dir: Path, repeat: int) -> list[Path]:
     return written
 
 
-def _live_run(out_dir: Path, modes: list[str], repeat: int, model: str | None) -> list[Path]:
+def _live_run(
+    out_dir: Path, modes: list[str], repeat: int, model: str | None, force_clean: bool = False
+) -> list[Path]:
     from blindcity.agent.run import run_mode
 
     written: list[Path] = []
     for mode in modes:
         for i in range(repeat):
-            run = run_mode(mode, model=model)
             path = out_dir / f"{mode}-{i}.json"
+            # Transcripts are not optional here. This is the path that produces the numbers the
+            # submission is built on, and `uv run agent` has recorded them since the day a result
+            # could not be explained without one. An eval run that skipped them would be the only
+            # unauditable way to generate a score.
+            run = run_mode(
+                mode,
+                model=model,
+                transcript=str(path.with_suffix(".transcript.jsonl")),
+                # Only the first run can need this: after that every predecessor is one this
+                # process watched finish, so a live run found here would be someone else's.
+                force_clean=force_clean and not written,
+            )
             run.result.write_json(path)
             path.with_suffix(".agent.json").write_text(
                 json.dumps(run.report, indent=2), encoding="utf-8"
@@ -127,7 +147,7 @@ def main() -> int:
     elif args.dry_run:
         paths = _dry_run(out_dir, args.repeat)
     elif args.live:
-        paths = _live_run(out_dir, args.modes, args.repeat, args.model)
+        paths = _live_run(out_dir, args.modes, args.repeat, args.model, args.force_clean)
     else:
         # Refusing rather than defaulting either way. Defaulting to --live would spend money on a
         # bare `uv run eval`; defaulting to --dry-run would let someone believe they had run the
