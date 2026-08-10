@@ -1,0 +1,12 @@
+context_platforms:
+  - type: datahub
+    name: default
+    label: "DataHub"
+    url: "${DATAHUB_GMS_URL}"
+    token: "${DATAHUB_GMS_TOKEN}"
+
+engines:
+  - type: postgresql
+    name: blindcity
+    connection:
+      url: "${BLINDCITY_URL}"

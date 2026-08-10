@@ -1,0 +1,22 @@
+diff --git a/backend/src/analytics_agent/agent/llm.py b/backend/src/analytics_agent/agent/llm.py
+index 3e7c4c9..4770f98 100644
+--- a/backend/src/analytics_agent/agent/llm.py
++++ b/backend/src/analytics_agent/agent/llm.py
+@@ -27,6 +27,17 @@ def _make_openai(model: str, streaming: bool) -> BaseChatModel:
+     kwargs: dict = {"model": model, "temperature": 0, "streaming": streaming}
+     if settings.openai_api_key:
+         kwargs["api_key"] = SecretStr(settings.openai_api_key)
++    # Blind City patch. Reasoning models refuse function tools on /v1/chat/completions --
++    # gpt-5.6-luna returns "Function tools with reasoning_effort are not supported ... use
++    # /v1/responses or set reasoning_effort to 'none'". Since the analysis *is* the reasoning
++    # being measured, turning it off would hollow out the comparison, so the Responses API is
++    # used instead, at the same effort the other modes run at.
++    import os
++    effort = os.environ.get("LLM_REASONING_EFFORT", "").strip().lower()
++    if effort:
++        kwargs["use_responses_api"] = True
++        kwargs["reasoning_effort"] = effort
++        kwargs.pop("temperature", None)
+     return ChatOpenAI(**kwargs)
+ 
+ 

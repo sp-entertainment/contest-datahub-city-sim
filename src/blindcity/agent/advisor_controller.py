@@ -105,10 +105,12 @@ class AdvisorController:
             "answered_turns": len(answered),
             "acting_turns": len(acted),
             "advisor_errors": [t["error"] for t in self.history if t["error"]],
+            # Tokens are the advisor's own, reported back over its stream. We never call the
+            # model here, but the mode is not free and must not read as though it were.
             "usage": {
-                "prompt_tokens": 0,
-                "output_tokens": 0,
-                "total_tokens": 0,
+                "prompt_tokens": self.advisor.tokens["input_tokens"],
+                "output_tokens": self.advisor.tokens["output_tokens"],
+                "total_tokens": self.advisor.tokens["total_tokens"],
                 "calls": len(self.history),
                 "seconds": round(sum(t["seconds"] for t in self.history), 2),
             },

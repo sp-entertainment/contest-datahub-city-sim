@@ -1,0 +1,12 @@
+services:
+  postgres:
+    ports: !override ["5433:5432"]
+  backend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes: !override
+      - ./config.yaml:/root/.datahub/analytics-agent/config.yaml:ro
+      - ./backend/src/analytics_agent/agent/llm.py:/app/backend/src/analytics_agent/agent/llm.py:ro

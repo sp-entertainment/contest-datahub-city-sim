@@ -136,9 +136,13 @@ def run_mode(
             from blindcity.agent.advisor import AnalyticsAgentAdvisor
             from blindcity.agent.advisor_controller import AdvisorController
 
+            advisor = AnalyticsAgentAdvisor(advisor_url)
+            # Checked before a single turn is played, so a misconfigured advisor fails loudly
+            # instead of producing a score that is quietly not comparable.
+            advisor.preflight(expected_model=client.model)
             controller = AdvisorController(
                 name=mode,
-                advisor=AnalyticsAgentAdvisor(advisor_url),
+                advisor=advisor,
                 turn_budget=scenario.turn_budget,
             )
         else:

@@ -1,0 +1,135 @@
+{
+  "scenario_name": "infrastructure_neglect",
+  "seed": 42,
+  "controller_name": "agent_analytics",
+  "mode": "agent_analytics",
+  "run_id": "1",
+  "turn_budget": 2,
+  "green_threshold": 0.62,
+  "baseline_population": 3133,
+  "recovered": false,
+  "green_turn": null,
+  "final_index": 0.480906658403219,
+  "turns": [
+    {
+      "turn": 0,
+      "tick": 63,
+      "levers": {
+        "income_tax_rate": 0.04,
+        "property_tax_rate": 0.004,
+        "electricity_tariff": 0.5,
+        "road_maintenance_budget": 8000000.0,
+        "water_sewer_capex": 8000000.0,
+        "transit_fare": 3.0,
+        "zoning_release": 0.5,
+        "power_contract_mode": 2
+      },
+      "components": {
+        "solvency": 0.04442163210785629,
+        "satisfaction": 0.3642360128961236,
+        "service": 0.4645102777635571,
+        "population": 0.7430121745474442,
+        "index": 0.4061106485289643
+      },
+      "index": 0.4061106485289643,
+      "green": false
+    },
+    {
+      "turn": 1,
+      "tick": 66,
+      "levers": {
+        "income_tax_rate": 0.1,
+        "property_tax_rate": 0.01,
+        "electricity_tariff": 0.5,
+        "road_maintenance_budget": 4000000.0,
+        "water_sewer_capex": 8000000.0,
+        "transit_fare": 3.0,
+        "zoning_release": 0.2,
+        "power_contract_mode": 2
+      },
+      "components": {
+        "solvency": 0.3013439290121413,
+        "satisfaction": 0.4288796399135735,
+        "service": 0.4839848265202327,
+        "population": 0.7338926633532442,
+        "index": 0.480906658403219
+      },
+      "index": 0.480906658403219,
+      "green": false
+    }
+  ],
+  "meta": {
+    "crisis_months": 60,
+    "months_per_turn": 3,
+    "warehouse_run_id": 1,
+    "agent": {
+      "controller": "agent_analytics",
+      "model": "analytics-agent@http://localhost:8100",
+      "catalog": "analytics_agent",
+      "monitor": "none",
+      "turns": [
+        {
+          "turn": 0,
+          "question": "You are advising the manager of a city. The city's operational data is in the warehouse you are connected to, catalogued in DataHub: one row per entity per simulated month, covering citizens, buildings, roads, power, water, the municipal budget, and the policy levers in force each month.\n\nThe manager controls exactly eight levers and nothing else:\n\n  income_tax_rate: 0.0 to 0.4 (fraction) - Tax on household income.\n  property_tax_rate: 0.0 to 0.05 (fraction) - Annual tax on assessed value.\n  electricity_tariff: 0.0 to 1.0 (currency/kWh) - Retail rate charged to households.\n  road_maintenance_budget: 0.0 to 8000000.0 (currency/year) - Spend on road repair.\n  water_sewer_capex: 0.0 to 8000000.0 (currency/year) - Capital spend on water and sewer capacity.\n  transit_fare: 0.0 to 10.0 (currency/ride) - Fare charged per transit trip.\n  zoning_release: 0.0 to 1.0 (fraction) - Share of undeveloped land opened for development.\n  power_contract_mode: 0 to 2 (index) - One of ('spot', 'fixed', 'hedged').\n\nInvestigate the data and tell the manager which levers to change and to what values. Be specific: give a number for every lever you want changed, written as `lever_name = value`. Levers you do not mention will be left where they are.\n\nLevers currently in force:\n  income_tax_rate: 0.04\n  property_tax_rate: 0.004\n  electricity_tariff: 0.65\n  road_maintenance_budget: 0\n  water_sewer_capex: 0\n  transit_fare: 8\n  zoning_release: 0\n  power_contract_mode: 0\n\nWhich levers should the manager change now, and to what values? This is decision 1 of 2; 2 remain including this one.",
+          "answer": "No governed definitions or table-selection guidance were found in DataHub, so I based this recommendation on the warehouse\u2019s operational trends.\n\nThe city has a clear infrastructure problem:\n\n- **Road wear:** 0.97, with congestion at 0.78; road spending has been zero.\n- **Water:** capacity is only about 17% above demand and has been declining.\n- **Power:** outage fraction is about 26%; supply is below demand, despite a load ratio near 0.85.\n- **Resident satisfaction:** down from 0.67 initially to about 0.57.\n- **Transit use:** only 34%, consistent with the current high fare.\n- **Fiscal position:** treasury is approximately 39.7M, debt is zero, and the monthly balance is positive, so immediate investment is affordable.\n\n### Change now\n\n```text\nroad_maintenance_budget = 8000000\nwater_sewer_capex = 8000000\npower_contract_mode = 2\ntransit_fare = 3\nelectricity_tariff = 0.5\nzoning_release = 0.5\n```\n\nLeave these unchanged for now:\n\n```text\nincome_tax_rate = 0.04\nproperty_tax_rate = 0.004\n```\n\nThe priority is to stop infrastructure deterioration and reduce power volatility before raising taxes. The lower transit fare and moderate zoning release should improve access and support population/housing growth without immediately exhausting the treasury.",
+          "levers": {
+            "income_tax_rate": 0.04,
+            "property_tax_rate": 0.004,
+            "electricity_tariff": 0.5,
+            "road_maintenance_budget": 8000000.0,
+            "water_sewer_capex": 8000000.0,
+            "transit_fare": 3.0,
+            "zoning_release": 0.5,
+            "power_contract_mode": 2
+          },
+          "seconds": 30.25,
+          "error": null,
+          "queries": [
+            "SELECT * FROM sim_run ORDER BY run_id DESC LIMIT 20",
+            "SELECT t.*, l.*, b.balance,b.debt,b.treasury, p.demand_kw,p.supply_kw,p.outage_fraction,p.contract_mode,p.tariff,w.capacity,w.demand,w.load_ratio,w.failure_rate,m.arrivals,m.departures,m.net,m.population FROM ticks t JOIN lever_monthly l USING(run_id,tick) JOIN budget_monthly b USING(run_id,tick) JOIN power_monthly p USING(run_id,tick) JOIN water_monthly w USING(run_id,tick) JOIN migration_monthly m USING(run_id,tick) WHERE t.run_id=1 ORDER BY t.tick DESC LIMIT 12",
+            "WITH x AS (SELECT t.tick, b.condition_score,b.occupancy,b.power_served FROM building_monthly b JOIN ticks t USING(run_id,tick) WHERE run_id=1), r AS (SELECT tick,AVG(wear) wear,AVG(congestion) congestion FROM road_monthly WHERE run_id=1 GROUP BY tick), c AS (SELECT tick,AVG(satisfaction) satisfaction,AVG(disposable_income) disposable_income,AVG(CASE WHEN employed THEN 1.0 ELSE 0 END) employment FROM citizen_monthly WHERE run_id=1 GROUP BY tick), q AS (SELECT tick,AVG(condition_score) condition,AVG(occupancy) occupancy,AVG(CASE WHEN power_served THEN 1.0 ELSE 0 END) power_served FROM building_m",
+            "SELECT b.tick,b.income_tax_revenue,b.property_tax_revenue,b.utility_revenue,b.transit_revenue,b.road_spend,b.water_sewer_spend,b.balance,b.treasury,AVG(r.wear) road_wear,AVG(r.congestion) congestion,w.capacity water_capacity,w.demand water_demand,AVG(c.uses_transit::INT) transit_use FROM budget_monthly b JOIN road_monthly r USING(run_id,tick) JOIN water_monthly w USING(run_id,tick) JOIN citizen_monthly c USING(run_id,tick) WHERE b.run_id=1 AND b.tick=60 GROUP BY b.tick,b.income_tax_revenue,b.property_tax_revenue,b.utility_revenue,b.transit_revenue,b.road_spend,b.water_sewer_spend,b.balance,b.t"
+          ]
+        },
+        {
+          "turn": 1,
+          "question": "Three months have passed since your last recommendation.\n\nLevers currently in force:\n  income_tax_rate: 0.04\n  property_tax_rate: 0.004\n  electricity_tariff: 0.5\n  road_maintenance_budget: 8e+06\n  water_sewer_capex: 8e+06\n  transit_fare: 3\n  zoning_release: 0.5\n  power_contract_mode: 2\n\nWhich levers should the manager change now, and to what values? This is decision 2 of 2; 1 remain including this one.",
+          "answer": "DataHub has no governed definitions for this simulation, so I used the warehouse\u2019s latest three months of operational data.\n\nThe previous recommendation successfully reduced road wear and power outages, but it was financially unsustainable:\n\n- Monthly balance fell to about **\u2212793,600**.\n- Debt rose to **10.3M** in three months and treasury reached **zero**.\n- Water remains severely overloaded: **load ratio 1.75**, with a **30% failure rate**.\n- Road wear improved from **0.97 to 0.25**, so the maximum road budget is no longer necessary.\n- Power performance improved under hedged contracts: outages fell from **26.5% to 17.4%**.\n- Satisfaction fell sharply to **0.36**, while zoning at 0.5 produced continued population losses.\n\n### Change now\n\n```text\nincome_tax_rate = 0.1\nproperty_tax_rate = 0.01\nroad_maintenance_budget = 4000000\nzoning_release = 0.2\n```\n\nLeave the following at their current values:\n\n```text\nelectricity_tariff = 0.5\nwater_sewer_capex = 8000000\ntransit_fare = 3\npower_contract_mode = 2\n```\n\nThis reduces road spending after the condition improvement, increases recurring revenue enough to stop rapid debt accumulation, preserves maximum water investment, retains the better-performing hedged power contract, and slows zoning-driven expansion while the city\u2019s infrastructure catches up.",
+          "levers": {
+            "income_tax_rate": 0.1,
+            "property_tax_rate": 0.01,
+            "electricity_tariff": 0.5,
+            "road_maintenance_budget": 4000000.0,
+            "water_sewer_capex": 8000000.0,
+            "transit_fare": 3.0,
+            "zoning_release": 0.2,
+            "power_contract_mode": 2
+          },
+          "seconds": 26.03,
+          "error": null,
+          "queries": [
+            "SELECT * FROM sim_run ORDER BY run_id DESC LIMIT 10",
+            "SELECT * FROM lever_monthly ORDER BY run_id DESC, tick DESC LIMIT 5",
+            "SELECT run_id,tick,income_tax_revenue,property_tax_revenue,utility_revenue,transit_revenue,road_spend,water_sewer_spend,balance,debt,treasury FROM budget_monthly WHERE run_id=(SELECT MAX(run_id) FROM sim_run) ORDER BY tick DESC LIMIT 6",
+            "WITH r AS (SELECT run_id,tick,AVG(wear) road_wear,AVG(congestion) congestion FROM road_monthly GROUP BY run_id,tick), c AS (SELECT run_id,tick,AVG(satisfaction) satisfaction,AVG(disposable_income) disposable_income,AVG(CASE WHEN employed THEN 1.0 ELSE 0 END) employment,AVG(CASE WHEN uses_transit THEN 1.0 ELSE 0 END) transit_use FROM citizen_monthly GROUP BY run_id,tick), bld AS (SELECT run_id,tick,AVG(condition_score) building_condition,AVG(occupancy) occupancy,AVG(CASE WHEN power_served THEN 1.0 ELSE 0 END) power_served FROM building_monthly GROUP BY run_id,tick) SELECT t.run_id,t.tick,t.year"
+          ]
+        }
+      ],
+      "answered_turns": 2,
+      "acting_turns": 2,
+      "advisor_errors": [],
+      "usage": {
+        "prompt_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "calls": 2,
+        "seconds": 56.28
+      },
+      "phases": {
+        "prepare_seconds": 7.6,
+        "play_seconds": 57.0
+      }
+    },
+    "wall_seconds": 64.6
+  }
+}

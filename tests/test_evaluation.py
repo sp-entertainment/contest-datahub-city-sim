@@ -111,3 +111,73 @@ def test_expected_order_matches_the_modes_that_exist():
     from blindcity.agent.run import MODES
 
     assert set(EXPECTED_ORDER) == set(MODES)
+
+
+# --- The advisor mode is a separate service, so parity has to be checked at runtime -----------
+
+
+def test_advisor_refuses_a_mismatched_model():
+    """The three agent modes share one client and a test stops them diverging on model or
+    reasoning budget. `agent_analytics` is a separate service with its own configuration, so the
+    same guarantee has to be enforced when it runs -- a silent mismatch would produce a number
+    that looks comparable and is not."""
+    import httpx
+
+    from blindcity.agent.advisor import AnalyticsAgentAdvisor, LLMMismatch
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"model": "some-other-model", "has_key": True})
+
+    advisor = AnalyticsAgentAdvisor("http://advisor.test")
+    advisor._client = lambda: httpx.Client(transport=httpx.MockTransport(handler))
+
+    with pytest.raises(LLMMismatch, match="some-other-model"):
+        advisor.preflight(expected_model="gpt-5.6-luna")
+
+
+def test_advisor_accepts_a_matching_model():
+    import httpx
+
+    from blindcity.agent.advisor import AnalyticsAgentAdvisor
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"model": "gpt-5.6-luna", "has_key": True})
+
+    advisor = AnalyticsAgentAdvisor("http://advisor.test")
+    advisor._client = lambda: httpx.Client(transport=httpx.MockTransport(handler))
+    advisor.preflight(expected_model="gpt-5.6-luna")  # must not raise
+
+
+def test_advisor_refuses_when_it_has_no_key():
+    import httpx
+
+    from blindcity.agent.advisor import AnalyticsAgentAdvisor, LLMMismatch
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"model": "gpt-5.6-luna", "has_key": False})
+
+    advisor = AnalyticsAgentAdvisor("http://advisor.test")
+    advisor._client = lambda: httpx.Client(transport=httpx.MockTransport(handler))
+    with pytest.raises(LLMMismatch, match="no API key"):
+        advisor.preflight(expected_model="gpt-5.6-luna")
+
+
+def test_lever_parsing_is_strict_about_names_and_ranges():
+    """The advisor answers in free text, so the parser is forgiving about formatting. It must not
+    be forgiving about which levers exist or what values are legal, or the mode scores the parser
+    rather than the advice."""
+    from blindcity.agent.advisor import parse_levers
+    from blindcity.levers import LEVERS
+
+    text = (
+        "Set **income_tax_rate**: 0.11 and road_maintenance_budget = 5,000,000. "
+        "Also transit_fare -> 1.5, and made_up_lever = 42. "
+        "Finally income_tax_rate = 0.9 as the corrected figure."
+    )
+    out = parse_levers(text)
+    assert "made_up_lever" not in out, "an invented lever was accepted"
+    assert out["road_maintenance_budget"] == 5_000_000.0, "thousands separators broke parsing"
+    assert out["transit_fare"] == 1.5
+    # Last mention wins -- analysts restate the recommendation in a closing summary -- and the
+    # out-of-range value is clamped rather than taken literally.
+    assert out["income_tax_rate"] == LEVERS["income_tax_rate"].maximum

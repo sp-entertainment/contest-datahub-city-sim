@@ -34,6 +34,10 @@ ADVISOR_TIMEOUT_SECONDS = float(240)
 DEFAULT_BASE_URL = "http://localhost:8100"
 
 
+class LLMMismatch(RuntimeError):
+    """The advisor is not configured like the modes it is being compared against."""
+
+
 @dataclass
 class Advice:
     """One answer from the advisor, and what it cost."""
@@ -108,6 +112,31 @@ class AnalyticsAgentAdvisor:
 
     def _client(self) -> httpx.Client:
         return httpx.Client(timeout=self.timeout)
+
+    def preflight(self, expected_model: str) -> None:
+        """Refuse to score this mode unless the advisor runs the model the others run.
+
+        The other three modes cannot diverge on model or reasoning budget -- they share one client
+        and a test enforces it. This one is a separate service with its own configuration, so the
+        same guarantee has to be checked at runtime instead. A silent mismatch here would produce a
+        number that looks comparable and is not.
+
+        Reasoning effort cannot be checked remotely: the service exposes provider, model and
+        whether a key is present, but not the budget. It is set through LLM_REASONING_EFFORT in the
+        advisor's own environment -- see infra/analytics-agent/README.md.
+        """
+        with self._client() as client:
+            r = client.get(f"{self.base_url}/api/settings/llm")
+            r.raise_for_status()
+            settings = r.json()
+        actual = str(settings.get("model") or "")
+        if actual != expected_model:
+            raise LLMMismatch(
+                f"the Analytics Agent at {self.base_url} is running {actual!r} but the other "
+                f"modes run {expected_model!r}; scores would not be comparable"
+            )
+        if not settings.get("has_key"):
+            raise LLMMismatch(f"the Analytics Agent at {self.base_url} has no API key configured")
 
     def start(self, client: httpx.Client) -> str:
         """One conversation for the whole run, so the analyst accumulates context across turns.
