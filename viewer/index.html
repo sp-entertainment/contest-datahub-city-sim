@@ -2,91 +2,277 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Blind City</title>
   <style>
-    body { font-family: system-ui, sans-serif; margin: 1rem; background: #1a1a1e; color: #e8e8ec; }
-    h1 { font-size: 1.1rem; font-weight: 600; }
-    p.note { color: #888; font-size: 0.85rem; max-width: 40rem; }
-    #canvas { background: #0e0e12; border: 1px solid #333; display: block; margin: 0.5rem 0; }
-    #levers { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: 0.5rem; }
-    label { display: block; font-size: 0.8rem; margin-bottom: 0.25rem; }
-    button { margin: 0.5rem 0.5rem 0.5rem 0; padding: 0.4rem 0.8rem; cursor: pointer; }
+    :root {
+      --bg: #14141a; --panel: #1c1c24; --line: #2e2e3a; --ink: #e8e8ec; --dim: #8a8a99;
+      --accent: #6ea8fe;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif; margin: 0; background: var(--bg);
+      color: var(--ink); display: grid; grid-template-columns: 1fr 22rem; min-height: 100vh;
+    }
+    @media (max-width: 900px) { body { grid-template-columns: 1fr; } }
+    main { padding: 1rem; min-width: 0; }
+    aside {
+      background: var(--panel); border-left: 1px solid var(--line); padding: 1rem;
+      display: flex; flex-direction: column; gap: 0.75rem;
+    }
+    h1 { font-size: 1rem; font-weight: 600; margin: 0 0 0.25rem; letter-spacing: 0.02em; }
+    p.note { color: var(--dim); font-size: 0.78rem; line-height: 1.5; margin: 0 0 0.75rem; max-width: 46rem; }
+    canvas { background: #0b0b10; border: 1px solid var(--line); border-radius: 4px; width: 100%; height: auto; }
+    .row { display: flex; gap: 0.5rem; align-items: center; margin: 0.6rem 0; flex-wrap: wrap; }
+    button {
+      background: #262633; color: var(--ink); border: 1px solid var(--line); border-radius: 4px;
+      padding: 0.45rem 0.9rem; cursor: pointer; font-size: 0.85rem;
+    }
+    button:hover { background: #313142; }
+    button.primary { background: var(--accent); color: #0b0b10; border-color: var(--accent); font-weight: 600; }
+    button:disabled { opacity: 0.5; cursor: default; }
+    .lever { margin-bottom: 0.7rem; }
+    .lever label { display: flex; justify-content: space-between; font-size: 0.78rem; margin-bottom: 0.2rem; }
+    .lever .val { color: var(--accent); font-variant-numeric: tabular-nums; }
+    .lever input[type=range] { width: 100%; }
+    .lever .desc { color: var(--dim); font-size: 0.7rem; line-height: 1.35; margin-top: 0.15rem; }
+    h2 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--dim); margin: 0; }
+    #status { font-size: 0.78rem; color: var(--dim); min-height: 1.2em; }
+    .legend { display: flex; gap: 0.9rem; flex-wrap: wrap; font-size: 0.72rem; color: var(--dim); margin-top: 0.5rem; }
+    .legend i { display: inline-block; width: 0.7rem; height: 0.7rem; border-radius: 2px; margin-right: 0.3rem; vertical-align: -1px; }
   </style>
 </head>
 <body>
-  <h1>Blind City</h1>
-  <p class="note">
-    Cosmetic scene + lever panel. No charts, counters, or numeric city-state readouts —
-    information parity with the agent arms. Ask the Analytics Agent for numbers.
-  </p>
-  <canvas id="canvas" width="640" height="480"></canvas>
-  <div>
-    <button id="advance" type="button">Advance one month</button>
-    <button id="refresh" type="button">Refresh scene</button>
-  </div>
-  <div id="levers"></div>
-  <script>
-    // Minimal stub for Slice 4 static serving. Full isometric scene is Slice 7.
-    async function loadScene() {
-      const r = await fetch('/scene');
-      const scene = await r.json();
-      const ctx = document.getElementById('canvas').getContext('2d');
-      ctx.fillStyle = '#0e0e12';
-      ctx.fillRect(0, 0, 640, 480);
-      const scale = 12;
-      for (const t of scene.tiles || []) {
-        if (t.terrain === 'water') ctx.fillStyle = '#1a3a5c';
-        else if (t.terrain === 'rock') ctx.fillStyle = '#444';
-        else ctx.fillStyle = t.zoning === 'none' ? '#1e2a1e' : '#2a3a2a';
-        ctx.fillRect(t.x * scale, t.y * scale, scale - 1, scale - 1);
-      }
-      for (const b of scene.buildings || []) {
-        const tile = (scene.tiles || []).find(t => t.id === b.tile_id);
-        if (!tile) continue;
-        ctx.fillStyle = b.power_served ? '#6a8' : '#333';
-        if (b.condition_band === 'derelict') ctx.fillStyle = '#543';
-        else if (b.condition_band === 'worn') ctx.fillStyle = b.power_served ? '#586' : '#222';
-        ctx.fillRect(tile.x * scale + 2, tile.y * scale + 2, scale - 5, scale - 5);
-      }
-      ctx.fillStyle = '#fc6';
-      for (const c of (scene.citizens || []).slice(0, 800)) {
-        ctx.fillRect(c.x * scale, c.y * scale, 2, 2);
-      }
-    }
-    async function loadLevers() {
-      const r = await fetch('/state');
-      const st = await r.json();
-      const root = document.getElementById('levers');
-      root.innerHTML = '';
-      for (const [name, val] of Object.entries(st.levers || {})) {
-        const meta = (st.lever_meta || {})[name] || { minimum: 0, maximum: 1 };
-        const lab = document.createElement('label');
-        lab.textContent = name;
-        const input = document.createElement('input');
-        input.type = 'range';
-        input.min = meta.minimum;
-        input.max = meta.maximum;
-        input.step = (meta.maximum - meta.minimum) / 100 || 0.01;
-        input.value = val;
-        input.addEventListener('change', async () => {
-          await fetch('/lever', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name, value: parseFloat(input.value) }),
-          });
-        });
-        lab.appendChild(document.createElement('br'));
-        lab.appendChild(input);
-        root.appendChild(lab);
-      }
-    }
-    document.getElementById('advance').onclick = async () => {
-      await fetch('/advance', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
-      await loadScene();
+  <main>
+    <h1>Blind City</h1>
+    <p class="note">
+      You are the city manager. The city is in crisis and you have twelve quarterly decisions to
+      bring it back. <strong>Nothing here tells you a number about the city's state</strong> — no
+      population, treasury, satisfaction or health score. Worn roads look worn, unpowered buildings
+      go dark, derelict lots look derelict. That is deliberate: the agent modes cannot see those
+      numbers either, and the comparison is only fair if you are reading the same city they are.
+      To get numbers, query the warehouse.
+    </p>
+    <canvas id="canvas" width="1120" height="700"></canvas>
+    <div class="legend">
+      <span><i style="background:#4a7c59"></i>residential</span>
+      <span><i style="background:#5a6c8c"></i>commercial</span>
+      <span><i style="background:#8c6f4a"></i>industrial</span>
+      <span><i style="background:#2a2a33"></i>unpowered / derelict</span>
+      <span><i style="background:#c8b88a"></i>road (paler = more worn)</span>
+      <span><i style="background:#d8d8e8"></i>citizen</span>
+    </div>
+  </main>
+
+  <aside>
+    <h2>Levers</h2>
+    <div id="levers"></div>
+    <div class="row">
+      <button id="apply" class="primary" type="button">Apply &amp; advance one quarter</button>
+    </div>
+    <div class="row">
+      <button id="refresh" type="button">Redraw</button>
+      <button id="reset" type="button">Reset city</button>
+    </div>
+    <div id="status"></div>
+  </aside>
+
+<script>
+// The eight levers, mirrored from blindcity.levers. Descriptions match the tool declaration the
+// agent modes receive, so a human player is told exactly what an agent is told -- no more.
+const LEVERS = [
+  ["income_tax_rate",         0,    0.40,     0.001,  "Tax on household income."],
+  ["property_tax_rate",       0,    0.05,     0.0005, "Annual tax on assessed value."],
+  ["electricity_tariff",      0,    1.00,     0.01,   "Retail rate charged to households."],
+  ["road_maintenance_budget", 0,    8000000,  100000, "Spend on road repair."],
+  ["water_sewer_capex",       0,    8000000,  100000, "Capital spend on water and sewer capacity."],
+  ["transit_fare",            0,    10,       0.1,    "Fare charged per transit trip."],
+  ["zoning_release",          0,    1,        0.05,   "Share of undeveloped land opened for development."],
+  ["power_contract_mode",     0,    2,        1,      "0 spot, 1 fixed, 2 hedged."],
+];
+
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+const statusEl = document.getElementById("status");
+let scene = null;
+
+function say(msg) { statusEl.textContent = msg; }
+
+function buildLeverPanel(current) {
+  const host = document.getElementById("levers");
+  host.innerHTML = "";
+  for (const [name, min, max, step, desc] of LEVERS) {
+    const wrap = document.createElement("div");
+    wrap.className = "lever";
+    const value = current[name] ?? min;
+    wrap.innerHTML = `
+      <label for="lv_${name}"><span>${name}</span><span class="val" id="out_${name}"></span></label>
+      <input type="range" id="lv_${name}" min="${min}" max="${max}" step="${step}" value="${value}" />
+      <div class="desc">${desc}</div>`;
+    host.appendChild(wrap);
+    const input = wrap.querySelector("input");
+    const out = wrap.querySelector(".val");
+    const show = () => {
+      const v = Number(input.value);
+      out.textContent = v >= 1000 ? v.toLocaleString() : String(v);
     };
-    document.getElementById('refresh').onclick = loadScene;
-    loadScene();
-    loadLevers();
-  </script>
+    input.addEventListener("input", show);
+    show();
+  }
+}
+
+function readLevers() {
+  const out = {};
+  for (const [name] of LEVERS) out[name] = Number(document.getElementById(`lv_${name}`).value);
+  return out;
+}
+
+// --- Isometric projection ---------------------------------------------------------------------
+// Flat and schematic by design. The scene is the first thing on the cut line; it exists so a
+// human can see the city degrade, not so anyone can measure it.
+const TILE_W = 30, TILE_H = 15;
+let originX = 0, originY = 40;
+
+function iso(x, y) { return [originX + (x - y) * TILE_W / 2, originY + (x + y) * TILE_H / 2]; }
+
+function tileColour(t) {
+  if (t.abandonment > 0.5) return "#23232b";
+  const shade = 0.45 + 0.55 * Math.max(0, Math.min(1, t.condition));
+  const base = { residential: [74, 124, 89], commercial: [90, 108, 140],
+                 industrial: [140, 111, 74], park: [58, 92, 62] }[t.zoning] || [58, 58, 70];
+  const c = base.map(v => Math.round(v * shade));
+  return `rgb(${c[0]},${c[1]},${c[2]})`;
+}
+
+function drawDiamond(x, y, fill, stroke) {
+  const [sx, sy] = iso(x, y);
+  ctx.beginPath();
+  ctx.moveTo(sx, sy);
+  ctx.lineTo(sx + TILE_W / 2, sy + TILE_H / 2);
+  ctx.lineTo(sx, sy + TILE_H);
+  ctx.lineTo(sx - TILE_W / 2, sy + TILE_H / 2);
+  ctx.closePath();
+  ctx.fillStyle = fill;
+  ctx.fill();
+  if (stroke) { ctx.strokeStyle = stroke; ctx.stroke(); }
+}
+
+function drawBuilding(tile, b) {
+  // Height is density; colour is type; shade is condition. Unpowered goes dark.
+  const heights = { house: 10, apartment: 24, shop: 14, office: 30, factory: 20 };
+  const h = heights[b.building_type] ?? 12;
+  const bandShade = { new: 1.0, worn: 0.7, derelict: 0.42 }[b.condition_band] ?? 0.8;
+  const typeColour = { house: [96, 132, 104], apartment: [104, 124, 156], shop: [128, 116, 156],
+                       office: [96, 128, 168], factory: [150, 118, 86] }[b.building_type] || [110, 110, 130];
+  const lit = b.power_served ? 1 : 0.35;
+  const c = typeColour.map(v => Math.round(v * bandShade * lit));
+  const [sx, sy] = iso(tile.x, tile.y);
+
+  ctx.fillStyle = `rgb(${c[0]},${c[1]},${c[2]})`;
+  ctx.beginPath();                        // top face
+  ctx.moveTo(sx, sy - h);
+  ctx.lineTo(sx + TILE_W / 2, sy + TILE_H / 2 - h);
+  ctx.lineTo(sx, sy + TILE_H - h);
+  ctx.lineTo(sx - TILE_W / 2, sy + TILE_H / 2 - h);
+  ctx.closePath(); ctx.fill();
+
+  ctx.fillStyle = `rgb(${Math.round(c[0] * 0.72)},${Math.round(c[1] * 0.72)},${Math.round(c[2] * 0.72)})`;
+  ctx.beginPath();                        // left wall
+  ctx.moveTo(sx - TILE_W / 2, sy + TILE_H / 2 - h);
+  ctx.lineTo(sx, sy + TILE_H - h);
+  ctx.lineTo(sx, sy + TILE_H);
+  ctx.lineTo(sx - TILE_W / 2, sy + TILE_H / 2);
+  ctx.closePath(); ctx.fill();
+
+  ctx.fillStyle = `rgb(${Math.round(c[0] * 0.55)},${Math.round(c[1] * 0.55)},${Math.round(c[2] * 0.55)})`;
+  ctx.beginPath();                        // right wall
+  ctx.moveTo(sx + TILE_W / 2, sy + TILE_H / 2 - h);
+  ctx.lineTo(sx, sy + TILE_H - h);
+  ctx.lineTo(sx, sy + TILE_H);
+  ctx.lineTo(sx + TILE_W / 2, sy + TILE_H / 2);
+  ctx.closePath(); ctx.fill();
+}
+
+function draw() {
+  if (!scene) return;
+  const w = scene.grid.w, h = scene.grid.h;
+  originX = canvas.width / 2;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  const byId = new Map(scene.tiles.map(t => [t.id, t]));
+
+  for (const t of scene.tiles) drawDiamond(t.x, t.y, tileColour(t), "rgba(0,0,0,0.18)");
+
+  for (const r of scene.roads) {                     // paler = more worn
+    const wear = Math.max(0, Math.min(1, r.wear));
+    const [x1, y1] = iso(r.from_x, r.from_y);
+    const [x2, y2] = iso(r.to_x, r.to_y);
+    const g = Math.round(70 + 130 * wear);
+    ctx.strokeStyle = `rgb(${g},${Math.round(g * 0.94)},${Math.round(g * 0.72)})`;
+    ctx.lineWidth = 1 + 2 * (1 - wear);
+    ctx.beginPath();
+    ctx.moveTo(x1, y1 + TILE_H / 2);
+    ctx.lineTo(x2, y2 + TILE_H / 2);
+    ctx.stroke();
+  }
+
+  const sorted = [...scene.buildings].sort((a, b) => {
+    const ta = byId.get(a.tile_id), tb = byId.get(b.tile_id);
+    return (ta.x + ta.y) - (tb.x + tb.y);
+  });
+  for (const b of sorted) { const t = byId.get(b.tile_id); if (t) drawBuilding(t, b); }
+
+  ctx.fillStyle = "rgba(216,216,232,0.75)";
+  for (const c of scene.citizens) {
+    const [sx, sy] = iso(c.x, c.y);
+    ctx.fillRect(sx - 1, sy + TILE_H / 2 - 1, 2, 2);
+  }
+}
+
+async function loadScene() {
+  const r = await fetch("/scene");
+  scene = await r.json();
+  draw();
+}
+
+async function loadLevers() {
+  const r = await fetch("/state");
+  const s = await r.json();
+  buildLeverPanel(s.levers || {});
+}
+
+async function applyAndAdvance() {
+  const btn = document.getElementById("apply");
+  btn.disabled = true;
+  say("Applying levers…");
+  try {
+    await fetch("/lever", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ levers: readLevers() }),
+    });
+    say("Advancing three months…");
+    // One turn is a quarter, matching the agent modes' months_per_turn.
+    await fetch("/advance", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ months: 3 }),
+    });
+    await loadScene();
+    say(`Quarter complete. Month ${scene.tick}.`);
+  } catch (e) {
+    say(`Failed: ${e}`);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+document.getElementById("apply").addEventListener("click", applyAndAdvance);
+document.getElementById("refresh").addEventListener("click", () => loadScene().then(() => say("Redrawn.")));
+document.getElementById("reset").addEventListener("click", async () => {
+  await fetch("/reset", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+  await loadLevers(); await loadScene(); say("City reset.");
+});
+
+loadLevers().then(loadScene).then(() => say("Ready."));
+</script>
 </body>
 </html>

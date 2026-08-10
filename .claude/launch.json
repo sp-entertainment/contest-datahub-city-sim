@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "blindcity",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": ["run", "sim", "--serve"],
+      "port": 8000
+    }
+  ]
+}
