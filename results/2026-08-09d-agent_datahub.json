@@ -1,0 +1,723 @@
+{
+  "scenario_name": "infrastructure_neglect",
+  "seed": 42,
+  "controller_name": "agent_datahub",
+  "mode": "agent_datahub",
+  "run_id": "1",
+  "turn_budget": 12,
+  "green_threshold": 0.62,
+  "baseline_population": 3133,
+  "recovered": true,
+  "green_turn": 11,
+  "final_index": 0.6338018524840058,
+  "turns": [
+    {
+      "turn": 0,
+      "tick": 63,
+      "levers": {
+        "income_tax_rate": 0.04,
+        "property_tax_rate": 0.004,
+        "electricity_tariff": 0.65,
+        "road_maintenance_budget": 6000000.0,
+        "water_sewer_capex": 2000000.0,
+        "transit_fare": 2.0,
+        "zoning_release": 0.0,
+        "power_contract_mode": 2
+      },
+      "components": {
+        "solvency": 0.0575580220729639,
+        "satisfaction": 0.2697956640797782,
+        "service": 0.4345055627181507,
+        "population": 0.7348046144726642,
+        "index": 0.36976289534850426
+      },
+      "index": 0.36976289534850426,
+      "green": false
+    },
+    {
+      "turn": 1,
+      "tick": 66,
+      "levers": {
+        "income_tax_rate": 0.04,
+        "property_tax_rate": 0.004,
+        "electricity_tariff": 0.65,
+        "road_maintenance_budget": 3000000.0,
+        "water_sewer_capex": 0.0,
+        "transit_fare": 2.0,
+        "zoning_release": 0.0,
+        "power_contract_mode": 2
+      },
+      "components": {
+        "solvency": 0.36038383715150646,
+        "satisfaction": 0.2795022991674509,
+        "service": 0.4600623647429603,
+        "population": 0.7110938853677443,
+        "index": 0.43616494367697356
+      },
+      "index": 0.43616494367697356,
+      "green": false
+    },
+    {
+      "turn": 2,
+      "tick": 69,
+      "levers": {
+        "income_tax_rate": 0.04,
+        "property_tax_rate": 0.004,
+        "electricity_tariff": 0.65,
+        "road_maintenance_budget": 3000000.0,
+        "water_sewer_capex": 0.0,
+        "transit_fare": 2.0,
+        "zoning_release": 0.0,
+        "power_contract_mode": 2
+      },
+      "components": {
+        "solvency": 0.45928853477497317,
+        "satisfaction": 0.29077541055652495,
+        "service": 0.47318105038782626,
+        "population": 0.6873831562628243,
+        "index": 0.4585212764908649
+      },
+      "index": 0.4585212764908649,
+      "green": false
+    },
+    {
+      "turn": 3,
+      "tick": 72,
+      "levers": {
+        "income_tax_rate": 0.08,
+        "property_tax_rate": 0.008,
+        "electricity_tariff": 0.65,
+        "road_maintenance_budget": 1000000.0,
+        "water_sewer_capex": 1000000.0,
+        "transit_fare": 2.0,
+        "zoning_release": 0.0,
+        "power_contract_mode": 2
+      },
+      "components": {
+        "solvency": 0.5503390357969914,
+        "satisfaction": 0.2849558585223646,
+        "service": 0.47524174891084864,
+        "population": 0.6613925493593544,
+        "index": 0.47040559926123315
+      },
+      "index": 0.47040559926123315,
+      "green": false
+    },
+    {
+      "turn": 4,
+      "tick": 75,
+      "levers": {
+        "income_tax_rate": 0.08,
+        "property_tax_rate": 0.008,
+        "electricity_tariff": 0.65,
+        "road_maintenance_budget": 1000000.0,
+        "water_sewer_capex": 3000000.0,
+        "transit_fare": 2.0,
+        "zoning_release": 0.0,
+        "power_contract_mode": 2
+      },
+      "components": {
+        "solvency": 0.557768527688236,
+        "satisfaction": 0.32623736463883146,
+        "service": 0.4693767396316666,
+        "population": 0.6385937713738543,
+        "index": 0.47795669109356753
+      },
+      "index": 0.47795669109356753,
+      "green": false
+    },
+    {
+      "turn": 5,
+      "tick": 78,
+      "levers": {
+        "income_tax_rate": 0.08,
+        "property_tax_rate": 0.008,
+        "electricity_tariff": 0.65,
+        "road_maintenance_budget": 1000000.0,
+        "water_sewer_capex": 5000000.0,
+        "transit_fare": 2.0,
+        "zoning_release": 0.0,
+        "power_contract_mode": 2
+      },
+      "components": {
+        "solvency": 0.5720124598060247,
+        "satisfaction": 0.39447675473890337,
+        "service": 0.462321920572337,
+        "population": 0.6240025534631344,
+        "index": 0.49624260524720387
+      },
+      "index": 0.49624260524720387,
+      "green": false
+    },
+    {
+      "turn": 6,
+      "tick": 81,
+      "levers": {
+        "income_tax_rate": 0.08,
+        "property_tax_rate": 0.008,
+        "electricity_tariff": 0.65,
+        "road_maintenance_budget": 1000000.0,
+        "water_sewer_capex": 5000000.0,
+        "transit_fare": 2.0,
+        "zoning_release": 0.0,
+        "power_contract_mode": 2
+      },
+      "components": {
+        "solvency": 0.5912778934807746,
+        "satisfaction": 0.46404362882118544,
+        "service": 0.48738790154282435,
+        "population": 0.6157949933883544,
+        "index": 0.5268440364830287
+      },
+      "index": 0.5268440364830287,
+      "green": false
+    },
+    {
+      "turn": 7,
+      "tick": 84,
+      "levers": {
+        "income_tax_rate": 0.08,
+        "property_tax_rate": 0.008,
+        "electricity_tariff": 0.65,
+        "road_maintenance_budget": 1000000.0,
+        "water_sewer_capex": 5000000.0,
+        "transit_fare": 2.0,
+        "zoning_release": 0.0,
+        "power_contract_mode": 2
+      },
+      "components": {
+        "solvency": 0.6168668748507499,
+        "satisfaction": 0.5222755418651912,
+        "service": 0.5408547043899202,
+        "population": 0.6126031644703844,
+        "index": 0.5648330817407603
+      },
+      "index": 0.5648330817407603,
+      "green": false
+    },
+    {
+      "turn": 8,
+      "tick": 87,
+      "levers": {
+        "income_tax_rate": 0.08,
+        "property_tax_rate": 0.008,
+        "electricity_tariff": 0.65,
+        "road_maintenance_budget": 1000000.0,
+        "water_sewer_capex": 5000000.0,
+        "transit_fare": 2.0,
+        "zoning_release": 0.0,
+        "power_contract_mode": 2
+      },
+      "components": {
+        "solvency": 0.6509437861159397,
+        "satisfaction": 0.5642209978929724,
+        "service": 0.5838461374170958,
+        "population": 0.6107792622315444,
+        "index": 0.5967647502625173
+      },
+      "index": 0.5967647502625173,
+      "green": false
+    },
+    {
+      "turn": 9,
+      "tick": 90,
+      "levers": {
+        "income_tax_rate": 0.08,
+        "property_tax_rate": 0.008,
+        "electricity_tariff": 0.65,
+        "road_maintenance_budget": 1000000.0,
+        "water_sewer_capex": 1000000.0,
+        "transit_fare": 2.0,
+        "zoning_release": 0.0,
+        "power_contract_mode": 2
+      },
+      "components": {
+        "solvency": 0.6765351026244529,
+        "satisfaction": 0.5893393333243105,
+        "service": 0.5991300432184892,
+        "population": 0.6116912133509644,
+        "index": 0.6141860761579234
+      },
+      "index": 0.6141860761579234,
+      "green": false
+    },
+    {
+      "turn": 10,
+      "tick": 93,
+      "levers": {
+        "income_tax_rate": 0.08,
+        "property_tax_rate": 0.008,
+        "electricity_tariff": 0.8,
+        "road_maintenance_budget": 1000000.0,
+        "water_sewer_capex": 1000000.0,
+        "transit_fare": 2.0,
+        "zoning_release": 0.0,
+        "power_contract_mode": 2
+      },
+      "components": {
+        "solvency": 0.7104067585042559,
+        "satisfaction": 0.5731923489170706,
+        "service": 0.6066669594635378,
+        "population": 0.6135151155898044,
+        "index": 0.6187421673329946
+      },
+      "index": 0.6187421673329946,
+      "green": false
+    },
+    {
+      "turn": 11,
+      "tick": 96,
+      "levers": {
+        "income_tax_rate": 0.06,
+        "property_tax_rate": 0.006,
+        "electricity_tariff": 0.65,
+        "road_maintenance_budget": 1000000.0,
+        "water_sewer_capex": 0.0,
+        "transit_fare": 2.0,
+        "zoning_release": 0.0,
+        "power_contract_mode": 2
+      },
+      "components": {
+        "solvency": 0.7296114561137435,
+        "satisfaction": 0.6097105608640272,
+        "service": 0.6029848106831937,
+        "population": 0.6203547489854544,
+        "index": 0.6338018524840058
+      },
+      "index": 0.6338018524840058,
+      "green": true
+    }
+  ],
+  "meta": {
+    "crisis_months": 60,
+    "months_per_turn": 3,
+    "warehouse_run_id": 1,
+    "agent": {
+      "controller": "agent_datahub",
+      "model": "gpt-5.6-luna",
+      "catalog": "datahub",
+      "monitor": "none",
+      "tool_budget": 12,
+      "system_prompt_chars": 9357,
+      "usage": {
+        "prompt_tokens": 291140,
+        "output_tokens": 9585,
+        "total_tokens": 300725,
+        "calls": 28,
+        "seconds": 107.62
+      },
+      "turns": [
+        {
+          "turn": 0,
+          "sql_calls": 6,
+          "queries": [
+            "WITH m AS (SELECT max(tick) tick FROM ticks), b AS (SELECT * FROM budget_monthly WHERE tick=(SELECT tick FROM m)), p AS (SELECT * FROM power_monthly WHERE tick=(SELECT tick FROM m)), w AS (SELECT * FROM water_monthly WHERE tick=(SELECT tick FROM m)), mig AS (SELECT * FROM migration_monthly WHERE tick=(SELECT tick FROM m)), c AS (SELECT satisfaction, employed, disposable_income, uses_transit FROM citizen_monthly WHERE tick=(SELECT tick FROM m)) SELECT (SELECT tick FROM m) tick, (SELECT sum(income_tax_revenue) FROM b) income_tax, (SELECT sum(property_tax_revenue) FROM b) property_tax, (SELECT sum(utility_revenue) FROM b) utility, (SELECT sum(transit_revenue) FROM b) transit, (SELECT sum(road_spend) FROM b) road_spend, (SELECT sum(water_sewer_spend) FROM b) water_spend, (SELECT sum(balance) FROM b) balance, (SELECT max(debt) FROM b) debt, (SELECT max(treasury) FROM b) treasury, (SELECT avg(demand_kw) FROM p) demand, (SELECT avg(supply_kw) FROM p) supply, (SELECT avg(outage_fraction) FROM p) outage, (SELECT avg(load_ratio) FROM w) water_load, (SELECT avg(failure_rate) FROM w) water_failure, (SELECT max(population) FROM mig) population, (SELECT avg(satisfaction) FROM c) satisfaction, (SELECT avg(employed::int) FROM c) employment, (SELECT avg(disposable_income) FROM c) disposable, (SELECT avg(uses_transit::int) FROM c) transit_use;",
+            "SELECT tick, income_tax_rate, property_tax_rate, electricity_tariff, road_maintenance_budget, water_sewer_capex, transit_fare, zoning_release, power_contract_mode FROM lever_monthly ORDER BY tick DESC LIMIT 12;",
+            "WITH x AS (SELECT tick, avg(condition_score) avg_condition, avg((condition_band='derelict')::int) derelict, avg(occupancy) occupancy, avg((power_served)::int) power_served FROM building_monthly GROUP BY tick), r AS (SELECT tick, avg(wear) road_wear, avg(congestion) congestion FROM road_monthly GROUP BY tick) SELECT COALESCE(x.tick,r.tick) tick, avg_condition, derelict, occupancy, power_served, road_wear, congestion FROM x FULL JOIN r USING(tick) ORDER BY tick DESC LIMIT 12;",
+            "SELECT tick, arrivals, departures, net, population FROM migration_monthly ORDER BY tick DESC LIMIT 12;",
+            "SELECT tick, avg(demand_kw) demand, avg(supply_kw) supply, avg(outage_fraction) outage, contract_mode, tariff FROM power_monthly GROUP BY tick, contract_mode, tariff ORDER BY tick DESC LIMIT 12;",
+            "SELECT tick, avg(capacity) capacity, avg(demand) demand, avg(load_ratio) load_ratio, avg(failure_rate) failure FROM water_monthly GROUP BY tick ORDER BY tick DESC LIMIT 12;"
+          ],
+          "levers_set": {
+            "road_maintenance_budget": 6000000.0,
+            "water_sewer_capex": 2000000.0,
+            "transit_fare": 2.0,
+            "power_contract_mode": 2
+          },
+          "rationale": "The immediate failures are infrastructure-driven: road wear is 0.97 with congestion 0.78, and spot-market power is leaving about 26% of demand unserved. Water is stressed but not failing (load 0.85, failure 0), so I\u2019ll fund preventive capacity rather than overcorrect. I\u2019m switching procurement to hedged, restoring roads substantially, adding moderate water/sewer capex, and lowering the unusually high transit fare to support mobility and satisfaction.",
+          "usage": {
+            "prompt_tokens": 8776,
+            "output_tokens": 1217,
+            "total_tokens": 9993,
+            "calls": 2,
+            "seconds": 10.02
+          },
+          "seconds": 10.03,
+          "tool_seconds": 0.02,
+          "unaccounted_seconds": -0.01,
+          "error": null,
+          "tool_errors": [],
+          "timed_out_queries": [],
+          "infrastructure_errors": [],
+          "clamped": {},
+          "rejected": {}
+        },
+        {
+          "turn": 1,
+          "sql_calls": 6,
+          "queries": [
+            "WITH m AS (SELECT max(tick) tick FROM ticks), b AS (SELECT * FROM budget_monthly WHERE tick=(SELECT tick FROM m)), p AS (SELECT * FROM power_monthly WHERE tick=(SELECT tick FROM m)), w AS (SELECT * FROM water_monthly WHERE tick=(SELECT tick FROM m)), c AS (SELECT * FROM citizen_monthly WHERE tick=(SELECT tick FROM m)), mig AS (SELECT * FROM migration_monthly WHERE tick=(SELECT tick FROM m)) SELECT (SELECT tick FROM m) tick, sum(b.balance) balance, max(b.treasury) treasury, max(b.debt) debt, avg(p.demand_kw) demand, avg(p.supply_kw) supply, avg(p.outage_fraction) outage, avg(w.load_ratio) water_load, avg(w.failure_rate) water_failure, avg(c.satisfaction) satisfaction, avg(c.disposable_income) disposable, avg(c.employed::int) employment, (SELECT population FROM mig) population FROM b,p,w,c,mig;",
+            "SELECT tick, avg(wear) road_wear, avg(congestion) congestion FROM road_monthly GROUP BY tick ORDER BY tick DESC LIMIT 8;",
+            "SELECT tick, avg(condition_score) condition, avg((condition_band='derelict')::int) derelict, avg(power_served::int) building_power FROM building_monthly GROUP BY tick ORDER BY tick DESC LIMIT 8;",
+            "SELECT tick, arrivals, departures, net, population FROM migration_monthly ORDER BY tick DESC LIMIT 8;",
+            "SELECT tick, avg(capacity) capacity, avg(demand) demand, avg(load_ratio) load_ratio FROM water_monthly GROUP BY tick ORDER BY tick DESC LIMIT 8;",
+            "SELECT tick, avg(demand_kw) demand, avg(supply_kw) supply, avg(outage_fraction) outage, contract_mode FROM power_monthly GROUP BY tick,contract_mode ORDER BY tick DESC LIMIT 8;"
+          ],
+          "levers_set": {
+            "road_maintenance_budget": 3000000.0,
+            "water_sewer_capex": 0.0
+          },
+          "rationale": "The first intervention exposed a severe fiscal/service interaction. Roads are recovering quickly, and hedging reduced outages, but water capacity has collapsed from ~2,464 to ~944 while demand stayed ~2,076; failure is now 0.48 and migration has reversed sharply. Treasury is exhausted, so the current combined spending level is not sustainable. I\u2019m removing discretionary capital spending to stop the fiscal spiral while retaining only a moderate road program and the improved power contract; water recovery must occur without further cash drain.",
+          "usage": {
+            "prompt_tokens": 14551,
+            "output_tokens": 873,
+            "total_tokens": 15424,
+            "calls": 2,
+            "seconds": 8.45
+          },
+          "seconds": 8.47,
+          "tool_seconds": 0.02,
+          "unaccounted_seconds": 0.0,
+          "error": null,
+          "tool_errors": [],
+          "timed_out_queries": [],
+          "infrastructure_errors": [],
+          "clamped": {},
+          "rejected": {}
+        },
+        {
+          "turn": 2,
+          "sql_calls": 6,
+          "queries": [
+            "WITH m AS (SELECT max(tick) tick FROM ticks) SELECT b.tick,b.balance,b.debt,b.treasury,p.demand_kw,p.supply_kw,p.outage_fraction,w.capacity,w.demand,w.load_ratio,w.failure_rate,mi.population,mi.net, c.satisfaction,c.disposable_income FROM budget_monthly b JOIN power_monthly p USING(run_id,tick) JOIN water_monthly w USING(run_id,tick) JOIN migration_monthly mi USING(run_id,tick) JOIN (SELECT tick,avg(satisfaction) satisfaction,avg(disposable_income) disposable_income FROM citizen_monthly GROUP BY tick)c USING(tick) WHERE b.tick=(SELECT tick FROM m);",
+            "SELECT tick,road_maintenance_budget,water_sewer_capex,power_contract_mode,income_tax_rate,property_tax_rate,electricity_tariff,transit_fare FROM lever_monthly ORDER BY tick DESC LIMIT 6;",
+            "SELECT tick,avg(wear) wear,avg(congestion) congestion FROM road_monthly GROUP BY tick ORDER BY tick DESC LIMIT 6;",
+            "SELECT tick,avg(condition_score) condition,avg(power_served::int) power FROM building_monthly GROUP BY tick ORDER BY tick DESC LIMIT 6;",
+            "SELECT tick,arrivals,departures,net,population FROM migration_monthly ORDER BY tick DESC LIMIT 6;",
+            "SELECT w.tick,l.water_sewer_capex,w.capacity,w.demand,w.load_ratio,w.failure_rate,b.balance,b.treasury FROM water_monthly w JOIN lever_monthly l USING(run_id,tick) JOIN budget_monthly b USING(run_id,tick) ORDER BY w.tick DESC LIMIT 20;"
+          ],
+          "levers_set": {},
+          "rationale": "Water capacity has stabilized near 942 after stopping capex, but the system remains in a critical 2.17 load ratio; the recent capex setting did not produce capacity and instead coincided with the collapse. The treasury is rebuilding at about 258k/month, while roads continue improving at 3M/year. I\u2019ll preserve cash for now, keep the road repair and hedged power policies, and make no new spending gamble this turn.",
+          "usage": {
+            "prompt_tokens": 22816,
+            "output_tokens": 1083,
+            "total_tokens": 23899,
+            "calls": 3,
+            "seconds": 12.05
+          },
+          "seconds": 12.06,
+          "tool_seconds": 0.0,
+          "unaccounted_seconds": 0.01,
+          "error": null,
+          "tool_errors": [
+            "levers must be a non-empty object of name -> number"
+          ],
+          "timed_out_queries": [],
+          "infrastructure_errors": [],
+          "clamped": {},
+          "rejected": {}
+        },
+        {
+          "turn": 3,
+          "sql_calls": 4,
+          "queries": [
+            "WITH b AS (SELECT * FROM budget_monthly ORDER BY tick DESC LIMIT 1),p AS (SELECT * FROM power_monthly ORDER BY tick DESC LIMIT 1),w AS (SELECT * FROM water_monthly ORDER BY tick DESC LIMIT 1),m AS (SELECT * FROM migration_monthly ORDER BY tick DESC LIMIT 1) SELECT b.tick,b.balance,b.debt,b.treasury,p.demand_kw,p.supply_kw,p.outage_fraction,w.capacity,w.demand,w.load_ratio,w.failure_rate,m.population,m.net,(SELECT avg(satisfaction) FROM citizen_monthly WHERE tick=b.tick) satisfaction FROM b,p,w,m;",
+            "SELECT tick,avg(wear) wear,avg(congestion) congestion FROM road_monthly GROUP BY tick ORDER BY tick DESC LIMIT 5;",
+            "SELECT tick,avg(condition_score) condition,avg(power_served::int) power FROM building_monthly GROUP BY tick ORDER BY tick DESC LIMIT 5;",
+            "SELECT tick,arrivals,departures,net,population FROM migration_monthly ORDER BY tick DESC LIMIT 5;"
+          ],
+          "levers_set": {
+            "road_maintenance_budget": 1000000.0,
+            "water_sewer_capex": 1000000.0,
+            "income_tax_rate": 0.08,
+            "property_tax_rate": 0.008
+          },
+          "rationale": "The city is still losing roughly 18 residents per month, chiefly consistent with the unresolved water crisis (load 2.15, failure 0.46) and persistent power outages (18%). Roads are now in good shape (wear 0.21), so I\u2019m reducing road spending. To finance a targeted water recovery without repeating the prior cash shock, I\u2019ll use a smaller water allocation and modestly increase income and property taxes; hedged power remains in force.",
+          "usage": {
+            "prompt_tokens": 17061,
+            "output_tokens": 832,
+            "total_tokens": 17893,
+            "calls": 2,
+            "seconds": 8.56
+          },
+          "seconds": 8.56,
+          "tool_seconds": 0.0,
+          "unaccounted_seconds": 0.0,
+          "error": null,
+          "tool_errors": [],
+          "timed_out_queries": [],
+          "infrastructure_errors": [],
+          "clamped": {},
+          "rejected": {}
+        },
+        {
+          "turn": 4,
+          "sql_calls": 7,
+          "queries": [
+            "WITH b AS (SELECT * FROM budget_monthly ORDER BY tick DESC LIMIT 1),p AS (SELECT * FROM power_monthly ORDER BY tick DESC LIMIT 1),w AS (SELECT * FROM water_monthly ORDER BY tick DESC LIMIT 1),m AS (SELECT * FROM migration_monthly ORDER BY tick DESC LIMIT 1) SELECT b.tick,b.balance,b.debt,b.treasury,p.outage_fraction,p.demand_kw,p.supply_kw,w.capacity,w.demand,w.load_ratio,w.failure_rate,m.net,m.population,(SELECT avg(satisfaction) FROM citizen_monthly WHERE tick=b.tick) satisfaction,(SELECT avg(disposable_income) FROM citizen_monthly WHERE tick=b.tick) disposable FROM b,p,w,m;",
+            "SELECT tick,water_sewer_capex,capacity,demand,load_ratio,failure_rate FROM water_monthly JOIN lever_monthly USING(run_id,tick) ORDER BY tick DESC LIMIT 6;",
+            "SELECT tick,income_tax_rate,property_tax_rate,road_maintenance_budget,water_sewer_capex,balance,treasury FROM lever_monthly JOIN budget_monthly USING(run_id,tick) ORDER BY tick DESC LIMIT 6;",
+            "SELECT tick,avg(wear) wear,avg(congestion) congestion FROM road_monthly GROUP BY tick ORDER BY tick DESC LIMIT 4;",
+            "SELECT contract_mode,avg(outage_fraction) outage,avg(supply_kw-demand_kw) gap,avg(demand_kw) demand,avg(supply_kw) supply,count(*) n FROM power_monthly GROUP BY contract_mode;",
+            "SELECT tick,avg(satisfaction) satisfaction,avg(disposable_income) disposable,avg(employed::int) employed FROM citizen_monthly GROUP BY tick ORDER BY tick DESC LIMIT 6;",
+            "SELECT tick,arrivals,departures,net,population FROM migration_monthly ORDER BY tick DESC LIMIT 4;"
+          ],
+          "levers_set": {
+            "water_sewer_capex": 3000000.0
+          },
+          "rationale": "The targeted program is working: water capacity rose from 940 to 980 in three months and failure fell from 0.46 to 0.41, while the treasury rebuilt to 3.38M with an 0.83M monthly surplus. However, the load ratio remains dangerously above 2 and migration is still \u221217/month. Roads are stable, and hedging is materially better than spot. I\u2019ll temporarily raise water capex to accelerate the only major recovery path, keeping taxes and road spending unchanged so the treasury remains positive.",
+          "usage": {
+            "prompt_tokens": 26317,
+            "output_tokens": 908,
+            "total_tokens": 27225,
+            "calls": 3,
+            "seconds": 10.39
+          },
+          "seconds": 10.39,
+          "tool_seconds": 0.0,
+          "unaccounted_seconds": 0.0,
+          "error": null,
+          "tool_errors": [],
+          "timed_out_queries": [],
+          "infrastructure_errors": [],
+          "clamped": {},
+          "rejected": {}
+        },
+        {
+          "turn": 5,
+          "sql_calls": 4,
+          "queries": [
+            "WITH b AS (SELECT * FROM budget_monthly ORDER BY tick DESC LIMIT 1),p AS (SELECT * FROM power_monthly ORDER BY tick DESC LIMIT 1),w AS (SELECT * FROM water_monthly ORDER BY tick DESC LIMIT 1),m AS (SELECT * FROM migration_monthly ORDER BY tick DESC LIMIT 1) SELECT b.tick,b.balance,b.debt,b.treasury,p.outage_fraction,w.capacity,w.demand,w.load_ratio,w.failure_rate,m.net,m.population,(SELECT avg(satisfaction) FROM citizen_monthly WHERE tick=b.tick) satisfaction FROM b,p,w,m;",
+            "SELECT tick,water_sewer_capex,capacity,demand,load_ratio,failure_rate FROM water_monthly JOIN lever_monthly USING(run_id,tick) ORDER BY tick DESC LIMIT 8;",
+            "SELECT tick,avg(wear) wear,avg(congestion) congestion FROM road_monthly GROUP BY tick ORDER BY tick DESC LIMIT 4;",
+            "SELECT tick,arrivals,departures,net,population FROM migration_monthly ORDER BY tick DESC LIMIT 4;"
+          ],
+          "levers_set": {
+            "water_sewer_capex": 5000000.0
+          },
+          "rationale": "The higher water investment is clearly effective: capacity increased 123 units in three months, load fell from 2.02 to 1.77, failure fell to 0.31, and satisfaction improved. The city still has a 4.67M treasury and roads remain stable. I\u2019ll increase water capex further to speed recovery; the resulting deficit should be manageable from accumulated cash, while keeping road spending and the other stabilizing policies unchanged.",
+          "usage": {
+            "prompt_tokens": 20124,
+            "output_tokens": 554,
+            "total_tokens": 20678,
+            "calls": 2,
+            "seconds": 8.23
+          },
+          "seconds": 8.25,
+          "tool_seconds": 0.0,
+          "unaccounted_seconds": 0.02,
+          "error": null,
+          "tool_errors": [],
+          "timed_out_queries": [],
+          "infrastructure_errors": [],
+          "clamped": {},
+          "rejected": {}
+        },
+        {
+          "turn": 6,
+          "sql_calls": 4,
+          "queries": [
+            "WITH b AS (SELECT * FROM budget_monthly ORDER BY tick DESC LIMIT 1),p AS (SELECT * FROM power_monthly ORDER BY tick DESC LIMIT 1),w AS (SELECT * FROM water_monthly ORDER BY tick DESC LIMIT 1),m AS (SELECT * FROM migration_monthly ORDER BY tick DESC LIMIT 1) SELECT b.tick,b.balance,b.debt,b.treasury,p.outage_fraction,w.capacity,w.demand,w.load_ratio,w.failure_rate,m.net,m.population,(SELECT avg(satisfaction) FROM citizen_monthly WHERE tick=b.tick) satisfaction,(SELECT avg(disposable_income) FROM citizen_monthly WHERE tick=b.tick) disposable FROM b,p,w,m;",
+            "SELECT tick,water_sewer_capex,capacity,demand,load_ratio,failure_rate FROM water_monthly JOIN lever_monthly USING(run_id,tick) ORDER BY tick DESC LIMIT 6;",
+            "SELECT tick,avg(condition_score) condition,avg(power_served::int) power FROM building_monthly GROUP BY tick ORDER BY tick DESC LIMIT 4;",
+            "SELECT tick,arrivals,departures,net,population FROM migration_monthly ORDER BY tick DESC LIMIT 4;"
+          ],
+          "levers_set": {
+            "water_sewer_capex": 5000000.0
+          },
+          "rationale": "Water recovery is accelerating and financially tolerable: load is down to 1.47, failure to 0.19, and satisfaction is rising, while treasury increased to 5.29M despite the 5M annual program. Migration is improving but still negative. I\u2019ll keep water capex at 5M for another turn to bring the system closer to safe load; no need to spend on roads or alter the currently stable fiscal settings.",
+          "usage": {
+            "prompt_tokens": 20990,
+            "output_tokens": 563,
+            "total_tokens": 21553,
+            "calls": 2,
+            "seconds": 7.65
+          },
+          "seconds": 7.67,
+          "tool_seconds": 0.02,
+          "unaccounted_seconds": 0.0,
+          "error": null,
+          "tool_errors": [],
+          "timed_out_queries": [],
+          "infrastructure_errors": [],
+          "clamped": {},
+          "rejected": {}
+        },
+        {
+          "turn": 7,
+          "sql_calls": 4,
+          "queries": [
+            "WITH b AS (SELECT * FROM budget_monthly ORDER BY tick DESC LIMIT 1),p AS (SELECT * FROM power_monthly ORDER BY tick DESC LIMIT 1),w AS (SELECT * FROM water_monthly ORDER BY tick DESC LIMIT 1),m AS (SELECT * FROM migration_monthly ORDER BY tick DESC LIMIT 1) SELECT b.tick,b.balance,b.debt,b.treasury,p.outage_fraction,w.capacity,w.demand,w.load_ratio,w.failure_rate,m.net,m.population,(SELECT avg(satisfaction) FROM citizen_monthly WHERE tick=b.tick) satisfaction FROM b,p,w,m;",
+            "SELECT tick,capacity,demand,load_ratio,failure_rate FROM water_monthly ORDER BY tick DESC LIMIT 6;",
+            "SELECT tick,avg(wear) wear,avg(congestion) congestion FROM road_monthly GROUP BY tick ORDER BY tick DESC LIMIT 3;",
+            "SELECT tick,arrivals,departures,net,population FROM migration_monthly ORDER BY tick DESC LIMIT 3;"
+          ],
+          "levers_set": {
+            "water_sewer_capex": 5000000.0
+          },
+          "rationale": "The crisis is continuing to unwind: water load is down to 1.27 and failure to 0.11, with net migration nearly stabilized at \u22124/month. Treasury is still growing and debt is falling, so the 5M water program is affordable. Roads remain acceptable (wear 0.25, congestion 0.48). I\u2019ll maintain the current recovery package for another turn rather than interrupting water-capacity gains.",
+          "usage": {
+            "prompt_tokens": 22477,
+            "output_tokens": 527,
+            "total_tokens": 23004,
+            "calls": 2,
+            "seconds": 5.86
+          },
+          "seconds": 5.88,
+          "tool_seconds": 0.01,
+          "unaccounted_seconds": 0.01,
+          "error": null,
+          "tool_errors": [],
+          "timed_out_queries": [],
+          "infrastructure_errors": [],
+          "clamped": {},
+          "rejected": {}
+        },
+        {
+          "turn": 8,
+          "sql_calls": 7,
+          "queries": [
+            "WITH b AS (SELECT * FROM budget_monthly ORDER BY tick DESC LIMIT 1),p AS (SELECT * FROM power_monthly ORDER BY tick DESC LIMIT 1),w AS (SELECT * FROM water_monthly ORDER BY tick DESC LIMIT 1),m AS (SELECT * FROM migration_monthly ORDER BY tick DESC LIMIT 1) SELECT b.tick,b.balance,b.debt,b.treasury,p.outage_fraction,w.capacity,w.demand,w.load_ratio,w.failure_rate,m.net,m.population,(SELECT avg(satisfaction) FROM citizen_monthly WHERE tick=b.tick) satisfaction,(SELECT avg(disposable_income) FROM citizen_monthly WHERE tick=b.tick) disposable FROM b,p,w,m;",
+            "SELECT tick,capacity,demand,load_ratio,failure_rate FROM water_monthly ORDER BY tick DESC LIMIT 5;",
+            "SELECT tick,arrivals,departures,net,population FROM migration_monthly ORDER BY tick DESC LIMIT 5;",
+            "SELECT tick,avg(wear) wear,avg(congestion) congestion FROM road_monthly GROUP BY tick ORDER BY tick DESC LIMIT 3;",
+            "SELECT contract_mode,tariff,avg(outage_fraction) outage,avg(supply_kw-demand_kw) gap,count(*) n FROM power_monthly GROUP BY contract_mode,tariff ORDER BY contract_mode,tariff;",
+            "SELECT tick,avg(power_served::int) power_served,avg(condition_score) condition FROM building_monthly GROUP BY tick ORDER BY tick DESC LIMIT 5;",
+            "SELECT tick,income_tax_revenue,property_tax_revenue,utility_revenue,transit_revenue,road_spend,water_sewer_spend,balance,treasury FROM budget_monthly ORDER BY tick DESC LIMIT 3;"
+          ],
+          "levers_set": {
+            "water_sewer_capex": 5000000.0
+          },
+          "rationale": "Water is nearly safe: load has fallen to 1.11 and failure to 0.044, while treasury is 6.24M and debt is declining. The hedged contract is demonstrably better than spot (18.1% versus 29.3% outage), so I\u2019ll retain it. With only a small remaining water deficit and three turns left, I\u2019ll continue the 5M capex program; the budget still generates a 465k monthly surplus.",
+          "usage": {
+            "prompt_tokens": 36963,
+            "output_tokens": 852,
+            "total_tokens": 37815,
+            "calls": 3,
+            "seconds": 10.31
+          },
+          "seconds": 10.31,
+          "tool_seconds": 0.0,
+          "unaccounted_seconds": 0.0,
+          "error": null,
+          "tool_errors": [],
+          "timed_out_queries": [],
+          "infrastructure_errors": [],
+          "clamped": {},
+          "rejected": {}
+        },
+        {
+          "turn": 9,
+          "sql_calls": 4,
+          "queries": [
+            "WITH b AS (SELECT * FROM budget_monthly ORDER BY tick DESC LIMIT 1),p AS (SELECT * FROM power_monthly ORDER BY tick DESC LIMIT 1),w AS (SELECT * FROM water_monthly ORDER BY tick DESC LIMIT 1),m AS (SELECT * FROM migration_monthly ORDER BY tick DESC LIMIT 1) SELECT b.tick,b.balance,b.debt,b.treasury,p.outage_fraction,w.capacity,w.demand,w.load_ratio,w.failure_rate,m.net,m.population,(SELECT avg(satisfaction) FROM citizen_monthly WHERE tick=b.tick) satisfaction,(SELECT avg(disposable_income) FROM citizen_monthly WHERE tick=b.tick) disposable FROM b,p,w,m;",
+            "SELECT tick,capacity,demand,load_ratio,failure_rate FROM water_monthly ORDER BY tick DESC LIMIT 4;",
+            "SELECT tick,arrivals,departures,net,population FROM migration_monthly ORDER BY tick DESC LIMIT 4;",
+            "SELECT tick,avg(wear) wear,avg(congestion) congestion FROM road_monthly GROUP BY tick ORDER BY tick DESC LIMIT 2;"
+          ],
+          "levers_set": {
+            "water_sewer_capex": 1000000.0
+          },
+          "rationale": "Water has reached operational safety: load is 0.99 and failure is zero, with migration now neutral. Continuing 5M capex would be wasteful; I\u2019ll cut it to a maintenance-level 1M annual program while preserving the surplus. Roads remain stable, and hedged power remains the best available procurement despite its residual outage rate.",
+          "usage": {
+            "prompt_tokens": 26880,
+            "output_tokens": 494,
+            "total_tokens": 27374,
+            "calls": 2,
+            "seconds": 7.64
+          },
+          "seconds": 7.64,
+          "tool_seconds": 0.0,
+          "unaccounted_seconds": 0.0,
+          "error": null,
+          "tool_errors": [],
+          "timed_out_queries": [],
+          "infrastructure_errors": [],
+          "clamped": {},
+          "rejected": {}
+        },
+        {
+          "turn": 10,
+          "sql_calls": 7,
+          "queries": [
+            "WITH b AS (SELECT * FROM budget_monthly ORDER BY tick DESC LIMIT 1),p AS (SELECT * FROM power_monthly ORDER BY tick DESC LIMIT 1),w AS (SELECT * FROM water_monthly ORDER BY tick DESC LIMIT 1),m AS (SELECT * FROM migration_monthly ORDER BY tick DESC LIMIT 1) SELECT b.tick,b.balance,b.debt,b.treasury,p.demand_kw,p.supply_kw,p.outage_fraction,w.capacity,w.demand,w.load_ratio,w.failure_rate,m.net,m.population,(SELECT avg(satisfaction) FROM citizen_monthly WHERE tick=b.tick) satisfaction FROM b,p,w,m;",
+            "SELECT tick,capacity,demand,load_ratio,failure_rate FROM water_monthly ORDER BY tick DESC LIMIT 4;",
+            "SELECT tick,avg(wear) wear,avg(congestion) congestion FROM road_monthly GROUP BY tick ORDER BY tick DESC LIMIT 3;",
+            "SELECT tick,arrivals,departures,net,population FROM migration_monthly ORDER BY tick DESC LIMIT 3;",
+            "SELECT l.tick,l.electricity_tariff,l.power_contract_mode,p.demand_kw,p.supply_kw,p.outage_fraction FROM power_monthly p JOIN lever_monthly l USING(run_id,tick) ORDER BY l.tick DESC LIMIT 12;",
+            "SELECT l.electricity_tariff,avg(p.demand_kw) demand,avg(p.outage_fraction) outage,avg(b.utility_revenue) utility FROM power_monthly p JOIN lever_monthly l USING(run_id,tick) JOIN budget_monthly b USING(run_id,tick) GROUP BY l.electricity_tariff ORDER BY l.electricity_tariff;",
+            "SELECT tick,avg(disposable_income) disposable,avg(satisfaction) satisfaction,avg(uses_transit::int) transit FROM citizen_monthly GROUP BY tick ORDER BY tick DESC LIMIT 4;"
+          ],
+          "levers_set": {
+            "electricity_tariff": 0.8,
+            "water_sewer_capex": 1000000.0
+          },
+          "rationale": "Water is now comfortably safe (load 0.97, zero failures), roads are stable, and the treasury is strong at 7.83M. The remaining material problem is power: hedged procurement still leaves 19.1% of demand unserved. I\u2019ll keep hedging and maintenance capex, and raise the electricity tariff moderately to damp demand and reduce outage exposure without imposing a drastic price shock.",
+          "usage": {
+            "prompt_tokens": 42939,
+            "output_tokens": 973,
+            "total_tokens": 43912,
+            "calls": 3,
+            "seconds": 10.69
+          },
+          "seconds": 10.7,
+          "tool_seconds": 0.02,
+          "unaccounted_seconds": -0.01,
+          "error": null,
+          "tool_errors": [],
+          "timed_out_queries": [],
+          "infrastructure_errors": [],
+          "clamped": {},
+          "rejected": {}
+        },
+        {
+          "turn": 11,
+          "sql_calls": 4,
+          "queries": [
+            "WITH b AS (SELECT * FROM budget_monthly ORDER BY tick DESC LIMIT 1),p AS (SELECT * FROM power_monthly ORDER BY tick DESC LIMIT 1),w AS (SELECT * FROM water_monthly ORDER BY tick DESC LIMIT 1),m AS (SELECT * FROM migration_monthly ORDER BY tick DESC LIMIT 1) SELECT b.tick,b.balance,b.debt,b.treasury,p.demand_kw,p.supply_kw,p.outage_fraction,w.capacity,w.demand,w.load_ratio,w.failure_rate,m.net,m.population,(SELECT avg(satisfaction) FROM citizen_monthly WHERE tick=b.tick) satisfaction,(SELECT avg(disposable_income) FROM citizen_monthly WHERE tick=b.tick) disposable FROM b,p,w,m;",
+            "SELECT tick,electricity_tariff,demand_kw,supply_kw,outage_fraction FROM power_monthly JOIN lever_monthly USING(run_id,tick) ORDER BY tick DESC LIMIT 3;",
+            "SELECT tick,arrivals,departures,net,population FROM migration_monthly ORDER BY tick DESC LIMIT 3;",
+            "SELECT tick,avg(wear) wear,avg(congestion) congestion FROM road_monthly GROUP BY tick ORDER BY tick DESC LIMIT 2;"
+          ],
+          "levers_set": {
+            "electricity_tariff": 0.65,
+            "water_sewer_capex": 0.0,
+            "income_tax_rate": 0.06,
+            "property_tax_rate": 0.006
+          },
+          "rationale": "The final snapshot is fiscally healthy (8.88M treasury, positive 0.80M monthly balance), water is safe (load 0.95, no failures), and roads remain stable. The tariff increase did not reduce power demand or the 19% outage rate, but it did coincide with lower disposable income and satisfaction. I\u2019ll reverse that ineffective price increase, end water capex now that capacity is safe, and modestly ease taxes to support resident welfare while retaining hedged power and maintenance policies.",
+          "usage": {
+            "prompt_tokens": 31246,
+            "output_tokens": 709,
+            "total_tokens": 31955,
+            "calls": 2,
+            "seconds": 7.77
+          },
+          "seconds": 7.77,
+          "tool_seconds": 0.0,
+          "unaccounted_seconds": 0.0,
+          "error": null,
+          "tool_errors": [],
+          "timed_out_queries": [],
+          "infrastructure_errors": [],
+          "clamped": {},
+          "rejected": {}
+        }
+      ],
+      "tool_failures": 1,
+      "timeouts": 0,
+      "infrastructure_failures": 0,
+      "phases": {
+        "prepare_seconds": 7.4,
+        "play_seconds": 112.0
+      },
+      "write_back": {
+        "datasets": 9,
+        "tables": [
+          "budget_monthly",
+          "building_monthly",
+          "citizen_monthly",
+          "lever_monthly",
+          "migration_monthly",
+          "power_monthly",
+          "road_monthly",
+          "ticks",
+          "water_monthly"
+        ],
+        "skipped": null,
+        "failures": {}
+      }
+    },
+    "wall_seconds": 121.0
+  }
+}
