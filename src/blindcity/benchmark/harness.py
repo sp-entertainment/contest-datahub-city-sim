@@ -143,6 +143,14 @@ class RunHarness:
                 step_month(state, parent.stream("tick"))
                 if writer is not None:
                     writer.write_month(state)
+            if writer is not None:
+                # Land the turn before the next decision. The writer batches at 5,000 rows, which
+                # `citizen_monthly` reaches in a single month and `ticks` (one row a month) never
+                # reaches at all -- so without this the agent read a warehouse whose `ticks` and
+                # `road_monthly` were frozen at the last month of the crisis for the entire run,
+                # while `citizen_monthly` crept forward. It could not see its own decisions take
+                # effect, and any join across two tables silently misaligned by months.
+                writer.flush_all()
 
             components = health_index(state, baseline_pop)
             green = is_green(components, self.green_threshold)
