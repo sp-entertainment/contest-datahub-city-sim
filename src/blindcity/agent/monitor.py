@@ -22,9 +22,10 @@ from typing import Protocol
 import psycopg
 
 from blindcity.catalog.operational import (
-    OPERATIONAL_ASSERTIONS,
-    OperationalAssertion,
-    fires,
+    LEVER_GUIDANCE,
+    OUTCOME_ASSERTIONS,
+    lever_breach,
+    outcome_breach,
 )
 
 # An assertion sweep runs a handful of aggregates over the current run. Bounded so a slow sweep
@@ -50,49 +51,88 @@ class NoMonitor:
 
 
 class AssertionMonitor:
-    """Evaluates the catalog's assertions against this run and reports what is out of range."""
+    """Renders the catalog's expert guidance against the city as it stands now."""
 
     name = "assertions"
 
+    def _values(self, conn: psycopg.Connection) -> dict[str, float | None]:
+        out: dict[str, float | None] = {}
+        with conn.cursor() as cur:
+            cur.execute(f"SET LOCAL statement_timeout = '{MONITOR_TIMEOUT_SECONDS}s'")
+            for assertion in OUTCOME_ASSERTIONS:
+                cur.execute(assertion.sql)
+                row = cur.fetchone()
+                out[assertion.name] = None if row is None else row.get("value")
+            cur.execute(
+                "SELECT * FROM lever_monthly WHERE tick = (SELECT max(tick) FROM ticks)"
+            )
+            levers = cur.fetchone() or {}
+        for guidance in LEVER_GUIDANCE:
+            raw = levers.get(guidance.lever)
+            out[guidance.lever] = None if raw is None else float(raw)
+        return out
+
     def block(self, conn: psycopg.Connection, run_id: int, turn: int) -> str:
-        fired: list[tuple[OperationalAssertion, float]] = []
-        checked = 0
         try:
-            with conn.cursor() as cur:
-                cur.execute(f"SET LOCAL statement_timeout = '{MONITOR_TIMEOUT_SECONDS}s'")
-                for assertion in OPERATIONAL_ASSERTIONS:
-                    cur.execute(assertion.sql)
-                    row = cur.fetchone()
-                    checked += 1
-                    value = None if row is None else row.get("value")
-                    if value is not None and fires(assertion, float(value)):
-                        fired.append((assertion, float(value)))
+            values = self._values(conn)
             conn.rollback()  # read-only; do not leave the session idle in transaction
         except psycopg.Error:
-            # A monitoring failure must not cost the turn. The agent simply gets no block, which
-            # is the position the other two modes are in anyway.
+            # Monitoring must never cost the turn. Without a block the agent is simply in the
+            # position the other two modes are in anyway.
             try:
                 conn.rollback()
             except psycopg.Error:
                 pass
             return ""
 
-        if not checked:
-            return ""
-
         lines = [
             (
-                "DataHub monitoring. The catalog documents the operating conditions a functioning "
-                "city's data holds to, and these are evaluated against the city as it stands now."
+                "DataHub assertions. The catalog documents the operating envelope a well-run city "
+                "holds to, authored against this warehouse. Readings outside it are flagged, and "
+                "each lever carries how much moving it is actually worth."
             ),
         ]
-        if fired:
-            lines.append(f"BREACHED ({len(fired)} of {checked}):")
-            lines.extend(
-                f"  {a.table}.{a.column} = {v:.3g} -- {a.message}" for a, v in fired
-            )
+
+        breaches: list[str] = []
+        for assertion in OUTCOME_ASSERTIONS:
+            value = values.get(assertion.name)
+            how = outcome_breach(assertion, value)
+            if how is not None and value is not None:
+                breaches.append(
+                    f"  {assertion.table}.{assertion.column} = {value:.3g} -- {how}. "
+                    f"{assertion.note}"
+                )
+        if breaches:
+            lines.append("")
+            lines.append(f"CITY STATE, outside documented range ({len(breaches)}):")
+            lines.extend(breaches)
         else:
-            lines.append(f"  All {checked} operating conditions are met.")
+            lines.append("")
+            lines.append("CITY STATE: every documented measure is inside its healthy range.")
+
+        off_band: list[str] = []
+        for guidance in LEVER_GUIDANCE:
+            value = values.get(guidance.lever)
+            how = lever_breach(guidance, value)
+            if how is not None and value is not None:
+                off_band.append(
+                    f"  {guidance.lever} = {value:g} -- {how} [{guidance.impact}]. {guidance.note}"
+                )
+        if off_band:
+            lines.append("")
+            lines.append(f"LEVERS, outside documented range ({len(off_band)} of {len(LEVER_GUIDANCE)}):")
+            lines.extend(off_band)
+
+        # Named explicitly rather than left out. A turn spent tuning a lever that cannot move the
+        # outcome is a turn gone, and the agent has no way to know which those are from the data:
+        # every lever looks equally adjustable from its declared range.
+        negligible = [g.lever for g in LEVER_GUIDANCE if g.impact in ("low", "negligible")]
+        if negligible:
+            lines.append("")
+            lines.append(
+                "LOW YIELD -- measured to move the outcome by under 2% across their whole range; "
+                "set them once and spend the turn budget elsewhere: " + ", ".join(negligible)
+            )
         return "\n".join(lines)
 
 

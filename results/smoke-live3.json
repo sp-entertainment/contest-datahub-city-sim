@@ -1,0 +1,175 @@
+{
+  "scenario_name": "infrastructure_neglect",
+  "seed": 42,
+  "controller_name": "agent_datahub_live",
+  "mode": "agent_datahub_live",
+  "run_id": "1",
+  "turn_budget": 2,
+  "green_threshold": 0.62,
+  "baseline_population": 3133,
+  "recovered": false,
+  "green_turn": null,
+  "final_index": 0.49683111240660927,
+  "turns": [
+    {
+      "turn": 0,
+      "tick": 63,
+      "levers": {
+        "income_tax_rate": 0.12,
+        "property_tax_rate": 0.004,
+        "electricity_tariff": 0.05,
+        "road_maintenance_budget": 5200000.0,
+        "water_sewer_capex": 6400000.0,
+        "transit_fare": 0.0,
+        "zoning_release": 0.5,
+        "power_contract_mode": 2
+      },
+      "components": {
+        "solvency": 0.31290466641598313,
+        "satisfaction": 0.38101917230720667,
+        "service": 0.41856882737384105,
+        "population": 0.7425561989877342,
+        "index": 0.45096857298505777
+      },
+      "index": 0.45096857298505777,
+      "green": false
+    },
+    {
+      "turn": 1,
+      "tick": 66,
+      "levers": {
+        "income_tax_rate": 0.1,
+        "property_tax_rate": 0.004,
+        "electricity_tariff": 0.0,
+        "road_maintenance_budget": 6000000.0,
+        "water_sewer_capex": 8000000.0,
+        "transit_fare": 0.0,
+        "zoning_release": 0.5,
+        "power_contract_mode": 2
+      },
+      "components": {
+        "solvency": 0.2336270622589761,
+        "satisfaction": 0.5280588128908131,
+        "service": 0.4793839402453908,
+        "population": 0.7393643700697642,
+        "index": 0.49683111240660927
+      },
+      "index": 0.49683111240660927,
+      "green": false
+    }
+  ],
+  "meta": {
+    "crisis_months": 60,
+    "months_per_turn": 3,
+    "warehouse_run_id": 1,
+    "agent": {
+      "controller": "agent_datahub_live",
+      "model": "gpt-5.6-luna",
+      "catalog": "datahub",
+      "monitor": "assertions",
+      "tool_budget": 12,
+      "system_prompt_chars": 9357,
+      "usage": {
+        "prompt_tokens": 25905,
+        "output_tokens": 1779,
+        "total_tokens": 27684,
+        "calls": 4,
+        "seconds": 18.05
+      },
+      "turns": [
+        {
+          "turn": 0,
+          "sql_calls": 3,
+          "queries": [
+            "SELECT t.tick,t.year,t.month, b.balance,b.debt,b.treasury,b.income_tax_revenue,b.road_spend,b.water_sewer_spend, p.outage_fraction,p.demand_kw,p.supply_kw,w.load_ratio,w.failure_rate,m.population,m.net, c.satisfaction FROM ticks t LEFT JOIN budget_monthly b USING(run_id,tick) LEFT JOIN power_monthly p USING(run_id,tick) LEFT JOIN water_monthly w USING(run_id,tick) LEFT JOIN migration_monthly m USING(run_id,tick) LEFT JOIN (SELECT run_id,tick,avg(satisfaction) satisfaction FROM citizen_monthly GROUP BY run_id,tick) c USING(run_id,tick) ORDER BY t.tick DESC LIMIT 18",
+            "SELECT t.tick, avg(r.wear) avg_wear, avg(r.congestion) avg_congestion, avg(r.traffic) avg_traffic FROM ticks t JOIN road_monthly r USING(run_id,tick) GROUP BY t.tick ORDER BY t.tick DESC LIMIT 18",
+            "SELECT t.tick, l.income_tax_rate,l.property_tax_rate,l.electricity_tariff,l.road_maintenance_budget,l.water_sewer_capex,l.transit_fare,l.zoning_release,l.power_contract_mode FROM ticks t JOIN lever_monthly l USING(run_id,tick) ORDER BY t.tick DESC LIMIT 12"
+          ],
+          "levers_set": {
+            "income_tax_rate": 0.12,
+            "electricity_tariff": 0.05,
+            "road_maintenance_budget": 5200000.0,
+            "water_sewer_capex": 6400000.0,
+            "transit_fare": 0.0,
+            "zoning_release": 0.5,
+            "power_contract_mode": 2
+          },
+          "rationale": "The history shows a persistent infrastructure funding failure: roads received no maintenance and wear rose from about 0.70 to 0.97, while water capacity lagged demand (load ratio 0.852). The city has ample treasury, so I\u2019m funding both critical systems rather than overspending. I\u2019m also restoring the main revenue source and removing unusually punitive utility/transit charges that are depressing satisfaction. Hedging power and releasing some zoning are low-yield housekeeping changes.",
+          "usage": {
+            "prompt_tokens": 9640,
+            "output_tokens": 771,
+            "total_tokens": 10411,
+            "calls": 2,
+            "seconds": 8.56
+          },
+          "seconds": 8.59,
+          "tool_seconds": 0.02,
+          "unaccounted_seconds": 0.01,
+          "error": null,
+          "tool_errors": [],
+          "timed_out_queries": [],
+          "infrastructure_errors": [],
+          "clamped": {},
+          "rejected": {}
+        },
+        {
+          "turn": 1,
+          "sql_calls": 3,
+          "queries": [
+            "SELECT t.tick,t.year,t.month,b.balance,b.treasury,b.debt,b.income_tax_revenue,b.utility_revenue,b.road_spend,b.water_sewer_spend,p.outage_fraction,p.demand_kw,p.supply_kw,w.capacity,w.demand,w.load_ratio,w.failure_rate,m.population,m.net,avg(c.satisfaction) satisfaction,avg(c.disposable_income) disposable FROM ticks t LEFT JOIN budget_monthly b USING(run_id,tick) LEFT JOIN power_monthly p USING(run_id,tick) LEFT JOIN water_monthly w USING(run_id,tick) LEFT JOIN migration_monthly m USING(run_id,tick) LEFT JOIN citizen_monthly c USING(run_id,tick) GROUP BY t.tick,t.year,t.month,b.balance,b.treasury,b.debt,b.income_tax_revenue,b.utility_revenue,b.road_spend,b.water_sewer_spend,p.outage_fraction,p.demand_kw,p.supply_kw,w.capacity,w.demand,w.load_ratio,w.failure_rate,m.population,m.net ORDER BY t.tick DESC LIMIT 8",
+            "SELECT t.tick,avg(r.wear) wear,avg(r.congestion) congestion,avg(bm.condition_score) building_condition,avg(bm.occupancy) occupancy FROM ticks t LEFT JOIN road_monthly r USING(run_id,tick) LEFT JOIN building_monthly bm USING(run_id,tick) WHERE t.tick>=60 GROUP BY t.tick ORDER BY t.tick DESC LIMIT 8",
+            "SELECT t.tick,l.income_tax_rate,l.electricity_tariff,l.road_maintenance_budget,l.water_sewer_capex,l.transit_fare,l.zoning_release,l.power_contract_mode FROM ticks t JOIN lever_monthly l USING(run_id,tick) ORDER BY t.tick DESC LIMIT 8"
+          ],
+          "levers_set": {
+            "income_tax_rate": 0.1,
+            "electricity_tariff": 0.0,
+            "road_maintenance_budget": 6000000.0,
+            "water_sewer_capex": 8000000.0,
+            "transit_fare": 0.0
+          },
+          "rationale": "The intervention is working on roads: wear fell from 0.969 to 0.443 in three months, so I will keep substantial maintenance. Water is now the dominant failure: capacity has collapsed from 2,464 to 1,127 while demand remains about 2,088, producing a 1.85 load ratio and sharply worsening satisfaction. The current capital level is insufficient against that deterioration, so I\u2019m moving water capex to the top of its useful range. Treasury is nearly exhausted and debt has appeared, so I\u2019m reducing the tax burden to the documented minimum and eliminating the remaining electricity charge while preserving positive operating revenue.",
+          "usage": {
+            "prompt_tokens": 16265,
+            "output_tokens": 1008,
+            "total_tokens": 17273,
+            "calls": 2,
+            "seconds": 9.48
+          },
+          "seconds": 9.58,
+          "tool_seconds": 0.09,
+          "unaccounted_seconds": 0.01,
+          "error": null,
+          "tool_errors": [],
+          "timed_out_queries": [],
+          "infrastructure_errors": [],
+          "clamped": {},
+          "rejected": {}
+        }
+      ],
+      "tool_failures": 0,
+      "timeouts": 0,
+      "infrastructure_failures": 0,
+      "phases": {
+        "prepare_seconds": 7.3,
+        "play_seconds": 18.9
+      },
+      "write_back": {
+        "datasets": 9,
+        "tables": [
+          "budget_monthly",
+          "building_monthly",
+          "citizen_monthly",
+          "lever_monthly",
+          "migration_monthly",
+          "power_monthly",
+          "road_monthly",
+          "ticks",
+          "water_monthly"
+        ],
+        "skipped": null,
+        "failures": {}
+      }
+    },
+    "wall_seconds": 27.9
+  }
+}
