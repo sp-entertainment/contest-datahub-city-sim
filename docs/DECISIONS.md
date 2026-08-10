@@ -590,3 +590,56 @@ every gap had two candidate explanations, and no way to separate them.
 - `gpt-4o` is an older model. Some of the behaviour the newer model showed — holding a plan across
   twelve turns, recovering from a fan-out join — may not survive, and a drop in every arm at once
   is the expected shape rather than a regression in any one of them.
+
+## 2026-08-10 (later) — Back to gpt-5.6-luna, and the Analytics Agent is patched
+
+**Context.** The decision above put every mode on `gpt-4o` to avoid modifying a third-party
+component. The first scored run on it was abandoned partway through. `agent_raw` finished at
+0.5033 having lost turns 8–11 entirely to HTTP 429 — the org's gpt-4o limit is 30,000 tokens per
+minute, our calls run ~9k, and memory makes late turns the most expensive, so the *end* of the run
+is what died. In the turns it did play it produced **28 bad-table-or-column errors**, against one
+to three for `gpt-5.6-luna` on the same schema and the same prompt.
+
+That is not a mode failing to steer the city. It is a model that cannot reliably write a SELECT
+against a schema it has just been handed, and every arm would have carried the same handicap.
+Measuring four arms through that much noise would say more about gpt-4o's SQL than about the
+catalog.
+
+**Decision.** Every mode runs **`gpt-5.6-luna`** again, including the Analytics Agent, which is
+now **patched** — one setting, sent upstream as a draft PR.
+
+**Rationale.** The earlier decision traded measurement quality for a clean "no modifications"
+claim. That trade looked cheap when the cost was hypothetical; it was not. The patch is two
+supported LangChain options in one factory function, it is upstreamable on its own merits, and
+nothing is monkeypatched — a far smaller asterisk than a benchmark run on a model that cannot
+query its own warehouse.
+
+The reason the modes must share a model is unchanged and is the reason this is a global switch
+rather than a per-mode one: with every mode on one model, the only thing varying between them is
+the tools and context each is given, which is the quantity being measured.
+
+**Consequences.**
+
+- The Analytics Agent needs `OPENAI_REASONING_EFFORT=low`, which the patch adds. Sent upstream as
+  a draft PR against `datahub-project/analytics-agent`; see `infra/analytics-agent/README.md`.
+- **All four of its tier models must be pinned**, not just `LLM_MODEL`. The chart, quality and
+  delight tiers default to `gpt-4o-mini`, which rejects `reasoning.effort` outright — the quality
+  tier failed with a 400 on the first patched run and context assessment was silently skipped.
+  `preflight()` only sees the main model, so this is a model difference the benchmark's own guard
+  cannot catch, and it has to be got right by configuration.
+- Every number recorded on gpt-4o is discarded. Only `agent_raw` ever completed, and it completed
+  invalid.
+- Results from before 2026-08-10 were produced on this same model at effort `low` and are
+  directly comparable, but they were rerun anyway rather than mixed with new ones.
+
+**Decision 2: OpenAI is the only supported provider.** The local OpenAI-compatible client and the
+Gemini client are removed.
+
+**Rationale.** Neither produced a published number, so neither was ever verified against the thing
+being measured. An untested branch in `llm.py` is not neutral: that module decides what each mode
+sees, and a difference there is a difference in capability between arms. The local route also
+carried a model-name fallback that would send a local model id to a hosted API.
+
+**Consequences.** `LLM_PROVIDER` and `--provider` are gone; `LLM_BASE_URL` remains, and whatever
+answers it must speak `/v1/responses`. A test asserts there is exactly one client class, so a
+second backend cannot reappear unreachable and be wired up later.

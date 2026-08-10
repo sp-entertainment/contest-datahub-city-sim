@@ -23,7 +23,12 @@ from pathlib import Path
 
 from blindcity.console import configure_console
 
+# The three benchmark modes, in the order the comparison expects them to score. `agent_analytics`
+# is runnable but not in this default: it answers a different question -- "is DataHub's own agent
+# better at this than one we wrote" -- and folding it into the A/B would invite reading its score
+# as another point on the same curve. `--modes` takes it explicitly.
 MODES = ("agent_raw", "agent_datahub", "agent_datahub_live")
+RUNNABLE_MODES = (*MODES, "agent_analytics")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -35,8 +40,9 @@ def build_parser() -> argparse.ArgumentParser:
         "--modes",
         nargs="+",
         default=list(MODES),
-        choices=list(MODES),
-        help="Modes to run, in any order. Defaults to all three.",
+        choices=list(RUNNABLE_MODES),
+        help="Modes to run, in any order. Defaults to the three benchmark modes; "
+        "'agent_analytics' needs a running Analytics Agent (infra/analytics-agent/README.md).",
     )
     parser.add_argument(
         "--repeat", type=int, default=1,
