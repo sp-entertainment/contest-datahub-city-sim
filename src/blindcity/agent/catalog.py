@@ -92,6 +92,44 @@ class DataHubCatalog:
         payload = r.json()
         return (payload.get("data") or {}).get("dataset")
 
+    def _fine_grained(self, client: httpx.Client, table: str) -> list[str]:
+        """Column-level lineage for one table, as `source.col -> target.col` lines.
+
+        Read from the raw `upstreamLineage` aspect rather than through GraphQL: the GraphQL
+        `fineGrainedLineages` field resolves each end to its *dataset* urn, which throws away the
+        column and leaves exactly the table-level statement we already had.
+        """
+        import urllib.parse
+
+        urn = self.dataset_urn(table)
+        try:
+            r = client.get(
+                f"{self.gms_url}/aspects/{urllib.parse.quote(urn, safe='')}"
+                "?aspect=upstreamLineage&version=0"
+            )
+            if r.status_code != 200:
+                return []
+            aspect = (r.json().get("aspect") or {}).get(
+                "com.linkedin.dataset.UpstreamLineage", {}
+            )
+        except (httpx.HTTPError, ValueError):
+            return []
+
+        def field(schema_field_urn: str) -> tuple[str, str]:
+            # urn:li:schemaField:(urn:li:dataset:(...,db.schema.table,PROD),column)
+            column = schema_field_urn.rsplit(",", 1)[-1].rstrip(")")
+            dataset = schema_field_urn.split(",PROD)")[0].rsplit(",", 1)[-1].split(".")[-1]
+            return dataset, column
+
+        out: list[str] = []
+        for edge in aspect.get("fineGrainedLineages") or []:
+            for up in edge.get("upstreams") or []:
+                for down in edge.get("downstreams") or []:
+                    st, sc = field(up)
+                    tt, tc = field(down)
+                    out.append(f"{st}.{sc} -> {tt}.{tc}")
+        return sorted(set(out))
+
     def context_block(self, tables: list[str] | None = None) -> str:
         """Build the catalog block. Cached, since it does not change during a run."""
         if self._cached is not None:
@@ -137,6 +175,19 @@ class DataHubCatalog:
                 ]
                 if upstreams:
                     lines.append(f"Derived from: {', '.join(sorted(set(upstreams)))}")
+
+                # Column-level edges, which is where the useful part of lineage lives. At table
+                # level "derived from lever_monthly, citizen_monthly" says the budget depends on
+                # eight lever columns and thirteen citizen columns *somehow* -- 80-odd candidate
+                # pairings, and no way to tell which are real. The column edges name the three
+                # that exist, and carry the side effects with them: income_tax_rate reaches both
+                # income_tax_revenue and disposable_income, which is the whole trade-off.
+                #
+                # This matters more here than in most warehouses. Every lever is constant across
+                # the entire history, so these relationships cannot be recovered from the data by
+                # any amount of querying -- the catalog is the only place they exist.
+                for edge in self._fine_grained(client, table):
+                    lines.append(f"  {edge}")
 
                 if len(lines) > 1:
                     sections.append("\n".join(lines))

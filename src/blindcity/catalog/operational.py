@@ -209,3 +209,46 @@ def lever_breach(guidance: LeverGuidance, value: float | None) -> str | None:
     if value > guidance.high:
         return f"above the documented range {guidance.low:g}-{guidance.high:g}"
     return None
+
+
+@dataclass(frozen=True)
+class ResponseLag:
+    """How long a column takes to reflect a lever change, and why."""
+
+    column: str
+    note: str
+
+
+# Read from `sim/systems.py`. These are properties of how the data behaves, not tactics, and they
+# are invisible in the warehouse itself: every lever is constant across the whole recorded
+# history, so no query can reveal how fast anything responds to changing one.
+#
+# Without them an agent over-corrects. In earlier runs the control mode drove road spending
+# 16M -> 5M -> 16M across consecutive turns, reading a system that had not finished responding as
+# one that was not responding.
+RESPONSE_LAGS: tuple[ResponseLag, ...] = (
+    ResponseLag(
+        "water_monthly.capacity",
+        "the slowest system in the city, and the only one that grows linearly rather than "
+        "converging: capacity moves a fixed number of units a month, so the deficit closes on a "
+        "schedule that cannot be made up later. Closing it takes about 36 months at $3.6M a year, "
+        "23 at $5.6M, 16 at $8M. Funded late, it cannot finish inside the horizon at any price",
+    ),
+    ResponseLag(
+        "road_monthly.wear",
+        "converges toward an equilibrium at (budget/$1M) x 5% a month, so the budget sets both the "
+        "destination and the speed: about 13 months to close 90% of the gap at $3.2M a year, 8 at "
+        "$5M, 4.5 at $8M. Read a mid-flight value as progress, not as failure",
+    ),
+    ResponseLag(
+        "citizen_monthly.satisfaction",
+        "a moving average that keeps 70% of last month's value, so about 30% of any change lands "
+        "in the first month, 66% by the third and 88% by the sixth. A lever changed this turn is "
+        "roughly two-thirds visible by the next one",
+    ),
+    ResponseLag(
+        "migration_monthly.population",
+        "responds to satisfaction, so it carries satisfaction's lag plus its own; population is "
+        "the last thing to turn around and the last evidence that a policy worked",
+    ),
+)

@@ -24,6 +24,7 @@ import psycopg
 from blindcity.catalog.operational import (
     LEVER_GUIDANCE,
     OUTCOME_ASSERTIONS,
+    RESPONSE_LAGS,
     lever_breach,
     outcome_breach,
 )
@@ -122,6 +123,12 @@ class AssertionMonitor:
             lines.append("")
             lines.append(f"LEVERS, outside documented range ({len(off_band)} of {len(LEVER_GUIDANCE)}):")
             lines.extend(off_band)
+
+        # How fast each system answers. Without it the agent reads a change still working its way
+        # through as one that failed, and reverses a decision that was about to pay.
+        lines.append("")
+        lines.append("RESPONSE TIMES -- how long each system takes to reflect a change:")
+        lines.extend(f"  {lag.column}: {lag.note}" for lag in RESPONSE_LAGS)
 
         # Named explicitly rather than left out. A turn spent tuning a lever that cannot move the
         # outcome is a turn gone, and the agent has no way to know which those are from the data:
