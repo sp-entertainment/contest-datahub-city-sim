@@ -358,3 +358,100 @@ the case it exists to detect.
 **Fix.** Relax the preference around the probe and test `$LASTEXITCODE`, not `$?`. Every earlier
 run had Docker already up, which is why a function whose entire purpose is the down case had never
 executed its down path.
+
+## 2026-08-09 — Four bugs that produced plausible numbers
+
+All four passed the whole suite. Each corrupted what the agent could see while leaving the run
+looking healthy, which is the failure mode this file exists for. The fix that mattered most was not
+any individual patch: it was recording the full transcript of every model exchange
+(`blindcity.agent.transcript`). Every one of these was invisible in the scores and obvious there.
+
+### The agent could not see the consequences of its own decisions
+
+**Symptom.** The new operational monitor reported `road_monthly.wear = 0.969` on all twelve turns,
+byte-identical, while the city visibly changed.
+
+**Cause.** `WarehouseWriter` flushes a table when its buffer reaches `batch_size` (5,000).
+`citizen_monthly` writes ~3,235 rows a month, so it crossed the line and trickled through mid-run.
+`ticks` writes **one row a month** and `road_monthly` a few hundred, so neither ever reached the
+threshold and both sat frozen at the last month of the crisis until `finish()` ran at the very end.
+
+Measured over four turns before the fix:
+
+```
+turn 0: ticks=60 road=60 citizen=60
+turn 1: ticks=60 road=60 citizen=62
+turn 3: ticks=60 road=60 citizen=68
+```
+
+**Why it mattered.** `max(tick) FROM ticks` never moved, so any query anchored to the latest tick
+read the crisis, not the present. Road condition never responded to road spending. Worst of all the
+tables were *mutually inconsistent* — a join between `citizen_monthly` and `road_monthly` on `tick`
+silently misaligned by months. Every mode, every run, for the whole of Slice 6.
+
+**Fix.** `RunHarness.run` flushes at the end of each turn, before the next decision. Guarded by
+`tests/test_warehouse_freshness.py`. Worth about +0.06 of final index to `agent_raw` alone.
+
+**Lesson.** A buffered writer's flush threshold is a correctness boundary when anything reads the
+same tables mid-write. The tables that broke were the *small* ones — the bug scaled inversely with
+row count, which is the opposite of where anyone looks.
+
+### The glossary was emitted and never delivered
+
+**Symptom.** The catalog block promised "business glossary definitions" and contained none.
+
+**Cause.** `emit_glossary` created 20 `glossaryTerm` entities but never emitted a `glossaryTerms`
+aspect linking them to any dataset. They existed in DataHub, searchable in the UI, and
+`dataset(urn) { glossaryTerms }` returned nothing — so every consumer that reads the catalog through
+a dataset, including the agent, got zero.
+
+**Fix.** `TERM_COLUMNS` maps each term to the column it defines; `emit_term_links` attaches them.
+The aspect additionally requires an explicit `auditStamp`, which most aspects default and this one
+rejects with a 422. Catalog block grew 6,951 → 8,372 characters.
+
+**Lesson.** Emitting an entity is not publishing it. Assert on what a *consumer* receives, not on
+what the emitter sent.
+
+### Timeouts were reported as a clean run
+
+**Symptom.** A run that lost four queries and three minutes to statement timeouts printed
+`0 errors`.
+
+**Cause.** `AgentTurn.error` only ever captured LLM failures. A SQL timeout comes back as a tool
+payload, which the model reads and adapts to — so it costs a diagnosis without failing anything.
+
+**Fix.** Tool failures are recorded and split by meaning: a model asking for a table that does not
+exist is exploration and is reported flatly, while a timeout or dead warehouse prints `DEGRADED`.
+The first version lumped them together and fired on every healthy run, which is the same as no
+warning at all.
+
+### No memory between turns
+
+**Symptom.** The agent re-ran `information_schema` 29 times in one run and issued the *same*
+fan-out join on four separate turns, each killed by the 45s timeout.
+
+**Cause.** `decide()` built a fresh conversation every turn. It also meant the `set_levers`
+confirmation — including "your value was clamped" — was appended and then discarded, so the model
+never learned that a decision it made had not taken effect.
+
+**Fix.** The conversation carries across turns, with results older than two turns compacted to one
+line while the model's reasoning and every error survive verbatim. Errors are kept in full
+precisely because forgetting one is how the same fatal query got written four times. Worst-case
+peak prompt 19k tokens against 127k uncompacted.
+
+### Two assertions that were confidently wrong
+
+Both caught by `tests/test_operational_assertions.py` before they reached a run.
+
+**A satisfaction trend detector, exactly backwards.** In a failing city mean satisfaction *rises*:
+neglect drives a third of the population out, and the residents who remain get shorter commutes and
+less strain on the utilities, so it climbs 0.125 → 0.263 while the city empties. Meanwhile the
+recovering city plateaus at 0.734 and drifts down a thousandth, which a trend reads as decline. The
+detector failed both halves at once — silent on the failing city, firing on the healthy one.
+
+**`transit_fare` labelled "low yield"** when it moves the outcome 2.8% across its range. Telling an
+agent to ignore something that matters is the most damaging error guidance metadata can make.
+
+**Lesson.** Guidance that steers an agent needs its own validation, held to both directions: it must
+fire when things are bad *and* stay silent when they are fine. A one-sided check would have passed
+both of these.
