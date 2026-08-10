@@ -2,17 +2,25 @@
 
 **Objective.** Ship a working Blind City entry by 2026-08-10, 5:00pm EDT.
 
-**Status.** Updated 2026-08-03. Slices 0–5 done and verified against live infrastructure. The
-health index was rebuilt after a review found three components that did not measure what they
-claimed, congestion was un-saturated, assertions were scoped to a `run_id`, and the warehouse was
-re-recorded against a live Postgres. 102 tests, ruff clean.
+**Status.** Updated 2026-08-09, late. Slices 0–9 built. 217 tests, ruff clean. The benchmark runs
+end to end and produces its number:
 
-**Next: Slice 6 — the agent modes.** Unstarted, and it is the entire result. Everything built so
-far is apparatus for one number: whether `agent_datahub` recovers the city better than `agent_raw`.
+| Mode | Final index | Green by |
+| --- | ---: | ---: |
+| `agent_raw` | 0.6837 | turn 7 |
+| `agent_datahub` | 0.7362 | turn 6 |
+| `agent_datahub_live` | 0.8147 | turn 3 |
 
-Two Slice 4 items remain open, both needing a live Analytics Agent process rather than more code:
-confirming hands-on that it issues SQL against our warehouse, and demonstrating the manual loop
-end to end.
+Green is 0.62; the hand-calibrated reference policy scores 0.8132 at turn 4.
+
+**What remains is human-owned:** H2 (make the repo public), H4 (record the video), H5 (submit).
+See the Human tasks section. One engineering item is genuinely open — wiring the upstream Analytics
+Agent so the `human` mode can be played end to end.
+
+**Read `docs/RESULTS.md` before quoting any number.** The headline is one seed and one run per
+mode; repeated identical runs have varied by 0.02 of final index, and the descriptive-metadata gap
+reversed sign across four paired runs. The assertion result is far outside that noise; the
+descriptions-and-glossary result is not.
 
 ## Start here
 
@@ -54,8 +62,9 @@ warehouse schema, the tick loop, any lineage code, and the viewer's framework �
 design decisions that should be made by whoever makes them, not inherited from a stub. The lever
 bounds in `blindcity/levers.py` are plausible placeholders, not calibrated numbers.
 
-**Next action:** Slice 6 — agent modes (`agent_datahub` / `agent_raw`) implementing the controller
-interface from Slice 5.
+**Next action:** the human tasks — H2, H4, H5. Then, if there is time, apply the opaque-name
+baseline catalog to `agent_raw`: it is built and emitted but was never wired to the agent modes,
+and it is the most likely reason descriptive metadata showed no measurable effect.
 
 Slices 1–3 were built and reviewed on 2026-08-02. The review added per-edge lineage validation and
 found a dead column: road congestion was pinned at 1.0 on every segment for the entire run, which
@@ -237,7 +246,16 @@ The original contribution. Do not cut.
       between them is a bug that invalidates the headline result.** No branch on the mode exists in
       the loop; guarded by `tests/test_agent.py`.
 - [x] Crisis history written to the warehouse, so the cause of the crisis is discoverable by SQL.
-- [ ] Clean live smoke run for both modes, and the real per-mode cost of a 36-turn run for H3.
+- [x] Clean live smoke run for both modes, and the real per-mode cost of a run for H3. Measured
+      2026-08-09: ~2 minutes and ~250-315k tokens per mode-run.
+- [x] **Cross-turn memory.** The conversation now carries between turns, with old query results
+      compacted to one line while the model's reasoning and every error survive in full. Worth
+      about +0.10 of final index; it also delivered the `set_levers` confirmation the model had
+      never seen, since the turn used to end on that call and throw the result away.
+- [x] **Full transcripts.** Every exchange recorded to JSONL: system prompt, conversation as sent,
+      reply. Every context bug in this project was invisible in the scores and obvious here.
+- [x] **Third mode `agent_datahub_live`** — the static catalog plus expert assertions evaluated
+      each turn. 0.8147, green at turn 3, past the hand-calibrated policy's 0.8132 at turn 4.
 - [ ] Agent writes findings back into the catalog.
 - [ ] `TOOLS_IS_MUTATION_ENABLED=true` — only applies if the MCP path is adopted; the catalog is
       currently read over GMS GraphQL. See the handoff for the reasoning and the seam.
@@ -263,19 +281,17 @@ The original contribution. Do not cut.
 
 ### Slice 7 — Viewer and the human mode
 
-Cosmetic scene, functional controls. The scene is the first thing to cut under time pressure; the
-lever panel is not, because the `human` mode cannot play without it.
-
-- [ ] Lever panel: the eight controls as GUI inputs, each showing its position, each `POST`ing to
-      `/lever`. **Functional — required for the human mode.**
-- [ ] Advance control, so the player can step a turn and see the consequence.
-- [ ] City scene on a canvas: isometric tiles, buildings as blocks, roads, citizens as dots.
-      **Cosmetic — low fidelity by design.**
-- [ ] Condition shown visually, never numerically — worn roads look worn, unpowered buildings go
-      dark, derelict lots look derelict.
-- [ ] No charts, counters, gauges, trend lines, or numeric readouts of city state. This is
-      information parity between modes, not a style rule.
+- [x] Lever panel: eight sliders bounded from `blindcity.levers`, each posting to `/lever`.
+- [x] Advance control — applies levers and steps one scenario turn (three months).
+- [x] City scene on a canvas: isometric tiles, extruded buildings, roads, citizens as dots.
+- [x] Condition shown visually, never numerically. Height is density, colour is type, shade is
+      condition; unpowered buildings go dark, worn roads pale and thin.
+- [x] No charts, counters, gauges or numeric readouts. Guarded by `tests/test_viewer.py`.
 - [ ] The human mode wired to the Analytics Agent, so the player can ask questions and then act.
+      **Still open** — see the Slice 4 deferral above; this is the last piece of the human mode.
+
+**Verified 2026-08-09** against the live server: 8 sliders render, the scene paints, and
+apply-and-advance moves the city exactly three months with the chosen levers in force.
 
 **Verified when:** a person can play a scenario end to end and get a score comparable to an agent
 mode's, and cannot see a single number about the city's state that the agent modes do not also get.
@@ -289,25 +305,29 @@ looks flat and schematic, it is correct.
 
 ### Slice 8 — Run the comparison
 
-**Build the harness. Do not run the scored evaluation — that is H3.**
+- [x] `uv run eval` drives all three modes through one scenario on one seed.
+- [x] Per-mode results captured: trajectory, green turn, lever history, component breakdown.
+- [x] Results comparable across seeds and days — provenance (model, seed, threshold, git commit)
+      is written into every comparison.
+- [x] Verified without spending a real evaluation: `uv run eval --dry-run` plays the scripted
+      policies through the entire harness for free. A bare `uv run eval` refuses to do either,
+      rather than defaulting to one and misleading about the other.
+- [x] H3 handed off: `uv run eval --live --repeat 3`, roughly 2 minutes and ~300k tokens per
+      mode-run, so ~18 minutes and ~2.7M tokens for three repeats of three modes.
 
-Agent runs cost real money and real time, and produce the number the submission is built around.
-
-- [ ] `uv run eval` drives all three modes through one scenario on one seed.
-- [ ] Per-mode results captured: health trajectory, turn green was reached or not reached, lever
-      history, component breakdown.
-- [ ] Results comparable across seeds and across days.
-- [ ] Verified without spending a real evaluation: dry run, mocked agent, or scripted controller.
-- [ ] Hand off H3 with the exact command, the expected cost, and the expected wall-clock time.
+**The comparison is built not to flatter the result.** Ordering is reported, never enforced; every
+individual run survives alongside the mean; a single run per mode says out loud that it has no
+variance estimate; and a gap smaller than the observed spread is called out as noise.
 
 ### Slice 9 — Submission materials
 
-Everything a judge reads, minus the parts a human owns.
-
-- [ ] Project description written.
-- [ ] README polished for a first-time reader who is not us.
-- [ ] Sample outputs collected and attached.
-- [ ] A dry-run check that the repository is complete and clones clean.
+- [x] Project description written — `docs/SUBMISSION.md`, copy-paste ready for the Devpost form.
+- [x] README rewritten for a first-time reader: leads with the result, states the caveats, and
+      corrects a section that had become actively misleading about the control mode.
+- [x] Sample outputs collected — `results/` holds every run's JSON, agent report and full
+      transcript. `docs/RESULTS.md` is the writeup.
+- [x] Repository checked: LICENSE present, `.env` ignored, no credential matches anywhere in
+      tracked files or transcripts, 133 tracked files.
 
 ## Cut line
 
