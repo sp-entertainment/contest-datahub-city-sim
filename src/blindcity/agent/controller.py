@@ -39,6 +39,7 @@ from blindcity.agent.llm import (
     Usage,
     user_turn,
 )
+from blindcity.agent.monitor import Monitor, NoMonitor
 from blindcity.agent.tools import ToolContext, dispatch, tool_declarations
 from blindcity.levers import LEVERS
 from blindcity.sim.model import CityState
@@ -124,6 +125,9 @@ class AgentController:
     conn: psycopg.Connection
     run_id: int
     catalog: CatalogSource = field(default_factory=NoCatalog)
+    # Per-turn catalog signal. `NoMonitor` for both original modes, so their turn prompts stay
+    # byte-identical; only `agent_datahub_live` supplies one.
+    monitor: Monitor = field(default_factory=NoMonitor)
     tool_budget: int = DEFAULT_TOOL_BUDGET
     turn_budget: int | None = None
     history: list[AgentTurn] = field(default_factory=list)
@@ -227,7 +231,7 @@ class AgentController:
         # a decision made now shows its effect two turns later -- and an agent that forgets each
         # quarter cannot run that loop. It can only react to a snapshot, which is what both modes
         # did: neither ever revisited a tax rate, because neither remembered setting one.
-        segment: list[Turn] = [user_turn(self._turn_prompt(state, turn))]
+        segment: list[Turn] = [user_turn(self._turn_prompt(state, turn, monitored=True))]
         self._segments.append(segment)
         history = self._conversation()
         declarations = tool_declarations()
@@ -312,8 +316,13 @@ class AgentController:
         self._last_outcome = (applied, clamped, rejected)
         return dict(ctx.pending)
 
-    def _turn_prompt(self, state: CityState, turn: int) -> str:
-        """What the model sees each turn. Levers only — no city state, no score."""
+    def _turn_prompt(self, state: CityState, turn: int, *, monitored: bool = False) -> str:
+        """What the model sees each turn. Levers only — no city state, no score.
+
+        `monitored` runs the per-turn catalog check. Off by default so the many places that build
+        a prompt for inspection or for a test do not fire SQL as a side effect; `decide` is the
+        one caller that asks for it.
+        """
         levers = "\n".join(
             f"  {name}: {state.levers.get(name, LEVERS[name].default):g}" for name in LEVERS
         )
@@ -338,10 +347,17 @@ class AgentController:
                 lines.append(f"  {name}: rejected -- {why}")
             confirmation = "\n".join(lines) + "\n\n"
 
+        signal = ""
+        if monitored:
+            block = self.monitor.block(self.conn, self.run_id, turn)
+            if block:
+                signal = block + "\n\n"
+
         return (
             f"Turn {turn + 1}.{remaining}\n\n"
             f"{confirmation}"
             f"Levers currently in force:\n{levers}\n\n"
+            f"{signal}"
             "Investigate the city's data, then set the levers you want for this turn."
         )
 
@@ -351,6 +367,7 @@ class AgentController:
             "controller": self.name,
             "model": self.llm.model,
             "catalog": getattr(self.catalog, "name", type(self.catalog).__name__),
+            "monitor": getattr(self.monitor, "name", type(self.monitor).__name__),
             "tool_budget": self.tool_budget,
             "system_prompt_chars": len(self._system),
             "usage": self.usage.to_dict(),

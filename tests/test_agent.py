@@ -179,13 +179,35 @@ def test_both_arms_get_identical_turn_prompts(controllers):
     assert raw_llm.contents[0] == hub_llm.contents[0]
 
 
-def test_arm_definitions_differ_only_in_context():
-    """Two modes, two context values, one implementation."""
-    assert set(MODES) == {"agent_datahub", "agent_raw"}
-    assert MODES["agent_datahub"] == "datahub"
-    assert MODES["agent_raw"] == "none"
+def test_mode_definitions_differ_only_in_context():
+    """Three modes, one implementation, each differing from the last by one named capability.
+
+    `agent_raw` -> `agent_datahub` adds the static catalog. `agent_datahub` ->
+    `agent_datahub_live` adds the per-turn assertion check and changes nothing else, so the
+    original two-mode comparison still stands on its own and the third reads as an increment.
+    """
+    assert set(MODES) == {"agent_datahub", "agent_raw", "agent_datahub_live"}
+    assert MODES["agent_raw"] == ("none", "none")
+    assert MODES["agent_datahub"] == ("datahub", "none")
+    assert MODES["agent_datahub_live"] == ("datahub", "assertions")
+
+    # Exactly one field changes at each step.
+    raw, hub, live = MODES["agent_raw"], MODES["agent_datahub"], MODES["agent_datahub_live"]
+    assert sum(a != b for a, b in zip(raw, hub, strict=True)) == 1
+    assert sum(a != b for a, b in zip(hub, live, strict=True)) == 1
+
     assert isinstance(build_catalog("none"), NoCatalog)
     assert isinstance(build_catalog("datahub"), DataHubCatalog)
+
+
+def test_only_the_live_mode_gets_a_per_turn_injection():
+    """The two original modes must keep byte-identical turn prompts, so adding a third mode
+    cannot retroactively change the result the first two already produced."""
+    from blindcity.agent.monitor import AssertionMonitor, NoMonitor, build_monitor
+
+    assert isinstance(build_monitor("none"), NoMonitor)
+    assert isinstance(build_monitor("assertions"), AssertionMonitor)
+    assert build_monitor("none").block(None, 1, 0) == ""
 
 
 # --- Information parity with the human mode --------------------------------------------------
@@ -890,3 +912,62 @@ def test_a_clean_decision_adds_no_confirmation_noise(controllers):
     prompt = controller._turn_prompt(_state(), 1)
     assert "clamped" not in prompt and "rejected" not in prompt
     assert "transit_fare=1.5" in prompt
+
+
+def test_the_transcript_records_what_the_model_was_actually_sent(tmp_path):
+    """Every context bug here was invisible in the results and obvious in the transcript.
+
+    The catalog promised a glossary and shipped none for a whole slice: twenty terms were emitted
+    to DataHub and never linked to a dataset, and every run report looked perfect. A score says a
+    mode did badly. Only this says what the mode could see.
+    """
+    from blindcity.agent.transcript import RecordingLLM
+
+    path = tmp_path / "t.jsonl"
+    inner = FakeLLM([Reply(text="hi", calls=[_call("sql_query", {"query": "SELECT 1"})])])
+    rec = RecordingLLM(inner, path, mode="agent_raw")
+    rec.generate(system="SYS-PROMPT", history=[user_turn("turn one")], tools=tool_declarations())
+
+    lines = [json.loads(x) for x in path.read_text(encoding="utf-8").splitlines()]
+    request = next(x for x in lines if x["phase"] == "request")
+    reply = next(x for x in lines if x["phase"] == "reply")
+
+    assert request["system"] == "SYS-PROMPT", "the system prompt was not captured verbatim"
+    assert request["history"][0]["text"] == "turn one"
+    assert "sql_query" in request["tools"] and "set_levers" in request["tools"]
+    assert reply["calls"][0]["name"] == "sql_query"
+    assert rec.model == inner.model, "the wrapper must be transparent to the controller"
+
+
+def test_the_transcript_survives_a_provider_failure(tmp_path):
+    """A run that dies mid-call is exactly when the evidence matters most, so the request is
+    written before the call and the failure is recorded rather than swallowed."""
+    from blindcity.agent.llm import LLMError
+    from blindcity.agent.transcript import RecordingLLM
+
+    class Exploding:
+        model = "boom"
+
+        def generate(self, *, system, history, tools=None):
+            raise LLMError("provider refused")
+
+    path = tmp_path / "t.jsonl"
+    rec = RecordingLLM(Exploding(), path, mode="agent_raw")
+    with pytest.raises(LLMError):
+        rec.generate(system="S", history=[user_turn("q")])
+
+    lines = [json.loads(x) for x in path.read_text(encoding="utf-8").splitlines()]
+    assert [x["phase"] for x in lines] == ["request", "error"]
+    assert "provider refused" in lines[1]["error"]
+
+
+def test_a_rerun_does_not_append_to_the_previous_transcript(tmp_path):
+    """Two runs concatenated into one file would read as a single very long run."""
+    from blindcity.agent.transcript import RecordingLLM
+
+    path = tmp_path / "t.jsonl"
+    RecordingLLM(FakeLLM(), path, mode="a").generate(system="S", history=[user_turn("first")])
+    RecordingLLM(FakeLLM(), path, mode="a").generate(system="S", history=[user_turn("second")])
+
+    text = path.read_text(encoding="utf-8")
+    assert "first" not in text and "second" in text

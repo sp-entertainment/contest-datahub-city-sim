@@ -297,6 +297,38 @@ GLOSSARY_TERMS: tuple[tuple[str, str, str], ...] = (
 )
 
 
+# Which column each glossary term defines, as (term name, table, column).
+#
+# Without this the terms are emitted as free-floating entities: they exist in DataHub, they are
+# searchable in the UI, and nothing links them to the data they describe -- so a dataset query
+# returns no terms and the agent's catalog block promised a glossary it could not deliver. Eleven
+# of the twenty could be matched by snake-casing the term name, but matching on spelling would
+# silently drop the nine that are named for a concept rather than a column, which are the ones
+# carrying the causal content ("satisfaction ... drives migration").
+TERM_COLUMNS: tuple[tuple[str, str, str], ...] = (
+    ("IncomeTaxRate", "lever_monthly", "income_tax_rate"),
+    ("PropertyTaxRate", "lever_monthly", "property_tax_rate"),
+    ("ElectricityTariff", "lever_monthly", "electricity_tariff"),
+    ("RoadMaintenanceBudget", "lever_monthly", "road_maintenance_budget"),
+    ("WaterSewerCapex", "lever_monthly", "water_sewer_capex"),
+    ("TransitFare", "lever_monthly", "transit_fare"),
+    ("ZoningRelease", "lever_monthly", "zoning_release"),
+    ("PowerContractMode", "lever_monthly", "power_contract_mode"),
+    ("CitizenSatisfaction", "citizen_monthly", "satisfaction"),
+    ("DisposableIncome", "citizen_monthly", "disposable_income"),
+    ("MunicipalBudget", "budget_monthly", "treasury"),
+    ("IncomeTaxRevenue", "budget_monthly", "income_tax_revenue"),
+    ("RoadWear", "road_monthly", "wear"),
+    ("Congestion", "road_monthly", "congestion"),
+    ("PowerOutage", "power_monthly", "outage_fraction"),
+    ("WaterLoadRatio", "water_monthly", "load_ratio"),
+    ("Migration", "migration_monthly", "net"),
+    ("BuildingCondition", "building_monthly", "condition_band"),
+    ("Commute", "commute_monthly", "travel_time"),
+    ("TileZoning", "tiles", "zoning"),
+)
+
+
 # Volume / range assertions emitted into DataHub (full catalog only).
 ASSERTIONS: tuple[tuple[str, str, str], ...] = (
     # (table, column_or_*, description)

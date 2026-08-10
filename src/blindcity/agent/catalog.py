@@ -149,10 +149,16 @@ class DataHubCatalog:
             "## Data catalog",
             "",
             (
-                "The warehouse is documented in DataHub. Table and column descriptions, business "
-                "glossary definitions, and lineage between tables follow. Lineage is generated "
-                "from the simulation's own causal graph and every edge is verified against the "
-                "running model, so 'derived from' states a real causal dependency, not a guess."
+                "This warehouse is catalogued in DataHub, a metadata platform that records what "
+                "each table and column means, defines the business terms behind them, and tracks "
+                "which tables are derived from which. That documentation is reproduced in full "
+                "below -- it is everything the catalog holds about this warehouse, so there is "
+                "nothing further to look up.\n\n"
+                "Use it to skip discovery. You do not need to inspect information_schema or "
+                "sample tables to work out what a column holds; it is described here. Lineage is "
+                "generated from the simulation's own causal graph and every edge is verified "
+                "against the running model, so 'derived from' states a real causal dependency "
+                "rather than a guess -- it tells you which inputs actually move a given output."
             ),
             "",
         ]

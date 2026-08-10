@@ -14,7 +14,13 @@ import urllib.request
 from dataclasses import dataclass
 from typing import Any
 
-from blindcity.catalog.schema_spec import ASSERTIONS, GLOSSARY_TERMS, TABLES, TableSpec
+from blindcity.catalog.schema_spec import (
+    ASSERTIONS,
+    GLOSSARY_TERMS,
+    TABLES,
+    TERM_COLUMNS,
+    TableSpec,
+)
 from blindcity.sim.causal import CAUSAL_EDGES
 
 PLATFORM = "postgres"
@@ -146,6 +152,40 @@ def emit_glossary(gms: str) -> int:
         _emit_mcp(gms, urn, "status", _status_aspect())
         count += 1
     return count
+
+
+def emit_term_links(gms: str) -> int:
+    """Attach each glossary term to the dataset whose column it defines.
+
+    A term entity on its own is unreachable: `dataset(urn) { glossaryTerms }` returns nothing, so
+    the whole glossary was invisible to anything reading the catalog through a dataset -- which is
+    every consumer we have, including the agent. Twenty terms were emitted and none were delivered.
+    """
+    by_table: dict[str, list[tuple[str, str]]] = {}
+    for term, table, column in TERM_COLUMNS:
+        by_table.setdefault(table, []).append((term, column))
+
+    linked = 0
+    for table, entries in by_table.items():
+        associations = [
+            {"urn": glossary_term_urn(term), "context": column} for term, column in entries
+        ]
+        _emit_mcp(
+            gms,
+            dataset_urn(table),
+            "glossaryTerms",
+            {
+                "terms": associations,
+                # Required by the GlossaryTerms schema; GMS rejects the aspect with a 422 without
+                # it, unlike most aspects which default it.
+                "auditStamp": {
+                    "time": int(time.time() * 1000),
+                    "actor": "urn:li:corpuser:datahub",
+                },
+            },
+        )
+        linked += len(associations)
+    return linked
 
 
 def emit_tables(gms: str, *, baseline: bool) -> list[str]:
@@ -350,6 +390,8 @@ def emit_all(
     assertions = 0
     if not baseline:
         glossary = emit_glossary(gms)
+        # Terms are useless until something links them to the data they describe.
+        emit_term_links(gms)
         lineage = emit_lineage(gms)
         assertions = emit_assertions(gms, results=assertion_results)
 

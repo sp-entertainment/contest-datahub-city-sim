@@ -17,10 +17,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--mode",
-        choices=("agent_datahub", "agent_raw"),
+        choices=("agent_datahub", "agent_raw", "agent_datahub_live"),
         default="agent_datahub",
         help="'agent_raw' is the A/B control: same model, prompt, seed, tool budget and SQL "
-        "access, with only the DataHub catalog context removed. Keep it honest (AGENTS.md).",
+        "access, with only the DataHub catalog context removed. 'agent_datahub_live' adds the "
+        "catalog's assertions, evaluated each turn against the current city. Keep it honest "
+        "(AGENTS.md).",
     )
     parser.add_argument(
         "--model",
@@ -49,6 +51,13 @@ def build_parser() -> argparse.ArgumentParser:
         "OpenAI-compatible client and differ only in $LLM_BASE_URL and the key.",
     )
     parser.add_argument("--out", default=None, help="Write the run result JSON here.")
+    parser.add_argument(
+        "--transcript",
+        default=None,
+        help="Write every exchange with the model to this JSONL file: system prompt, full "
+        "conversation as sent, and each reply. The only artifact that can settle what a mode "
+        "could actually see. Defaults to <out>.transcript.jsonl when --out is given.",
+    )
     parser.add_argument(
         "--keep-views",
         action="store_true",
@@ -80,6 +89,12 @@ def main() -> int:
     from blindcity.agent.run import estimate_full_run, run_mode
     from blindcity.benchmark.scenario import INFRASTRUCTURE_CRISIS
 
+    # On by default whenever results are being written: the runs that mattered were the ones
+    # nobody thought to record.
+    transcript_path = args.transcript
+    if transcript_path is None and args.out:
+        transcript_path = str(Path(args.out).with_suffix(".transcript.jsonl"))
+
     try:
         run = run_mode(
             args.mode,
@@ -89,6 +104,7 @@ def main() -> int:
             keep_views=args.keep_views,
             clean_warehouse=not args.keep_warehouse,
             force_clean=args.force_clean,
+            transcript=transcript_path,
         )
     except LLMError as exc:
         print(f"agent: {exc}", file=sys.stderr)
@@ -145,6 +161,8 @@ def main() -> int:
         side = Path(args.out).with_suffix(".agent.json")
         side.write_text(json.dumps(report, indent=2), encoding="utf-8")
         print(f"agent: wrote {args.out} and {side}")
+    if transcript_path:
+        print(f"agent: transcript at {transcript_path}")
     return 0
 
 

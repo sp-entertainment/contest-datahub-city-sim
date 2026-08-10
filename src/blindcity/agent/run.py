@@ -17,6 +17,8 @@ from blindcity.agent import runscope, writeback
 from blindcity.agent.catalog import build_catalog
 from blindcity.agent.controller import DEFAULT_TOOL_BUDGET, AgentController
 from blindcity.agent.llm import LLM, build_llm
+from blindcity.agent.monitor import build_monitor
+from blindcity.agent.transcript import RecordingLLM
 from blindcity.benchmark.harness import RunHarness
 from blindcity.benchmark.results import RunResult
 from blindcity.benchmark.scenario import INFRASTRUCTURE_CRISIS, Scenario
@@ -28,10 +30,14 @@ from blindcity.sim.warehouse import (
     runs_in_flight,
 )
 
-# The two modes. `context` is the only field that differs, and it is the only field that may.
-MODES: dict[str, str] = {
-    "agent_datahub": "datahub",
-    "agent_raw": "none",
+# The modes, as (catalog, monitor). Three points on one line rather than one changed number:
+# `agent_raw` has no catalog, `agent_datahub` has the static one, `agent_datahub_live` adds the
+# per-turn assertion check. Keeping the first two untouched means the original comparison stands
+# on its own and the third can be read as an increment to it.
+MODES: dict[str, tuple[str, str]] = {
+    "agent_datahub": ("datahub", "none"),
+    "agent_raw": ("none", "none"),
+    "agent_datahub_live": ("datahub", "assertions"),
 }
 
 
@@ -54,6 +60,7 @@ def run_mode(
     write_back_findings: bool = True,
     clean_warehouse: bool = True,
     force_clean: bool = False,
+    transcript: str | None = None,
 ) -> ModeRun:
     """Play one mode. `turns` truncates the scenario for smoke tests; None plays it in full."""
     if mode not in MODES:
@@ -75,6 +82,9 @@ def run_mode(
     harness = RunHarness(scenario)
     # One factory for both modes: they cannot end up on different providers or models.
     client = llm or build_llm(model=model)
+    if transcript:
+        # Wrapped last, so the recording is of exactly what the controller sent.
+        client = RecordingLLM(client, transcript, mode=mode)
 
     # Two connections on purpose. The writer bulk-loads with COPY against the real tables in
     # `public`; the agent reads through a per-run view schema with `search_path` pointed at it.
@@ -116,7 +126,8 @@ def run_mode(
             llm=client,
             conn=agent_conn,
             run_id=warehouse_run_id,
-            catalog=build_catalog(MODES[mode]),
+            catalog=build_catalog(MODES[mode][0]),
+            monitor=build_monitor(MODES[mode][1]),
             tool_budget=tool_budget,
             turn_budget=scenario.turn_budget,
             reconnect=connect,
