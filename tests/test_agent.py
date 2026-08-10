@@ -971,3 +971,28 @@ def test_a_rerun_does_not_append_to_the_previous_transcript(tmp_path):
 
     text = path.read_text(encoding="utf-8")
     assert "first" not in text and "second" in text
+
+
+def test_reasoning_effort_is_set_explicitly_and_shared():
+    """The reasoning budget is a property of the thing being benchmarked, so it must be stated
+    rather than inherited from a provider default -- and it must be the same for every mode.
+
+    It ran on the unstated default through every result up to 2026-08-09: about 256 output tokens
+    a call including reasoning, which is a model barely thinking. `low` is then a deliberate
+    choice, not thrift: a large budget lets the control mode brute-force its way to the same
+    conclusions by querying more, compressing the difference the catalog is supposed to make.
+    """
+    from blindcity.agent.llm import LLM_REASONING_EFFORT, ResponsesClient
+
+    assert LLM_REASONING_EFFORT in {"minimal", "low", "medium", "high"}, LLM_REASONING_EFFORT
+
+    sent: dict[str, Any] = {}
+
+    class Client(ResponsesClient):
+        def post(self, url, body, headers):
+            sent.update(body)
+            return {"output": [], "usage": {}}
+
+    client = Client(model="m", api_key="k")
+    client.generate(system="s", history=[user_turn("q")], tools=tool_declarations())
+    assert sent["reasoning"] == {"effort": LLM_REASONING_EFFORT}, sent.get("reasoning")

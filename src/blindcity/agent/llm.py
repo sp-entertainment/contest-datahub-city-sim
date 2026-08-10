@@ -47,6 +47,18 @@ DEFAULT_BASE_URL = os.environ.get("LLM_BASE_URL", "http://localhost:1234/v1")
 # this one silently handicaps the thing being benchmarked.
 LLM_TIMEOUT_SECONDS = float(os.environ.get("LLM_TIMEOUT", "900"))
 
+# How hard the model is allowed to think per reply, for models that expose a reasoning budget.
+#
+# Set explicitly rather than left to the provider default, because it is a property of the thing
+# being benchmarked and every mode must get the same one. It ran on the unstated default through
+# every result up to 2026-08-09 -- roughly 256 output tokens a call, reasoning included, which is
+# a model barely thinking.
+#
+# `low` is deliberate, not thrift. The comparison is about what the *catalog* supplies; a large
+# reasoning budget lets the control mode brute-force its way to the same conclusions by querying
+# more, which compresses the very difference being measured.
+LLM_REASONING_EFFORT = os.environ.get("LLM_REASONING_EFFORT", "low").strip().lower()
+
 
 class LLMError(RuntimeError):
     """The provider refused, failed, or returned something unusable."""
@@ -401,6 +413,7 @@ class ResponsesClient(_HttpClient):
         max_retries: int = 4,
         min_interval: float = 0.0,
         api_key: str | None = None,
+        reasoning_effort: str | None = None,
     ) -> None:
         super().__init__(timeout=timeout, max_retries=max_retries, min_interval=min_interval)
         self.base_url = (base_url or DEFAULT_BASE_URL).rstrip("/")
@@ -413,6 +426,7 @@ class ResponsesClient(_HttpClient):
         self.model = resolved
         # Reasoning models reject a non-default temperature outright, so it is not sent at all.
         self.temperature = temperature
+        self.reasoning_effort = (reasoning_effort or LLM_REASONING_EFFORT) or None
         self._key = (
             api_key or os.environ.get("LLM_API_KEY") or os.environ.get("OPENAI_API_KEY") or ""
         )
@@ -482,6 +496,8 @@ class ResponsesClient(_HttpClient):
             body["tools"] = converted
         if self.temperature is not None:
             body["temperature"] = self.temperature
+        if self.reasoning_effort:
+            body["reasoning"] = {"effort": self.reasoning_effort}
 
         started = time.monotonic()
         data = self.post(
