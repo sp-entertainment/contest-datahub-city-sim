@@ -1,125 +1,154 @@
 # Blind City
 
-A city simulation with no interface.
+**A benchmark for whether data catalogs make AI agents better at their job.**
 
-The city runs. It produces enormous volumes of data — citizens, households, roads, power, water,
-sewer, budget. Your screen shows the city and eight levers. Nothing else. No charts, no counters, no
-warnings, no trends.
+A city simulation runs, producing hundreds of thousands of rows into Postgres — citizens,
+households, roads, power, water, budget, month by month. Then it is put into a crisis, and an agent
+is asked to get it out using eight policy levers and twelve quarterly decisions.
 
-To find out what is happening, you ask an agent. The agent uses [DataHub](https://datahub.com) to
-learn what data exists, what it means, and how it connects, then queries the warehouse and answers
-you. The catalog and the agent, together, replace the interface.
+The agent cannot see the city. It can only query the warehouse. What changes between runs is **how
+much the catalog tells it about that warehouse** — and we measure what that is worth.
 
 Built for [Build with DataHub: The Agent Hackathon](https://datahub.devpost.com/).
 
-## The idea
+## The result
 
-Every game interface does two jobs: it finds the relevant numbers among everything the engine tracks,
-and it explains what they mean. That is precisely what a metadata catalog does. So we removed the
-interface and pointed an agent at the catalog instead.
+Same model, same seed, same crisis, same levers, same turn budget. The only difference is what
+DataHub gave each agent.
 
-The simulation is also, and mainly, a laboratory. Because we wrote it, we have ground truth. So we
-can put a city into the same crisis repeatedly and measure who gets it out — an agent with catalog
-context, the same agent without, or a person. No real data team can run that experiment. Their
-history only happened once.
+| Mode | What the catalog provides | Final health index | Green by |
+| --- | --- | ---: | ---: |
+| `agent_raw` | Nothing. Schema discovery via `information_schema` only | 0.6837 | turn 7 |
+| `agent_datahub` | Descriptions, glossary, column-level lineage | **0.7362** | turn 6 |
+| `agent_datahub_live` | The above, plus expert assertions evaluated each turn | **0.8147** | turn 3 |
+| *`GOOD_POLICY`* | *hand-calibrated reference, not an agent* | *0.8132* | *turn 4* |
+| *`BAD_POLICY`* | *deliberate neglect, not an agent* | *0.3244* | *never* |
 
-## It is a benchmark
+Green is 0.62. **The fully-catalogued agent beat the hand-tuned expert policy and got there in a
+quarter of the turns.**
 
-The city is the substrate, not the deliverable. A **scenario** puts it into a crisis; a
-**controller** pulls levers over a fixed turn budget; a **composite health index** scores whether it
-got back into the green in time. Three controllers face the identical seed, crisis, and budget:
+### What we actually learned
 
-| Mode | Who is deciding | What they can see |
+The interesting result is not "catalogs help." It is *which kind* of metadata helped:
+
+- **Descriptive metadata alone was worth little.** Across three earlier paired runs, `agent_datahub`
+  vs `agent_raw` produced gaps of +0.045, +0.043 and **−0.040** — the sign flipped, so descriptions
+  and glossary alone sat inside the run-to-run noise. Our table names are already human-readable, so
+  a description that says `income_tax_revenue: Income tax collected` adds nothing the column name
+  did not.
+- **Prescriptive metadata transformed behaviour.** Assertions that document the operating range a
+  healthy city holds to — and, just as importantly, which levers are *not worth tuning* — moved the
+  agent from muddling through to expert play.
+- **Relationships the data cannot show are where lineage earns its keep.** Every lever is constant
+  across the entire recorded history, so no amount of querying reveals that `income_tax_rate` drives
+  `income_tax_revenue`. The catalog is the only place that relationship exists.
+
+For a data platform team the practical reading is: documenting your columns will not make your
+warehouse agent-ready. Documenting what *good* looks like might.
+
+## How it is a benchmark
+
+The city is the substrate, not the deliverable. A **scenario** puts it into a crisis (five years of
+deferred maintenance plus a fiscal shock); a **controller** pulls levers over twelve quarterly
+turns; a **composite health index** — solvency, satisfaction, service, population retention — scores
+whether it recovered.
+
+Four controllers face an identical seed, crisis, and budget:
+
+| Mode | Who decides | What they can see |
 | --- | --- | --- |
-| `human` | You | The city, the levers, and the Analytics Agent to ask questions |
-| `agent_datahub` | Our agent | DataHub over MCP, plus SQL |
-| `agent_raw` | Our agent | SQL only — no catalog |
+| `human` | You | The city render, the levers, and the Analytics Agent to ask questions |
+| `agent_raw` | Our agent | SQL against the warehouse. No catalog |
+| `agent_datahub` | Our agent | The same, plus DataHub descriptions, glossary and lineage |
+| `agent_datahub_live` | Our agent | The same, plus assertions evaluated against the city each turn |
 
-`agent_datahub` vs `agent_raw` measures what the metadata is worth. `human` vs `agent_datahub`
-measures what the automation is worth. Every mode gets the same view of the city, so the metadata is
-the only thing that varies — which is why there are no numbers on the screen.
+The three agent modes are **one implementation instantiated three times**. There is no `if mode ==`
+anywhere in the loop, and `tests/test_agent.py` fails the build if the prompts, tools or turn
+messages differ by anything other than the catalog block. That is the only way "they differ in
+exactly one thing" is a property of the code rather than a promise in a document.
 
-## The baseline catalog (control mode)
+## Fairness, and where it is imperfect
 
-The A/B comparison needs an honest control: same warehouse, same SQL access, same model and tool
-budget — **without** catalog context that would tip the agent toward the right tables and joins.
+Everything below is enforced by tests unless noted.
 
-`uv run datahub-emit --baseline` emits that control catalog. It has:
+- **No mode is told the scoring function.** Not the index, not its components, not the threshold. An
+  agent that knew the weights would optimise the metric instead of fixing the city.
+- **No city-state numbers appear in any prompt.** Population, treasury and satisfaction are
+  discoverable only through SQL.
+- **The viewer shows no numbers either.** Worn roads look worn; unpowered buildings go dark. That is
+  information parity with the agent modes, not a style choice.
+- **Every run starts from an empty warehouse**, so no run inherits another's rows or planner
+  statistics.
+- **Assertions are derived from the simulation's own mechanics** and re-derived by
+  `tests/test_operational_assertions.py`, which fails if a documented band stops matching what the
+  code does. They state operating ranges and response times; they never name a lever to pull.
 
-| Present | Absent |
-| --- | --- |
-| Table and column *names* (typed schema only) | Descriptions on tables or columns |
-| | Glossary terms |
-| | Lineage (causal graph) |
-| | Assertions |
+Known imperfections, stated plainly:
 
-Table names are deliberately opaque in the style of a rushed legacy ETL dump, not gibberish and not
-the semantic names the full catalog uses:
+- **`agent_raw` is not fully blind.** `docs/DECISIONS.md` specifies a control catalog with opaque
+  table names (`t_person_m`, `t_budg_m`) so the control would have to rediscover meaning. That
+  catalog is built and emitted by `uv run datahub-emit --baseline`, but the agent modes query the
+  real warehouse with its readable names, so the handicap was never applied. This is very likely why
+  descriptive metadata showed no measurable effect.
+- **One seed, one run per mode** in the headline table. Repeated identical runs have varied by about
+  0.02 of final index. The `agent_datahub_live` margin is far outside that; the `agent_datahub`
+  margin is not comfortably so.
+- **The `human` mode has not been played end to end.** The lever panel and scene work; wiring the
+  upstream Analytics Agent is unfinished.
 
-| Full catalog | Baseline (control) |
-| --- | --- |
-| `citizen_monthly` | `t_person_m` |
-| `budget_monthly` | `t_budg_m` |
-| `lever_monthly` | `t_policy_m` |
-| `road_monthly` | `t_road_m` |
-| `power_monthly` | `t_pwr_m` |
-| `water_monthly` | `t_h2o_m` |
-| `migration_monthly` | `t_mig_m` |
-| … | … |
+## Quick start
 
-**Why this is fair, not rigged.** A real uncatalogued warehouse still has *some* names — usually
-abbreviated, inconsistent, and undocumented. An agent with SQL alone can still `SELECT` from
-`t_person_m`; it just has to rediscover what the columns mean and how tables relate. Giving the
-control mode random UUIDs or empty schemas would make the comparison a strawman. Giving it the full
-glossary and lineage would erase the treatment. Opaque-but-queryable names with no docs is the
-honest middle: the only thing that differs between `agent_datahub` and `agent_raw` is metadata
-context, which is the quantity under measurement.
-
-The mapping lives in `blindcity.catalog.schema_spec` (`TableSpec.baseline_name`).
-
-## Requirements
-
-- 16 GB RAM or more. DataHub's quickstart alone wants 8 GB plus 2 GB swap.
-- 25 GB free disk.
-- Docker.
-- Python 3.11 or newer, and [`uv`](https://docs.astral.sh/uv/).
-
-## Getting started
+Requires 16 GB RAM, 25 GB disk, Docker, Python 3.11+ and [`uv`](https://docs.astral.sh/uv/).
 
 ```bash
-datahub docker quickstart
+datahub docker quickstart          # DataHub Core on :9002, GraphQL on :8080
+docker compose -f infra/postgres/docker-compose.yml up -d   # warehouse Postgres on :5432
+uv sync --group dev
 ```
 
-DataHub Core comes up on `localhost:9002` (login `datahub` / `datahub`), with its GraphQL API on
-`localhost:8080/api/graphql`. Authentication is off by default, so no token is required.
+```bash
+uv run sim --seed 42 --years 20    # generate a city into the warehouse
+uv run datahub-emit                # schemas, descriptions, glossary, lineage, assertions
+uv run sim --serve                 # viewer and lever panel on :8000
+```
 
-Full setup — installing `uv` and the DataHub CLI, starting Docker, and the checks that confirm it all
-works — is in `docs/ENVIRONMENT.md`. Further application commands land in `AGENTS.md` as the
-toolchain settles.
+```bash
+uv run eval --dry-run              # verify the whole harness, free
+```
+
+```bash
+uv run agent --mode agent_datahub_live --out results/run.json
+```
+
+Every agent run writes a full transcript beside its results — system prompt, the complete
+conversation as the model received it, and every reply. Every context bug in this project was
+invisible in the scores and obvious in the transcript.
 
 ## Architecture
 
 ```
-sim  ──rows──────────>  Postgres  <──SQL──┐
- │                                        │
- └──generated lineage──>  DataHub  <──MCP──┤
-                                          │
-                          manual mode:  Analytics Agent  ──> you ──> levers
-                          auto mode:    our agent  ────────────────> levers
+sim ──rows──────────────>  Postgres  <──read-only SQL──┐
+ │                             ▲                       │
+ │                             │ per-run views         │
+ └──generated lineage───>  DataHub  ──catalog block──>  agent  ──levers──> sim
+                              ▲
+                              └── assertions, evaluated each turn
 ```
 
-The simulation emits its own causal graph as DataHub lineage. Tax rate feeds disposable income, feeds
-migration, feeds population, feeds revenue, feeds tax rate. The agent traverses that graph to reason
-about consequences before it answers.
+The simulation emits its own causal graph as DataHub lineage — 29 column-level edges, every one
+validated against the running model by `blindcity.sim.causal_check`, so "derived from" states a
+demonstrated dependency rather than a claim. Each run gets a private schema of views filtered to its
+own `run_id`, with `search_path` pointed at it, so run isolation is structural rather than
+remembered.
 
 ## Documentation
 
+- `docs/RESULTS.md` — the full comparison, method, and caveats
 - `AGENTS.md` — vision, constraints, conventions
-- `docs/FEATURES.md` — what it does
 - `docs/DECISIONS.md` — why it is built this way
-- `docs/ENVIRONMENT.md` — verified setup, running topology, credentials
-- `docs/ERRORS.md` — problems and resolutions
-- `.tasks/mvp/TASKS.md` — current state and the remaining plan
+- `docs/ENVIRONMENT.md` — verified setup and running topology
+- `docs/ERRORS.md` — every bug that mattered, and what it cost
+- `.tasks/mvp/TASKS.md` — current state and what remains
 
 ## License
 
