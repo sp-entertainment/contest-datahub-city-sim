@@ -21,7 +21,11 @@ from typing import Protocol
 
 import psycopg
 
-from blindcity.catalog.assertions import evaluate_assertions
+from blindcity.catalog.operational import (
+    OPERATIONAL_ASSERTIONS,
+    OperationalAssertion,
+    fires,
+)
 
 # An assertion sweep runs a handful of aggregates over the current run. Bounded so a slow sweep
 # degrades the block rather than the turn -- the agent's reasoning is never what waits here.
@@ -51,37 +55,44 @@ class AssertionMonitor:
     name = "assertions"
 
     def block(self, conn: psycopg.Connection, run_id: int, turn: int) -> str:
+        fired: list[tuple[OperationalAssertion, float]] = []
+        checked = 0
         try:
             with conn.cursor() as cur:
                 cur.execute(f"SET LOCAL statement_timeout = '{MONITOR_TIMEOUT_SECONDS}s'")
-            results = evaluate_assertions(conn, run_id=run_id)
+                for assertion in OPERATIONAL_ASSERTIONS:
+                    cur.execute(assertion.sql)
+                    row = cur.fetchone()
+                    checked += 1
+                    value = None if row is None else row.get("value")
+                    if value is not None and fires(assertion, float(value)):
+                        fired.append((assertion, float(value)))
             conn.rollback()  # read-only; do not leave the session idle in transaction
         except psycopg.Error:
             # A monitoring failure must not cost the turn. The agent simply gets no block, which
-            # is the same position the other two modes are in.
+            # is the position the other two modes are in anyway.
             try:
                 conn.rollback()
             except psycopg.Error:
                 pass
             return ""
 
-        if not results:
+        if not checked:
             return ""
 
-        failing = [r for r in results if not r.passed]
         lines = [
-            "DataHub data-quality assertions, evaluated against the city as it stands now.",
-            "These compare the warehouse against the ranges and volumes the catalog documents.",
-            "",
+            (
+                "DataHub monitoring. The catalog documents the operating conditions a functioning "
+                "city's data holds to, and these are evaluated against the city as it stands now."
+            ),
         ]
-        if failing:
-            lines.append(f"OUT OF RANGE ({len(failing)} of {len(results)}):")
-            lines.extend(f"  {r.table}.{r.column}: {r.description} -- {r.detail}" for r in failing)
+        if fired:
+            lines.append(f"BREACHED ({len(fired)} of {checked}):")
+            lines.extend(
+                f"  {a.table}.{a.column} = {v:.3g} -- {a.message}" for a, v in fired
+            )
         else:
-            lines.append(f"All {len(results)} assertions pass.")
-        passing = len(results) - len(failing)
-        if failing and passing:
-            lines.append(f"  ({passing} other assertion(s) pass.)")
+            lines.append(f"  All {checked} operating conditions are met.")
         return "\n".join(lines)
 
 
