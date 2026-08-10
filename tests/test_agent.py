@@ -847,3 +847,46 @@ def test_timed_out_queries_are_reported_not_silently_absorbed(controllers):
     assert "SELECT huge" in report["turns"][0]["timed_out_queries"][0]
     # The turn itself did not fail: an LLM error is a different thing entirely.
     assert report["turns"][0]["error"] is None
+
+
+def test_the_model_is_told_what_its_decision_actually_became(controllers):
+    """A value silently clamped to a bound is a decision the model did not make.
+
+    Until now it was never told: the turn ended on the set_levers call, so the only signal was a
+    different number in the next turn's lever list, a quarter later and with no reason given.
+    """
+    build, _ = controllers
+    llm = FakeLLM(
+        [
+            Reply(
+                calls=[
+                    _call("set_levers", {"levers": {"income_tax_rate": 0.9, "nonsense": 1}})
+                ],
+                usage=Usage(calls=1),
+            )
+        ]
+    )
+    controller = build(NoCatalog(), llm)
+    controller.decide(_state(), 0, {})
+    prompt = controller._turn_prompt(_state(), 1)
+
+    assert "0.9 clamped to 0.4" in prompt, "the model was not told its value was clamped"
+    assert "nonsense" in prompt and "rejected" in prompt, "a rejected lever went unmentioned"
+    assert "income_tax_rate=0.4" in prompt, "the value that actually took effect was not confirmed"
+
+    report = controller.report()
+    assert report["turns"][0]["clamped"], "clamps left no trace in the audit trail"
+    assert report["turns"][0]["rejected"]
+
+
+def test_a_clean_decision_adds_no_confirmation_noise(controllers):
+    """In-range levers need no explanation; only surprises are worth the tokens."""
+    build, _ = controllers
+    llm = FakeLLM(
+        [Reply(calls=[_call("set_levers", {"levers": {"transit_fare": 1.5}})], usage=Usage())]
+    )
+    controller = build(NoCatalog(), llm)
+    controller.decide(_state(), 0, {})
+    prompt = controller._turn_prompt(_state(), 1)
+    assert "clamped" not in prompt and "rejected" not in prompt
+    assert "transit_fare=1.5" in prompt

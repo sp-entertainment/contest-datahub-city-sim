@@ -109,6 +109,10 @@ class AgentTurn:
     tool_errors: list[str] = field(default_factory=list)
     timed_out_queries: list[str] = field(default_factory=list)
     infrastructure_errors: list[str] = field(default_factory=list)
+    # Levers the model asked for and did not get. Recorded because `levers_set` holds post-clamp
+    # values only, so a model repeatedly asking for out-of-range settings left no trace at all.
+    clamped: dict[str, str] = field(default_factory=dict)
+    rejected: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -134,6 +138,7 @@ class AgentController:
         # One segment per decision turn. Kept segmented rather than as one flat list so age can
         # be measured in turns, which is what the compaction policy is expressed in.
         self._segments: list[list[Turn]] = []
+        self._last_outcome: tuple[dict[str, float], dict[str, str], dict[str, str]] = ({}, {}, {})
 
     def _reconnect(self) -> psycopg.Connection:
         """Replace a dead warehouse connection, re-scoped to this run's views.
@@ -231,6 +236,12 @@ class AgentController:
         error: str | None = None
         turn_usage = Usage()
         turn_started = time.monotonic()
+        # What actually took effect, as opposed to what was asked for. Carried to the next turn's
+        # prompt: a value silently clamped to a bound is a decision the model did not make, and
+        # until now it was never told. It saw only the net figure a quarter later, with no reason.
+        applied: dict[str, float] = {}
+        clamped: dict[str, str] = {}
+        rejected: dict[str, str] = {}
 
         for _ in range(self.tool_budget):
             try:
@@ -268,6 +279,11 @@ class AgentController:
             # Committing ends the turn. Anything after this is the model second-guessing itself
             # on a city it can no longer observe, and both modes are held to the same rule.
             if any(c.name == "set_levers" for c in reply.calls):
+                for r in results:
+                    if r.call.name == "set_levers":
+                        applied.update(r.payload.get("applied") or {})
+                        clamped.update(r.payload.get("clamped") or {})
+                        rejected.update(r.payload.get("rejected") or {})
                 break
 
         self.usage.add(turn_usage)
@@ -289,8 +305,11 @@ class AgentController:
                 infrastructure_errors=[
                     r.summary for r in ctx.log if r.timed_out or "warehouse unavailable" in r.summary
                 ],
+                clamped=dict(clamped),
+                rejected=dict(rejected),
             )
         )
+        self._last_outcome = (applied, clamped, rejected)
         return dict(ctx.pending)
 
     def _turn_prompt(self, state: CityState, turn: int) -> str:
@@ -302,8 +321,26 @@ class AgentController:
         if self.turn_budget is not None:
             left = self.turn_budget - turn
             remaining = f" You have {left} turn{'s' if left != 1 else ''} left, including this one."
+        # What last turn's decision actually became. The tool result said so at the time, but the
+        # turn ended on that call and the answer arrived a quarter late with no explanation of why
+        # a figure differed from the one requested.
+        applied, clamped, rejected = self._last_outcome
+        confirmation = ""
+        if applied or clamped or rejected:
+            lines = ["Result of your last decision:"]
+            if applied:
+                lines.append(
+                    "  applied: " + ", ".join(f"{k}={v:g}" for k, v in sorted(applied.items()))
+                )
+            for name, why in sorted(clamped.items()):
+                lines.append(f"  {name}: {why} (outside its legal range)")
+            for name, why in sorted(rejected.items()):
+                lines.append(f"  {name}: rejected -- {why}")
+            confirmation = "\n".join(lines) + "\n\n"
+
         return (
             f"Turn {turn + 1}.{remaining}\n\n"
+            f"{confirmation}"
             f"Levers currently in force:\n{levers}\n\n"
             "Investigate the city's data, then set the levers you want for this turn."
         )
@@ -334,6 +371,8 @@ class AgentController:
                     "tool_errors": t.tool_errors,
                     "timed_out_queries": t.timed_out_queries,
                     "infrastructure_errors": t.infrastructure_errors,
+                    "clamped": t.clamped,
+                    "rejected": t.rejected,
                 }
                 for t in self.history
             ],
