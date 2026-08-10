@@ -48,6 +48,20 @@ from blindcity.sim.model import CityState
 # decision inside the budget, not as more queries.
 DEFAULT_TOOL_BUDGET = 12
 
+# How many past turns keep their query results in full. Beyond this the results are replaced by a
+# one-line summary of what each query returned, while the model's own words and the queries it
+# wrote are kept forever.
+#
+# The city is a moving target: rows read eight turns ago describe a city that no longer exists,
+# and re-reading them costs tokens to be misled. What does not go stale is the reasoning -- what
+# the model concluded, what it tried, and which queries were dead ends.
+#
+# Without any memory the agent re-derived the city from scratch every turn. Measured over one
+# 12-turn run that meant 29 repeated `information_schema` queries, and the *same* fan-out join
+# issued on four separate turns, each killed by the statement timeout after 45 seconds, because
+# nothing carried the lesson forward.
+RESULTS_KEPT_IN_FULL = 2
+
 SYSTEM_PROMPT = """\
 You are the city manager of a simulated city in crisis. Your job is to get the city healthy \
 again within a limited number of turns by adjusting policy levers.
@@ -82,7 +96,19 @@ class AgentTurn:
     # to notice when time is going somewhere nobody is looking.
     seconds: float = 0.0
     tool_seconds: float = 0.0
+    # An LLM failure, which costs the whole turn.
     error: str | None = None
+    # Tool calls that failed. None of these cost the turn -- the model reads the error and adapts
+    # within the same turn -- which is exactly why they must be recorded somewhere.
+    #
+    # Two kinds, kept apart because they mean opposite things. A model asking for a table that
+    # does not exist is *working*: that is what exploration looks like, especially without a
+    # catalog to read. A statement timeout or a dead warehouse is the harness failing the model,
+    # and it silently costs a diagnosis the model asked for. Lumping them together produces a
+    # warning that fires on every healthy run, which is the same as no warning at all.
+    tool_errors: list[str] = field(default_factory=list)
+    timed_out_queries: list[str] = field(default_factory=list)
+    infrastructure_errors: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -105,6 +131,9 @@ class AgentController:
         runscope.create_run_views(self.conn, self.run_id)
         runscope.scope_connection(self.conn, self.run_id)
         self._system = self._build_system_prompt()
+        # One segment per decision turn. Kept segmented rather than as one flat list so age can
+        # be measured in turns, which is what the compaction policy is expressed in.
+        self._segments: list[list[Turn]] = []
 
     def _reconnect(self) -> psycopg.Connection:
         """Replace a dead warehouse connection, re-scoped to this run's views.
@@ -119,6 +148,52 @@ class AgentController:
         runscope.scope_connection(conn, self.run_id)
         self.conn = conn
         return conn
+
+    @staticmethod
+    def _summarise(payload: dict[str, Any]) -> dict[str, Any]:
+        """Shrink one tool result to what is still true later.
+
+        An error stays verbatim -- that is the part worth remembering, and the whole reason the
+        same fan-out join was written four times is that nothing remembered it the first time.
+        A successful query keeps its shape (row count and columns) and drops its rows.
+        """
+        if "error" in payload:
+            return {k: payload[k] for k in ("error", "timed_out") if k in payload}
+        if "columns" in payload:
+            return {
+                "note": "results elided; re-query if you need these rows again",
+                "row_count": payload.get("row_count"),
+                "columns": payload.get("columns"),
+            }
+        return payload
+
+    def _compact(self, segment: list[Turn]) -> list[Turn]:
+        """Replace a past turn's query results with summaries, keeping calls and reasoning."""
+        out: list[Turn] = []
+        for turn in segment:
+            if not turn.results:
+                out.append(turn)
+                continue
+            out.append(
+                Turn(
+                    role=turn.role,
+                    text=turn.text,
+                    calls=turn.calls,
+                    results=[
+                        ToolResult(call=r.call, payload=self._summarise(r.payload))
+                        for r in turn.results
+                    ],
+                )
+            )
+        return out
+
+    def _conversation(self) -> list[Turn]:
+        """The history the model sees this turn: recent turns in full, older ones compacted."""
+        history: list[Turn] = []
+        cutoff = len(self._segments) - RESULTS_KEPT_IN_FULL
+        for i, segment in enumerate(self._segments):
+            history.extend(segment if i >= cutoff else self._compact(segment))
+        return history
 
     def _build_system_prompt(self) -> str:
         """System prompt = shared instructions + (catalog block, or nothing).
@@ -142,7 +217,14 @@ class AgentController:
         )
         # Provider-neutral: the controller never builds a wire format, so it cannot hand one mode
         # a differently-shaped conversation than the other.
-        history: list[Turn] = [user_turn(self._turn_prompt(state, turn))]
+        #
+        # The conversation carries across turns. Governing a city is a multi-quarter problem --
+        # a decision made now shows its effect two turns later -- and an agent that forgets each
+        # quarter cannot run that loop. It can only react to a snapshot, which is what both modes
+        # did: neither ever revisited a tax rate, because neither remembered setting one.
+        segment: list[Turn] = [user_turn(self._turn_prompt(state, turn))]
+        self._segments.append(segment)
+        history = self._conversation()
         declarations = tool_declarations()
         queries: list[str] = []
         rationale = ""
@@ -169,13 +251,19 @@ class AgentController:
             if not reply.calls:
                 break
 
-            history.append(Turn(role="model", text=reply.text, calls=reply.calls))
+            # Appended to both: `history` is what this turn's next model call sees, `segment` is
+            # what later turns inherit. They are the same objects, so nothing can drift.
+            model_turn = Turn(role="model", text=reply.text, calls=reply.calls)
+            history.append(model_turn)
+            segment.append(model_turn)
             results: list[ToolResult] = []
             for call in reply.calls:
                 if call.name == "sql_query":
                     queries.append(str(call.args.get("query", "")))
                 results.append(ToolResult(call=call, payload=dispatch(ctx, call.name, call.args)))
-            history.append(Turn(role="user", results=results))
+            result_turn = Turn(role="user", results=results)
+            history.append(result_turn)
+            segment.append(result_turn)
 
             # Committing ends the turn. Anything after this is the model second-guessing itself
             # on a city it can no longer observe, and both modes are held to the same rule.
@@ -194,6 +282,13 @@ class AgentController:
                 seconds=round(time.monotonic() - turn_started, 2),
                 tool_seconds=round(sum(r.seconds for r in ctx.log), 2),
                 error=error,
+                tool_errors=[r.summary for r in ctx.log if not r.ok],
+                timed_out_queries=[
+                    str(r.args.get("query", ""))[:400] for r in ctx.log if r.timed_out
+                ],
+                infrastructure_errors=[
+                    r.summary for r in ctx.log if r.timed_out or "warehouse unavailable" in r.summary
+                ],
             )
         )
         return dict(ctx.pending)
@@ -236,7 +331,14 @@ class AgentController:
                         t.seconds - t.tool_seconds - float(t.usage.get("seconds", 0.0)), 2
                     ),
                     "error": t.error,
+                    "tool_errors": t.tool_errors,
+                    "timed_out_queries": t.timed_out_queries,
+                    "infrastructure_errors": t.infrastructure_errors,
                 }
                 for t in self.history
             ],
+            # Run-level totals, so a degraded run is visible without reading every turn.
+            "tool_failures": sum(len(t.tool_errors) for t in self.history),
+            "timeouts": sum(len(t.timed_out_queries) for t in self.history),
+            "infrastructure_failures": sum(len(t.infrastructure_errors) for t in self.history),
         }

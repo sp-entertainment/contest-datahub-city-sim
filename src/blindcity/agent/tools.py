@@ -53,6 +53,11 @@ class ToolCallRecord:
     # Wall time for this call. Without it a run reports LLM seconds and total seconds with
     # nothing in between, which is how ~90% of a run once went unaccounted for.
     seconds: float = 0.0
+    # A statement timeout specifically, as opposed to any other failure. Tracked separately
+    # because it is the one error whose cost is invisible in the result: the model sees it,
+    # adapts, and moves on, so the run finishes clean while a diagnosis it needed is missing.
+    # A live run lost four queries and three minutes this way and reported zero errors.
+    timed_out: bool = False
 
 
 @dataclass
@@ -287,6 +292,7 @@ def dispatch(ctx: ToolContext, name: str, args: dict[str, Any]) -> dict[str, Any
         ToolCallRecord(
             ctx.turn, name, args, "error" not in payload, str(summary)[:300],
             time.monotonic() - started,
+            bool(payload.get("timed_out", False)),
         )
     )
     return payload

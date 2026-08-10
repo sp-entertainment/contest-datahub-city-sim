@@ -23,6 +23,7 @@ from blindcity.agent.llm import (
     ToolResult,
     Turn,
     Usage,
+    user_turn,
 )
 from blindcity.agent.run import MODES
 from blindcity.agent.tools import ToolContext, dispatch, set_levers, tool_declarations
@@ -711,3 +712,138 @@ def test_a_timed_out_query_does_not_poison_the_rest_of_the_turn():
     # The turn continues: the next query still works.
     second = dispatch(ctx, "sql_query", {"query": "SELECT n FROM t"})
     assert second.get("rows") == [[1]], second
+
+
+# --- Memory across turns --------------------------------------------------------------------
+
+
+def _sql_then_commit(query="SELECT 1", lever=1.0):
+    """The shape of a normal turn: one query, then a decision."""
+    return [
+        Reply(calls=[_call("sql_query", {"query": query})], usage=Usage(calls=1)),
+        Reply(
+            text=f"Setting fare to {lever}.",
+            calls=[_call("set_levers", {"levers": {"transit_fare": lever}})],
+            usage=Usage(calls=1),
+        ),
+    ]
+
+
+def test_the_agent_remembers_earlier_turns(controllers):
+    """Governing is a multi-quarter problem: a decision shows its effect two turns later.
+
+    Without this the agent re-derived the city every turn from a blank conversation. Over one
+    live 12-turn run that meant 29 repeated `information_schema` queries and the same fan-out
+    join issued on four separate turns, each killed by the 45s statement timeout, because nothing
+    carried the lesson forward. Neither mode ever revisited a tax rate it had set.
+    """
+    build, _ = controllers
+    llm = FakeLLM(_sql_then_commit("SELECT first", 1.0) + _sql_then_commit("SELECT second", 2.0))
+    controller = build(NoCatalog(), llm)
+    controller.decide(_state(), 0, {})
+    controller.decide(_state(), 1, {})
+
+    opening_of_turn_two = llm.contents[2]
+    flat = json.dumps(opening_of_turn_two)
+    assert "SELECT first" in flat, "the query it ran last turn is gone"
+    assert "Setting fare to 1.0" in flat, "its own reasoning from last turn is gone"
+    assert len(opening_of_turn_two) > len(llm.contents[0]), "turn 2 opened no richer than turn 1"
+
+
+def test_old_results_are_compacted_but_reasoning_and_errors_survive(controllers):
+    """Rows read eight turns ago describe a city that no longer exists; conclusions do not go
+    stale. Errors are kept verbatim precisely because forgetting one is how the same fatal query
+    got written four times."""
+    from blindcity.agent.controller import RESULTS_KEPT_IN_FULL
+
+    build, _ = controllers
+    llm = FakeLLM()
+    controller = build(NoCatalog(), llm)
+
+    # A turn old enough to be compacted, holding one good result and one failure.
+    old = [
+        user_turn("Turn 1."),
+        Turn(role="model", text="Checking the roads.", calls=[_call("sql_query", {"query": "Q"})]),
+        Turn(
+            role="user",
+            results=[
+                ToolResult(
+                    call=_call("sql_query", {"query": "Q"}),
+                    payload={"columns": ["wear"], "rows": [[0.97]], "row_count": 1},
+                ),
+                ToolResult(
+                    call=_call("sql_query", {"query": "BAD"}),
+                    payload={"error": "query exceeded the 45s limit", "timed_out": True},
+                ),
+            ],
+        ),
+    ]
+    controller._segments = [old] + [[user_turn(f"Turn {i}.")] for i in range(RESULTS_KEPT_IN_FULL)]
+    flat = json.dumps([_turn_as_dict(t) for t in controller._conversation()])
+
+    assert "Checking the roads." in flat, "reasoning was dropped"
+    assert '"wear"' in flat, "column names were dropped; the model loses what it already looked at"
+    assert "0.97" not in flat, "stale rows were kept"
+    assert "exceeded the 45s limit" in flat, "the error was forgotten, so it will be repeated"
+
+
+def test_recent_results_are_kept_in_full(controllers):
+    """Compaction must not eat the turn the model is actually reasoning from."""
+    build, _ = controllers
+    llm = FakeLLM(_sql_then_commit("SELECT recent", 1.0) + _sql_then_commit("SELECT now", 2.0))
+    controller = build(NoCatalog(), llm)
+    llm.replies[0] = Reply(
+        calls=[_call("sql_query", {"query": "SELECT recent"})], usage=Usage(calls=1)
+    )
+    controller.decide(_state(), 0, {})
+    controller.decide(_state(), 1, {})
+    # The immediately preceding turn is inside the full-detail window.
+    assert "SELECT recent" in json.dumps(llm.contents[2])
+
+
+def test_both_modes_remember_identically(controllers):
+    """Memory is a capability. If one mode kept more of it than the other, the headline result
+    would measure the memory instead of the metadata."""
+    build, stub_catalog = controllers
+    shape = _sql_then_commit("SELECT x", 1.0) + _sql_then_commit("SELECT y", 2.0)
+
+    seen = []
+    for catalog in (stub_catalog, NoCatalog()):
+        llm = FakeLLM(list(shape))
+        controller = build(catalog, llm)
+        controller.decide(_state(), 0, {})
+        controller.decide(_state(), 1, {})
+        seen.append(llm.contents)
+
+    assert seen[0] == seen[1], "the two modes were handed differently-shaped conversations"
+
+
+def test_timed_out_queries_are_reported_not_silently_absorbed(controllers):
+    """A timeout does not fail the turn -- the model reads the error and adapts -- which is
+    exactly why it has to be recorded. A live run lost four queries and three minutes this way
+    and printed '0 errors', which read as a clean comparison and was not one."""
+    build, _ = controllers
+    llm = FakeLLM(
+        [
+            Reply(calls=[_call("sql_query", {"query": "SELECT huge"})], usage=Usage(calls=1)),
+            Reply(calls=[_call("set_levers", {"levers": {"transit_fare": 1.0}})], usage=Usage()),
+        ]
+    )
+    controller = build(NoCatalog(), llm)
+
+    # The real dispatch has to run: it is what writes the audit record, so a stubbed one would
+    # test the stub. Fail at the database instead, which is where a timeout actually comes from.
+    import psycopg
+
+    def cancelled(sql, params=None):
+        raise psycopg.errors.QueryCanceled("canceling statement due to statement timeout")
+
+    controller.conn.cursor_obj.execute = cancelled
+
+    controller.decide(_state(), 0, {})
+
+    report = controller.report()
+    assert report["timeouts"] == 1, report["timeouts"]
+    assert "SELECT huge" in report["turns"][0]["timed_out_queries"][0]
+    # The turn itself did not fail: an LLM error is a different thing entirely.
+    assert report["turns"][0]["error"] is None

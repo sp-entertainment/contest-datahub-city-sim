@@ -1,0 +1,145 @@
+{
+  "controller": "agent_raw",
+  "model": "gpt-5.6-luna",
+  "catalog": "none",
+  "tool_budget": 12,
+  "system_prompt_chars": 983,
+  "usage": {
+    "prompt_tokens": 64415,
+    "output_tokens": 2901,
+    "total_tokens": 67316,
+    "calls": 12,
+    "seconds": 39.55
+  },
+  "turns": [
+    {
+      "turn": 0,
+      "sql_calls": 10,
+      "queries": [
+        "SELECT table_name, column_name, data_type FROM information_schema.columns WHERE table_schema='public' ORDER BY table_name, ordinal_position",
+        "SELECT table_name FROM information_schema.tables WHERE table_schema='public' ORDER BY table_name",
+        "SELECT * FROM budget_monthly ORDER BY tick DESC LIMIT 12",
+        "SELECT tick, COUNT(*) AS citizens, AVG(satisfaction) AS sat, AVG(disposable_income) AS disp, SUM(CASE WHEN employed THEN 1 ELSE 0 END)::float/COUNT(*) AS employment, AVG(income) AS income FROM citizen_monthly GROUP BY tick ORDER BY tick DESC LIMIT 12",
+        "SELECT * FROM power_monthly ORDER BY tick DESC LIMIT 12",
+        "SELECT * FROM water_monthly ORDER BY tick DESC LIMIT 12",
+        "SELECT * FROM road_monthly ORDER BY tick DESC LIMIT 12",
+        "SELECT * FROM lever_monthly ORDER BY tick DESC LIMIT 12",
+        "SELECT tick, AVG(condition_score) AS condition, SUM(CASE WHEN condition_band='failed' THEN 1 ELSE 0 END) AS failed, AVG(occupancy) AS occ, SUM(CASE WHEN power_served THEN 1 ELSE 0 END)::float/COUNT(*) AS powered FROM building_monthly GROUP BY tick ORDER BY tick DESC LIMIT 12",
+        "WITH p AS (SELECT tick,demand_kw,supply_kw,outage_fraction FROM power_monthly), r AS (SELECT tick,AVG(wear) wear,AVG(congestion) congestion FROM road_monthly GROUP BY tick), w AS (SELECT tick,capacity,demand,load_ratio FROM water_monthly) SELECT p.tick,p.outage_fraction,p.demand_kw,p.supply_kw,r.wear,r.congestion,w.load_ratio FROM p JOIN r USING(tick) JOIN w USING(tick) WHERE p.tick IN (1,12,24,36,48,60) ORDER BY p.tick"
+      ],
+      "levers_set": {
+        "power_contract_mode": 2,
+        "road_maintenance_budget": 2000000.0,
+        "water_sewer_capex": 1000000.0,
+        "transit_fare": 3.0
+      },
+      "rationale": "",
+      "usage": {
+        "prompt_tokens": 16909,
+        "output_tokens": 978,
+        "total_tokens": 17887,
+        "calls": 5,
+        "seconds": 14.45
+      },
+      "seconds": 14.47,
+      "tool_seconds": 0.02,
+      "unaccounted_seconds": 0.0,
+      "error": null,
+      "tool_errors": [],
+      "timed_out_queries": []
+    },
+    {
+      "turn": 1,
+      "sql_calls": 9,
+      "queries": [
+        "SELECT * FROM power_monthly ORDER BY tick DESC LIMIT 4",
+        "SELECT * FROM water_monthly ORDER BY tick DESC LIMIT 4",
+        "SELECT tick,AVG(wear) wear,AVG(congestion) congestion FROM road_monthly GROUP BY tick ORDER BY tick DESC LIMIT 4",
+        "SELECT * FROM budget_monthly ORDER BY tick DESC LIMIT 4",
+        "SELECT tick,AVG(satisfaction) sat,AVG(disposable_income) disp,COUNT(*) n FROM citizen_monthly GROUP BY tick ORDER BY tick DESC LIMIT 4",
+        "SELECT * FROM migration_monthly ORDER BY tick DESC LIMIT 4",
+        "SELECT * FROM lever_monthly ORDER BY tick DESC LIMIT 6",
+        "SELECT * FROM ticks ORDER BY tick DESC LIMIT 6",
+        "SELECT tick,AVG(satisfaction) sat,AVG(disposable_income) disp,AVG(income) income,SUM(CASE WHEN employed THEN 1 ELSE 0 END)::float/COUNT(*) emp FROM citizen_monthly GROUP BY tick ORDER BY tick DESC LIMIT 8"
+      ],
+      "levers_set": {
+        "power_contract_mode": 1.0,
+        "electricity_tariff": 0.45,
+        "road_maintenance_budget": 4000000.0,
+        "water_sewer_capex": 2000000.0,
+        "transit_fare": 2.0
+      },
+      "rationale": "",
+      "usage": {
+        "prompt_tokens": 22191,
+        "output_tokens": 684,
+        "total_tokens": 22875,
+        "calls": 3,
+        "seconds": 9.83
+      },
+      "seconds": 9.84,
+      "tool_seconds": 0.02,
+      "unaccounted_seconds": -0.01,
+      "error": null,
+      "tool_errors": [],
+      "timed_out_queries": []
+    },
+    {
+      "turn": 2,
+      "sql_calls": 14,
+      "queries": [
+        "SELECT * FROM power_monthly ORDER BY tick DESC LIMIT 6",
+        "SELECT * FROM water_monthly ORDER BY tick DESC LIMIT 6",
+        "SELECT tick,AVG(wear) wear,AVG(congestion) congestion FROM road_monthly GROUP BY tick ORDER BY tick DESC LIMIT 6",
+        "SELECT * FROM budget_monthly ORDER BY tick DESC LIMIT 3",
+        "SELECT tick,AVG(satisfaction) sat,AVG(disposable_income) disp FROM citizen_monthly GROUP BY tick ORDER BY tick DESC LIMIT 6",
+        "SELECT * FROM migration_monthly ORDER BY tick DESC LIMIT 3",
+        "SELECT table_name,column_name FROM information_schema.columns WHERE table_schema='public' AND (table_name ILIKE '%building%' OR table_name ILIKE '%service%' OR table_name ILIKE '%power%' OR table_name ILIKE '%citizen%') ORDER BY table_name,ordinal_position",
+        "SELECT * FROM building_monthly ORDER BY tick DESC LIMIT 10",
+        "SELECT * FROM satisfaction_monthly ORDER BY tick DESC LIMIT 10",
+        "SELECT * FROM city_monthly ORDER BY tick DESC LIMIT 10",
+        "SELECT tick,AVG(condition_score) condition,AVG(occupancy) occ,AVG(CASE WHEN power_served THEN 1 ELSE 0 END) powered,AVG(water_demand) wd FROM building_monthly GROUP BY tick ORDER BY tick DESC LIMIT 5",
+        "SELECT tick,COUNT(*) n,AVG(satisfaction) sat,AVG(disposable_income) disp,AVG(uses_transit::int) transit FROM citizen_monthly GROUP BY tick ORDER BY tick DESC LIMIT 5",
+        "SELECT tick,AVG(wear) wear,MAX(wear) maxwear,AVG(congestion) cong FROM road_monthly GROUP BY tick ORDER BY tick DESC LIMIT 5",
+        "SELECT tick,capacity,demand,load_ratio,failure_rate FROM water_monthly ORDER BY tick DESC LIMIT 5"
+      ],
+      "levers_set": {
+        "power_contract_mode": 2,
+        "electricity_tariff": 0.45,
+        "road_maintenance_budget": 6000000.0,
+        "water_sewer_capex": 3000000.0,
+        "transit_fare": 2.0,
+        "zoning_release": 0.2
+      },
+      "rationale": "",
+      "usage": {
+        "prompt_tokens": 25315,
+        "output_tokens": 1239,
+        "total_tokens": 26554,
+        "calls": 4,
+        "seconds": 15.27
+      },
+      "seconds": 15.28,
+      "tool_seconds": 0.02,
+      "unaccounted_seconds": -0.01,
+      "error": null,
+      "tool_errors": [
+        "relation \"satisfaction_monthly\" does not exist",
+        "relation \"city_monthly\" does not exist"
+      ],
+      "timed_out_queries": []
+    }
+  ],
+  "tool_failures": 2,
+  "timeouts": 0,
+  "phases": {
+    "prepare_seconds": 7.5,
+    "play_seconds": 40.5
+  },
+  "write_back": {
+    "datasets": 0,
+    "tables": [],
+    "skipped": "control mode has no catalog by construction",
+    "failures": {}
+  }
+}

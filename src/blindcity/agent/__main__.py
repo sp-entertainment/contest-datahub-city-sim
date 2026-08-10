@@ -123,6 +123,23 @@ def main() -> int:
     if failed:
         print(f"agent: {len(failed)} turn(s) hit an LLM error; first: {failed[0]['error'][:200]}")
 
+    # A model asking for a table that does not exist is exploration, not damage -- report it flatly.
+    query_errors = report.get("tool_failures", 0) - report.get("infrastructure_failures", 0)
+    if query_errors:
+        print(f"agent: {query_errors} query error(s) the model recovered from (bad table or column)")
+
+    # Degradation is different and must never read as a clean run: these do not fail the turn, the
+    # model adapts and carries on, so this line is the only trace that a diagnosis it asked for
+    # never came back. One live run lost four queries and three minutes and printed "0 errors".
+    infra = report.get("infrastructure_failures", 0)
+    if infra:
+        turns_hit = [t["turn"] for t in report["turns"] if t.get("infrastructure_errors")]
+        print(
+            f"agent: DEGRADED -- {infra} query/queries lost to timeouts or a dead warehouse "
+            f"on turn(s) {turns_hit}"
+        )
+        print("agent: the score stands, but the model was denied data it asked for.")
+
     if args.out:
         result.write_json(args.out)
         side = Path(args.out).with_suffix(".agent.json")
