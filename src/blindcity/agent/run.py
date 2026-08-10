@@ -207,6 +207,11 @@ def run_mode(
                 name=mode,
                 advisor=advisor,
                 turn_budget=scenario.turn_budget,
+                # This mode never touches `RecordingLLM`, because it never calls a model itself.
+                # Without this it produced a 0-byte transcript beside a run that spent 1.2M
+                # tokens -- the most expensive mode in the benchmark, and the only one whose
+                # artifacts said nothing had been said.
+                transcript=transcript,
             )
         else:
             controller = AgentController(

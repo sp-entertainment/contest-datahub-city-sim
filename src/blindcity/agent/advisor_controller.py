@@ -32,8 +32,10 @@ Withholding them was not neutrality, it was a handicap, and it showed up in the 
 
 from __future__ import annotations
 
+import json
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from blindcity.agent.advisor import Advice, AnalyticsAgentAdvisor
@@ -76,6 +78,23 @@ class AdvisorController:
     advisor: AnalyticsAgentAdvisor
     turn_budget: int | None = None
     history: list[dict[str, Any]] = field(default_factory=list)
+    # Where to record every exchange. The other modes get this from `RecordingLLM`, which wraps
+    # the LLM client; this one calls no client, so it writes its own -- same file name, same JSONL
+    # shape, so an auditor does not need to know which mode produced which artifact.
+    transcript: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.transcript:
+            path = Path(self.transcript)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            # Truncate, so a rerun cannot be read as one long run.
+            path.write_text("", encoding="utf-8")
+
+    def _record(self, record: dict[str, Any]) -> None:
+        if not self.transcript:
+            return
+        with Path(self.transcript).open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(record, ensure_ascii=False) + "\n")
 
     def _question(self, state: CityState, turn: int) -> str:
         levers = "\n".join(
@@ -141,7 +160,22 @@ class AdvisorController:
 
     def decide(self, state: CityState, turn: int, channel: dict[str, Any]) -> dict[str, float]:
         started = time.monotonic()
-        advice: Advice = self.advisor.ask(self._question(state, turn))
+        question = self._question(state, turn)
+        # Written before the call, so a hang or a crash still leaves evidence of what was asked.
+        self._record({"mode": self.name, "call": turn + 1, "phase": "request", "question": question})
+        advice: Advice = self.advisor.ask(question)
+        self._record(
+            {
+                "mode": self.name,
+                "call": turn + 1,
+                "phase": "response",
+                "answer": advice.answer,
+                "levers": advice.levers,
+                "queries": advice.queries,
+                "error": advice.error,
+                "seconds": round(advice.seconds, 2),
+            }
+        )
         self.history.append(
             {
                 "turn": turn,

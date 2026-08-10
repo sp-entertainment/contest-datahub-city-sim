@@ -297,8 +297,17 @@ def test_the_rate_limit_delay_is_read_from_the_provider(monkeypatch):
 
     assert _rate_limit_delay(ValueError("something else entirely")) is None
     assert _rate_limit_delay(ValueError("Rate limit reached ... try again in 1.6s")) == _RATE_LIMIT_FLOOR
-    assert _rate_limit_delay(ValueError("Rate limit reached ... try again in 90s")) == 90.0
     assert _rate_limit_delay(ValueError("HTTP 429 refused")) == _RATE_LIMIT_FLOOR
+
+    # The wait doubles per attempt, up to a full window. On a tokens-per-minute ceiling the
+    # provider's own number is close to useless -- a refusal saying "try again in 281ms" was
+    # followed by four failures, because one advisor question costs 57% of the whole minute and
+    # two of them can never share a window.
+    waits = [_rate_limit_delay(ValueError("Rate limit reached ... try again in 281ms"), a)
+             for a in range(4)]
+    assert waits == sorted(waits) and waits[0] == _RATE_LIMIT_FLOOR
+    assert waits[-1] >= 60.0, f"the longest wait cannot clear a 60s window: {waits}"
+    assert all(w <= 65.0 for w in waits), "waiting longer than a window buys nothing"
 
 
 class _NullClient:
@@ -453,3 +462,52 @@ def test_the_run_command_defaults_are_all_usable(monkeypatch, tmp_path):
     assert isinstance(seen["tool_budget"], int) and seen["tool_budget"] == DEFAULT_TOOL_BUDGET
     # The scripted policies must never reach for a model or a catalog.
     assert seen["llm"] is None
+
+
+def test_the_advisor_writes_its_own_transcript(tmp_path):
+    """The advisor never touches RecordingLLM, because it never calls a model itself. Without its
+    own recorder it produced a 0-byte transcript beside a run that spent 1.2M tokens -- the most
+    expensive mode in the benchmark, and the only one whose artifacts said nothing had been said."""
+    from blindcity.agent.advisor import Advice
+    from blindcity.agent.advisor_controller import AdvisorController
+
+    path = tmp_path / "t.jsonl"
+
+    class FakeAdvisor:
+        base_url = "http://advisor"
+        tokens: ClassVar[dict] = {"input_tokens": 1, "output_tokens": 2, "total_tokens": 3}
+
+        def ask(self, question):
+            return Advice(question=question, answer="income_tax_rate = 0.11",
+                          levers={"income_tax_rate": 0.11}, queries=["SELECT 1"])
+
+    controller = AdvisorController(
+        name="agent_analytics", advisor=FakeAdvisor(), turn_budget=12, transcript=str(path)
+    )
+    controller.decide(_FakeState(), 0, {})
+
+    lines = [json.loads(x) for x in path.read_text(encoding="utf-8").splitlines()]
+    assert [x["phase"] for x in lines] == ["request", "response"]
+    # The question is written before the call, so a hang still leaves evidence of what was asked.
+    assert "eight levers" in lines[0]["question"]
+    assert lines[1]["levers"] == {"income_tax_rate": 0.11}
+    assert lines[1]["queries"] == ["SELECT 1"]
+
+
+class _FakeState:
+    levers: ClassVar[dict] = {}
+
+
+def test_a_lost_turn_is_reported_in_the_comparison(tmp_path):
+    """A run that produced no decision on some turns is not a worse strategy, it is a different
+    experiment. It looked identical to a clean run in the table until now."""
+    path = _write(tmp_path, "agent_analytics", 0.72, 4)
+    side = path.with_suffix(".agent.json")
+    report = json.loads(side.read_text(encoding="utf-8"))
+    report["advisor_errors"] = ["rate limit", "rate limit"]
+    side.write_text(json.dumps(report), encoding="utf-8")
+
+    summaries = collect([path])
+    assert summaries["agent_analytics"].lost_turns == 2
+    out = markdown(summaries, threshold=0.62, seed=42, model="m")
+    assert "Incomplete runs" in out and "lost 2 turn(s)" in out

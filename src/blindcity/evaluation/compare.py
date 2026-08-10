@@ -36,6 +36,11 @@ class ModeSummary:
     sql_queries: list[int] = field(default_factory=list)
     timeouts: int = 0
     infrastructure_failures: int = 0
+    # Turns that produced no decision at all -- an LLM failure, or an advisor that never answered.
+    # Tracked apart from `infrastructure_failures`, which counts lost *queries*: the model adapts
+    # to a lost query and plays on, where a lost turn is a hole in the run the score cannot show.
+    # A twelve-turn run that played ten is not a worse strategy, it is a different experiment.
+    lost_turns: int = 0
     # Every model id seen across this mode's runs. A list rather than one value because the whole
     # comparison rests on the modes sharing a model, and the report has to be able to say so from
     # the recorded runs rather than from what the operator meant to do.
@@ -103,6 +108,8 @@ def collect(paths: list[Path]) -> dict[str, ModeSummary]:
         model = report.get("model")
         if isinstance(model, str) and model and model not in s.models:
             s.models.append(model)
+        s.lost_turns += sum(1 for turn in report.get("turns", []) if turn.get("error"))
+        s.lost_turns += len(report.get("advisor_errors") or [])
         s.timeouts += report.get("timeouts", 0)
         s.infrastructure_failures += report.get("infrastructure_failures", 0)
     return summaries
@@ -212,6 +219,18 @@ def markdown(summaries: dict[str, ModeSummary], *, threshold: float, seed: int, 
                 "Single run per mode: no variance estimate. Measured spread on repeated "
                 "identical runs has reached 0.02 of final index, so treat gaps below that as "
                 "unresolved."
+            ),
+        ]
+
+    incomplete = {m: s.lost_turns for m, s in summaries.items() if s.lost_turns}
+    if incomplete:
+        lines += [
+            "",
+            (
+                "**Incomplete runs.** "
+                + "; ".join(f"`{m}` lost {n} turn(s) to an error" for m, n in sorted(incomplete.items()))
+                + ". A lost turn is a decision never made, not a decision made badly -- these "
+                "scores are lower bounds and are not comparable with the rest of the table."
             ),
         ]
 

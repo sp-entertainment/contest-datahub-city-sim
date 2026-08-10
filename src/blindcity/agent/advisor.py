@@ -38,25 +38,31 @@ DEFAULT_BASE_URL = "http://localhost:8100"
 # per-minute window; more would mean the provider is refusing for a reason waiting cannot fix.
 RATE_LIMIT_ATTEMPTS = 4
 
-# The provider states its own delay in prose, and it is believed in preference to a guess. The
-# floor exists because a tokens-per-minute refusal clears when the window rolls, which can be far
-# later than the delay it suggests.
+# The provider states its own delay in prose, and on a tokens-per-minute limit that number is
+# close to useless: it reports when the *rate* recovers, not when enough of the window has rolled
+# to fit the next request. A refusal saying "try again in 281ms" was followed by four failures,
+# because one advisor question costs ~114,000 tokens against a 200,000/minute ceiling -- 57% of the
+# whole minute in a single call, so two questions can never share one window.
+#
+# So the wait doubles per attempt from a floor, up to a full window. Nothing else is consuming this
+# budget, so 60 seconds is a guarantee rather than a guess.
 _RATE_LIMIT_DELAY = re.compile(r"try again in ([0-9.]+)\s*(ms|s)", re.IGNORECASE)
 _RATE_LIMIT_FLOOR = 8.0
+_RATE_LIMIT_CEILING = 65.0
 
 
-def _rate_limit_delay(exc: Exception) -> float | None:
+def _rate_limit_delay(exc: Exception, attempt: int = 0) -> float | None:
     """Seconds to wait before re-putting a question, or None if this is not a rate limit."""
     text = str(exc)
     if "rate limit" not in text.lower() and "429" not in text:
         return None
+    suggested = 0.0
     match = _RATE_LIMIT_DELAY.search(text)
-    if not match:
-        return _RATE_LIMIT_FLOOR
-    value = float(match.group(1))
-    if match.group(2).lower() == "ms":
-        value /= 1000.0
-    return max(value, _RATE_LIMIT_FLOOR)
+    if match:
+        suggested = float(match.group(1))
+        if match.group(2).lower() == "ms":
+            suggested /= 1000.0
+    return min(max(suggested, _RATE_LIMIT_FLOOR * (2**attempt)), _RATE_LIMIT_CEILING)
 
 
 class LLMMismatch(RuntimeError):
@@ -203,7 +209,7 @@ class AnalyticsAgentAdvisor:
                     conv = self.start(client)
                     answer, statements = self._send(client, conv, question)
             except (httpx.HTTPError, KeyError, ValueError) as exc:
-                delay = _rate_limit_delay(exc)
+                delay = _rate_limit_delay(exc, attempt)
                 if delay is not None and attempt < RATE_LIMIT_ATTEMPTS - 1:
                     self.rate_limited += 1
                     # Jittered, because a retry that lands on the same second as the one that was
