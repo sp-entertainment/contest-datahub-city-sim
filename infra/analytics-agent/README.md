@@ -36,6 +36,29 @@ docker compose up -d --build
 uv run agent --mode agent_analytics --out results/analytics.json
 ```
 
+**Check `context_tools` in the log before trusting any run.** The seeded DataHub row is the source
+of truth for the context connection, and `seed_context_platforms_from_yaml` deliberately
+*preserves user-edited credentials* — so if that row is ever written with an empty token, config
+changes never repair it. The token is only read from the DB into the environment at boot, never
+the other way. Worse, the bundled Postgres is bind-mounted to `$HOME/.datahub/analytics-agent/`,
+so the bad row survives `docker compose down`, a rebuild, and a fresh clone.
+
+Every scored run before 2026-08-10 was poisoned this way: `Total context_tools=0`, and the agent
+answered from the warehouse alone while reporting *"No governed definitions ... were found in
+DataHub"*. It looked like a weak result from DataHub's agent. It was DataHub's agent with DataHub
+switched off. To verify and repair:
+
+```bash
+docker exec analytics-agent-postgres-1 \
+  psql -U talk_to_data -d talk_to_data -tAc "select config from context_platforms;"
+# token must be non-empty. If it is not:
+docker exec analytics-agent-postgres-1 \
+  psql -U talk_to_data -d talk_to_data -c "delete from context_platforms where source='yaml';"
+docker exec analytics-agent-backend-1 analytics-agent bootstrap
+docker compose restart backend
+docker logs analytics-agent-backend-1 | grep context_tools   # expect 22, not 0
+```
+
 **The `statement_timeout` in the connection URL is not optional.** Our own agent runs every query
 under a 45s cap (`runscope.STATEMENT_TIMEOUT_SECONDS`); the advisor connects with its own engine,
 which that cap never touched. That is unfair in this mode's favour — an unlimited query budget

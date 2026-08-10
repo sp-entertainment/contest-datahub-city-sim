@@ -455,3 +455,64 @@ agent to ignore something that matters is the most damaging error guidance metad
 **Lesson.** Guidance that steers an agent needs its own validation, held to both directions: it must
 fire when things are bad *and* stay silent when they are fine. A one-sided check would have passed
 both of these.
+
+## 2026-08-10 — `agent_analytics` was scored with DataHub switched off
+
+`agent_analytics` came last of four modes (0.6965) when it should plausibly have sat between
+`agent_datahub` and `agent_datahub_live`. Coming last is not by itself a bug — but it was, twice
+over, and neither was visible in the score.
+
+**1. The DataHub context connection was dead on every scored run.**
+
+The Analytics Agent logged `Total context_tools=0` and answered every question with *"No governed
+definitions or table-selection guidance were found in DataHub"*. We read that as a lookup that
+reached GMS and found nothing interesting, and wrote it up as a known limitation. It was not. The
+seeded `context_platforms` row held `"token": ""`, and `build_platform` drops a DataHub platform
+whose token is empty, so **zero** DataHub tools were ever loaded.
+
+Three things conspired to make it stick:
+
+- The DB row is the source of truth, not `config.yaml`. `propagate_datahub_env` copies DB → env at
+  boot; nothing goes the other way.
+- `seed_context_platforms_from_yaml` deliberately *preserves user-edited credentials* on an
+  existing row, so a once-empty token is never repaired from config.
+- The bundled Postgres is bind-mounted to `$HOME`, so the bad row survived `docker compose down`,
+  a rebuild, and a move to a fresh clone.
+
+The live config substituted the token correctly the whole time, which is what made this so hard to
+see: every check we ran on the *configuration* passed. Fixed by deleting the yaml-source row and
+re-bootstrapping — `context_tools` went 0 → 22.
+
+**2. The guidance that decides the benchmark is not in DataHub at all.**
+
+`LEVER_GUIDANCE` and `OUTCOME_ASSERTIONS` in `catalog/operational.py` — the expert operating bands
+that `agent_datahub_live` wins on — are consumed only by `monitor.py`, which injects them straight
+into that mode's prompt. They are **never emitted to DataHub**. What the catalog actually carries
+is trivial range checks ("Satisfaction is in [0, 1]").
+
+So the Analytics Agent, which can only read the catalog, could not reach the deciding information
+at any price, no matter how well configured. Measured with a prototype that hands it the same
+block: **0.8454, green at turn 3** — above `agent_datahub_live` (0.8129) and above the
+hand-calibrated `GOOD_POLICY` (0.8132), against 0.6867–0.7183 without it.
+
+This one cuts at our own claim as much as at the mode. "DataHub assertions guide the agent" is
+true of the prompt and not yet true of DataHub. Publishing the guidance is the fix, and it is
+outstanding.
+
+**Three smaller parity gaps, all found by reading its transcript beside `agent_raw`'s:**
+
+- **No objective.** The other modes are told the city is in crisis and the job is to make it
+  healthy. The advisor was told to "tell the manager which levers to change". With no goal stated
+  it optimised for prudent municipal finance and got exactly that — the highest solvency of any
+  mode (0.845) and the lowest satisfaction (0.575). It raised prices to fund capex it had
+  correctly diagnosed, and the residents left.
+- **No instruction to look again.** Told only that three months had passed, it answered from
+  memory: one query per turn after turn 0, against 65 for `agent_raw`, on a city that had moved.
+  With the instruction restored it runs three to four.
+- **No rate-limit retry.** The other modes absorb 429s inside their own client. The advisor calls
+  a service that raises straight through, so it silently forfeited the turn — two of twelve, once
+  the DataHub tools doubled the prompt size.
+
+**The lesson.** Every one of these was invisible in the score and obvious in the artifacts. A mode
+that comes last is a claim about that mode, and it has to be earned by checking the mode was
+actually given what it was supposed to have.

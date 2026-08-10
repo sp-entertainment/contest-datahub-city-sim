@@ -222,3 +222,86 @@ def test_the_advisor_does_not_count_as_a_model_mismatch(tmp_path):
     report = markdown(collect(paths), threshold=0.62, seed=42, model="x")
     assert "did not run the same model" not in report
     assert "`gpt-5.6-luna`" in report
+
+
+# --- The advisor must not silently forfeit turns ------------------------------------------------
+
+
+def test_a_rate_limited_question_is_re_put_not_forfeited(monkeypatch):
+    """A rate limit is the mode being denied its turn, not the mode failing to govern the city.
+
+    The other three modes absorb these inside their own HTTP client and lose nothing. The advisor
+    calls a service that raises straight through, so without a retry it drops the turn -- two of
+    twelve went that way once DataHub context doubled the prompt size.
+    """
+    from blindcity.agent import advisor as advisor_mod
+
+    monkeypatch.setattr(advisor_mod.time, "sleep", lambda s: None)
+    calls = {"n": 0}
+
+    class Adv(advisor_mod.AnalyticsAgentAdvisor):
+        def _client(self):
+            raise AssertionError("should not be reached")
+
+        def _send(self, client, conv, question):
+            calls["n"] += 1
+            if calls["n"] < 3:
+                raise ValueError(
+                    "Rate limit reached for gpt-5.6-luna ... Please try again in 1.631s."
+                )
+            return "income_tax_rate = 0.11", ["SELECT 1"]
+
+        def start(self, client):
+            return "conv"
+
+    adv = Adv()
+    monkeypatch.setattr(adv, "_client", lambda: _NullClient())
+    out = adv.ask("what now?")
+
+    assert out.error is None, out.error
+    assert out.levers == {"income_tax_rate": 0.11}
+    assert calls["n"] == 3
+    assert adv.rate_limited == 2
+
+
+def test_a_real_failure_is_reported_rather_than_retried(monkeypatch):
+    """Only rate limits are worth re-putting. A dead service or an unparseable stream is a real
+    result for this mode and must not be papered over by trying again."""
+    from blindcity.agent import advisor as advisor_mod
+
+    monkeypatch.setattr(advisor_mod.time, "sleep", lambda s: None)
+    calls = {"n": 0}
+
+    class Adv(advisor_mod.AnalyticsAgentAdvisor):
+        def _send(self, client, conv, question):
+            calls["n"] += 1
+            raise ValueError("the engine exploded")
+
+        def start(self, client):
+            return "conv"
+
+    adv = Adv()
+    monkeypatch.setattr(adv, "_client", lambda: _NullClient())
+    out = adv.ask("what now?")
+
+    assert calls["n"] == 1, "a non-rate-limit failure was retried"
+    assert "engine exploded" in out.error
+
+
+def test_the_rate_limit_delay_is_read_from_the_provider(monkeypatch):
+    """The provider states its own delay; a floor applies because a tokens-per-minute refusal
+    clears when the window rolls, which is often later than the number it suggests."""
+    from blindcity.agent.advisor import _RATE_LIMIT_FLOOR, _rate_limit_delay
+
+    assert _rate_limit_delay(ValueError("something else entirely")) is None
+    assert _rate_limit_delay(ValueError("Rate limit reached ... try again in 1.6s")) == _RATE_LIMIT_FLOOR
+    assert _rate_limit_delay(ValueError("Rate limit reached ... try again in 90s")) == 90.0
+    assert _rate_limit_delay(ValueError("HTTP 429 refused")) == _RATE_LIMIT_FLOOR
+
+
+class _NullClient:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False

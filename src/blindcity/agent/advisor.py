@@ -18,6 +18,7 @@ themselves. Nothing the advisor says can move a lever the controller did not cho
 from __future__ import annotations
 
 import json
+import random
 import re
 import time
 from dataclasses import dataclass, field
@@ -32,6 +33,30 @@ from blindcity.levers import LEVERS
 ADVISOR_TIMEOUT_SECONDS = float(240)
 
 DEFAULT_BASE_URL = "http://localhost:8100"
+
+# How many times one question may be re-put after a rate limit. Four is enough to ride out a
+# per-minute window; more would mean the provider is refusing for a reason waiting cannot fix.
+RATE_LIMIT_ATTEMPTS = 4
+
+# The provider states its own delay in prose, and it is believed in preference to a guess. The
+# floor exists because a tokens-per-minute refusal clears when the window rolls, which can be far
+# later than the delay it suggests.
+_RATE_LIMIT_DELAY = re.compile(r"try again in ([0-9.]+)\s*(ms|s)", re.IGNORECASE)
+_RATE_LIMIT_FLOOR = 8.0
+
+
+def _rate_limit_delay(exc: Exception) -> float | None:
+    """Seconds to wait before re-putting a question, or None if this is not a rate limit."""
+    text = str(exc)
+    if "rate limit" not in text.lower() and "429" not in text:
+        return None
+    match = _RATE_LIMIT_DELAY.search(text)
+    if not match:
+        return _RATE_LIMIT_FLOOR
+    value = float(match.group(1))
+    if match.group(2).lower() == "ms":
+        value /= 1000.0
+    return max(value, _RATE_LIMIT_FLOOR)
 
 
 class LLMMismatch(RuntimeError):
@@ -109,6 +134,9 @@ class AnalyticsAgentAdvisor:
         # Token counts the advisor reports for itself, so this mode's cost is comparable with the
         # others even though we never call the model directly.
         self.tokens = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+        # Questions re-put after a rate limit. A turn saved this way is a turn the mode got
+        # to play, and one lost is a hole in the run that the score cannot show.
+        self.rate_limited = 0
 
     def _client(self) -> httpx.Client:
         return httpx.Client(timeout=self.timeout)
@@ -155,18 +183,40 @@ class AnalyticsAgentAdvisor:
         return self.conversation_id
 
     def ask(self, question: str) -> Advice:
+        """Put one question to the advisor, retrying only what is worth retrying.
+
+        A rate limit is not this mode failing to govern the city, it is the mode being denied its
+        turn. The other three modes absorb these inside their own HTTP client with full-jitter
+        backoff and lose nothing. The advisor calls a service that raises the error straight
+        through, so without this it silently forfeits the turn -- two of twelve went that way on
+        the first run with DataHub context attached, because 22 context tools roughly doubled the
+        prompt and the late turns are the expensive ones.
+
+        Anything that is not a rate limit is returned as it happened. A bad question, a dead
+        service, or an unparseable stream is a real result for this mode and must not be papered
+        over by trying again.
+        """
         started = time.monotonic()
-        try:
-            with self._client() as client:
-                conv = self.start(client)
-                answer, statements = self._send(client, conv, question)
-        except (httpx.HTTPError, KeyError, ValueError) as exc:
-            return Advice(
-                question=question,
-                answer="",
-                seconds=time.monotonic() - started,
-                error=f"{type(exc).__name__}: {str(exc)[:300]}",
-            )
+        for attempt in range(RATE_LIMIT_ATTEMPTS):
+            try:
+                with self._client() as client:
+                    conv = self.start(client)
+                    answer, statements = self._send(client, conv, question)
+            except (httpx.HTTPError, KeyError, ValueError) as exc:
+                delay = _rate_limit_delay(exc)
+                if delay is not None and attempt < RATE_LIMIT_ATTEMPTS - 1:
+                    self.rate_limited += 1
+                    # Jittered, because a retry that lands on the same second as the one that was
+                    # refused is not a retry.
+                    time.sleep(delay + random.uniform(0.0, 2.0))
+                    continue
+                return Advice(
+                    question=question,
+                    answer="",
+                    seconds=time.monotonic() - started,
+                    error=f"{type(exc).__name__}: {str(exc)[:300]}",
+                )
+            break
         return Advice(
             question=question,
             answer=answer,

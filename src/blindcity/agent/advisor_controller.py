@@ -14,6 +14,20 @@ our scaffolding instead of the advisor:
     well we summarise rather than how well it analyses.
   * It does not second-guess the answer. If the advice names no lever, the turn passes with no
     change. A controller that fell back to a policy of its own would be scoring that policy.
+
+Three things it *does* say, each of which the other three modes are told and this one was not.
+Withholding them was not neutrality, it was a handicap, and it showed up in the score:
+
+  * **The objective.** With no goal stated, the advisor optimised for prudent municipal finance --
+    the highest solvency of any mode and the lowest satisfaction. It raised prices to fund the
+    capex it had correctly diagnosed, and the residents left. Nothing in its brief said that was
+    the wrong trade.
+  * **An instruction to look again.** Every turn the other modes are told to investigate. The
+    advisor was told only that time had passed, so after turn 0 it answered from memory: one query
+    per turn against 65 for `agent_raw`, on a city that had moved underneath it.
+  * **What its last recommendation became.** The other modes open every turn with the result of
+    their last decision, including anything clamped. Every figure restated here is one the advisor
+    itself produced, so this is parity rather than a hint.
 """
 
 from __future__ import annotations
@@ -26,10 +40,23 @@ from blindcity.agent.advisor import Advice, AnalyticsAgentAdvisor
 from blindcity.levers import LEVERS
 from blindcity.sim.model import CityState
 
+# The objective, in the words the other three modes are given. Its absence was not neutral: with
+# no goal stated, the advisor optimised for prudent municipal finance -- which is a perfectly good
+# thing for an analyst to do, and produced the highest solvency of any mode (0.845) and the lowest
+# satisfaction (0.575). It raised prices to fund the capex it correctly identified, and the
+# residents left. Nothing in its brief said that was the wrong trade.
+OBJECTIVE = """\
+The city is in crisis. The manager's job is to get it healthy again within a limited number of \
+turns. A healthy city is solvent, its residents are satisfied and staying, its services meet \
+demand, and its population is stable or growing -- all four at once, not one bought with another.\
+"""
+
 BRIEF = """\
-You are advising the manager of a city. The city's operational data is in the warehouse you are \
-connected to, catalogued in DataHub: one row per entity per simulated month, covering citizens, \
-buildings, roads, power, water, the municipal budget, and the policy levers in force each month.
+You are advising the manager of a city. {objective}
+
+The city's operational data is in the warehouse you are connected to, catalogued in DataHub: one \
+row per entity per simulated month, covering citizens, buildings, roads, power, water, the \
+municipal budget, and the policy levers in force each month.
 
 The manager controls exactly eight levers and nothing else:
 
@@ -59,11 +86,17 @@ class AdvisorController:
         current = "\n".join(f"  {n}: {state.levers.get(n, LEVERS[n].default):g}" for n in LEVERS)
 
         if turn == 0:
-            head = BRIEF.format(levers=levers)
+            head = BRIEF.format(levers=levers, objective=OBJECTIVE)
         else:
             # After the first turn the advisor has the conversation; restating the brief each time
-            # would crowd its own accumulated context.
-            head = "Three months have passed since your last recommendation."
+            # would crowd its own accumulated context. What must be restated is the instruction to
+            # go and look again. Without it the advisor answered from what it remembered: after
+            # turn 0 it ran a single query per turn, against 65 for `agent_raw`, and its later
+            # recommendations drifted on memory of a city three, six, nine months out of date.
+            head = (
+                "Three months have passed since your last recommendation and the city has moved. "
+                "Query the warehouse again before answering -- the earlier figures are stale."
+            )
 
         remaining = ""
         if self.turn_budget is not None:
@@ -73,8 +106,35 @@ class AdvisorController:
                 f"{left} remain including this one."
             )
 
+        # What last turn's advice actually became. The other three modes are each told this at the
+        # top of every turn ("Result of your last decision:"), and the advisor was not -- so it
+        # could not tell a value the manager applied from one clamped to a legal range, or from
+        # one it named and the parser never found. Restating it is parity, not a hint: every
+        # figure here is one the advisor itself produced.
+        confirmation = ""
+        if turn > 0 and self.history:
+            asked = self.history[-1].get("levers") or {}
+            if asked:
+                changed = {k: v for k, v in asked.items() if state.levers.get(k) != v}
+                lines = ["Result of your last recommendation:"]
+                lines.append(
+                    "  in force now: " + ", ".join(f"{k}={state.levers[k]:g}" for k in sorted(asked))
+                )
+                for name in sorted(changed):
+                    lines.append(
+                        f"  {name}: you asked for {asked[name]:g}, in force is "
+                        f"{state.levers.get(name, float('nan')):g} (clamped to its legal range)"
+                    )
+                confirmation = "\n".join(lines) + "\n\n"
+            else:
+                confirmation = (
+                    "Your last answer named no lever value the manager could apply, so nothing "
+                    "changed. Give a number for every lever you want moved.\n\n"
+                )
+
         return (
             f"{head}\n\n"
+            f"{confirmation}"
             f"Levers currently in force:\n{current}\n\n"
             f"Which levers should the manager change now, and to what values?{remaining}"
         )
