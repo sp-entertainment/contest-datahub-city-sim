@@ -296,6 +296,7 @@ def emit_assertions(
     `blindcity.catalog.assertions.evaluate_assertions` so FAIL is reportable.
     """
     from blindcity.catalog.assertions import AssertionResult, results_as_custom_properties
+    from blindcity.catalog.operational import guidance_properties
 
     count = 0
     by_table: dict[str, list[tuple[str, str]]] = {}
@@ -307,18 +308,36 @@ def emit_assertions(
         typed = [r for r in results if isinstance(r, AssertionResult)]
         eval_props = results_as_custom_properties(typed)
 
-    for table, items in by_table.items():
+    # The expert operating guidance, published here rather than injected into one mode's prompt.
+    # This is the delivery half of `catalog/operational.py`: `agent_datahub_live` reads it back out
+    # of DataHub at run time and imports none of it.
+    guidance = guidance_properties()
+
+    # Guidance and assertions do not cover the same tables -- the lever bands hang off
+    # `lever_monthly`, which declares no assertions -- so this iterates the union. Dropping the
+    # tables that only carry guidance would silently publish 5 of the 8 lever bands.
+    specs = {t.name: t for t in TABLES}
+    for table in sorted(set(by_table) | set(guidance)):
         urn = dataset_urn(table)
+        items = by_table.get(table, [])
         custom = {f"assertion.{i}.{col}": desc for i, (col, desc) in enumerate(items)}
         # Attach evaluation outcomes that mention this table (and the global summary once).
         for k, v in eval_props.items():
             if f".{table}." in k or k.startswith("assertion_results."):
                 custom[k] = v
-        props = {
-            "customProperties": custom,
-            "name": table,
-            "description": f"Blind City assertions for {table}",
+        custom.update(guidance.get(table, {}))
+
+        # Built on top of the table's own properties rather than replacing them. `datasetProperties`
+        # is written whole, so the previous version of this overwrote what `emit_tables` had just
+        # published: every table carrying an assertion lost its real description to "Blind City
+        # assertions for <table>" and lost its platform/database/schema properties with it. Six of
+        # the fourteen tables were affected, and the mode that reads descriptions is the one the
+        # headline comparison rests on.
+        spec = specs.get(table)
+        props = _dataset_properties(spec, include_descriptions=True) if spec else {
+            "name": table, "description": ""
         }
+        props["customProperties"] = {**props.get("customProperties", {}), **custom}
         _emit_mcp(gms, urn, "datasetProperties", props)
         # Also emit an AssertionInfo-style separate entity when possible
         for i, (col, desc) in enumerate(items):

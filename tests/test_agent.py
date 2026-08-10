@@ -202,11 +202,97 @@ def test_mode_definitions_differ_only_in_context():
 def test_only_the_live_mode_gets_a_per_turn_injection():
     """The two original modes must keep byte-identical turn prompts, so adding a third mode
     cannot retroactively change the result the first two already produced."""
+    from blindcity.agent import monitor as monitor_mod
     from blindcity.agent.monitor import AssertionMonitor, NoMonitor, build_monitor
+    from blindcity.catalog.operational import Guidance, guidance_properties, parse_guidance
 
     assert isinstance(build_monitor("none"), NoMonitor)
-    assert isinstance(build_monitor("assertions"), AssertionMonitor)
     assert build_monitor("none").block(None, 1, 0) == ""
+
+    # The assertions monitor now reads DataHub, so it is built with what the catalog published
+    # rather than constructed bare.
+    flat = {k: v for table in guidance_properties().values() for k, v in table.items()}
+    assert isinstance(AssertionMonitor(parse_guidance(flat)), AssertionMonitor)
+    assert isinstance(monitor_mod.Guidance, type) and Guidance is monitor_mod.Guidance
+
+
+def test_the_live_mode_refuses_to_run_without_guidance_in_datahub(monkeypatch):
+    """A missing catalog must be loud. Returning an empty block would turn `agent_datahub_live`
+    into `agent_datahub` while still labelling itself the assertions mode -- the headline number
+    would quietly become a measurement of something else."""
+    import httpx
+
+    from blindcity.agent import guidance as guidance_mod
+
+    monkeypatch.setattr(
+        guidance_mod, "_custom_properties", lambda client, gms, urn: {}
+    )
+    with pytest.raises(guidance_mod.GuidanceUnavailable, match="no Blind City operating guidance"):
+        guidance_mod.fetch_guidance("http://gms.invalid")
+
+    def explode(client, gms, urn):
+        raise httpx.ConnectError("no route to host")
+
+    monkeypatch.setattr(guidance_mod, "_custom_properties", explode)
+    with pytest.raises(guidance_mod.GuidanceUnavailable, match="could not read"):
+        guidance_mod.fetch_guidance("http://gms.invalid")
+
+
+def test_the_agent_path_never_imports_the_guidance_constants():
+    """The claim is that DataHub steers the agent, and it is only true if the bytes the agent acts
+    on came from DataHub. While `monitor.py` imported these directly, the mode would have scored
+    identically with DataHub switched off -- the catalog was decorative and the Python tuple was
+    doing the work. Asserted structurally, because the import is easy to add back by reflex."""
+    import inspect
+
+    from blindcity.agent import monitor as monitor_mod
+
+    source = inspect.getsource(monitor_mod)
+    for name in ("LEVER_GUIDANCE", "OUTCOME_ASSERTIONS", "RESPONSE_LAGS"):
+        assert name not in source, f"{name} is back on the agent's path; it must come from DataHub"
+
+
+def test_published_guidance_survives_the_round_trip_through_datahub():
+    """`guidance_properties` and `parse_guidance` are the only wire format between the source of
+    the guidance and the agent that acts on it. If they are not exact inverses, a band is silently
+    rewritten somewhere between the expert who wrote it and the run it steers."""
+    from blindcity.catalog.operational import (
+        LEVER_GUIDANCE,
+        OUTCOME_ASSERTIONS,
+        RESPONSE_LAGS,
+        guidance_properties,
+        parse_guidance,
+    )
+
+    by_table = guidance_properties()
+    flat = {k: v for table in by_table.values() for k, v in table.items()}
+    assert len(flat) == len(LEVER_GUIDANCE) + len(OUTCOME_ASSERTIONS) + len(RESPONSE_LAGS)
+    # Every lever band travels on the dataset whose columns they are.
+    assert set(by_table["lever_monthly"]) == {
+        f"blindcity.guidance.lever.{g.lever}" for g in LEVER_GUIDANCE
+    }
+
+    back = parse_guidance(flat)
+    assert back.levers == LEVER_GUIDANCE
+    assert back.outcomes == OUTCOME_ASSERTIONS
+    assert back.lags == RESPONSE_LAGS
+
+
+def test_a_corrupt_published_property_costs_one_entry_not_the_block():
+    """This reads a live catalog that anyone may have edited by hand in the DataHub UI. One
+    unparseable property should cost that entry, not silently blank the whole block -- which
+    would look exactly like a mode that had no assertions to make."""
+    from blindcity.catalog.operational import guidance_properties, parse_guidance
+
+    flat = {k: v for table in guidance_properties().values() for k, v in table.items()}
+    flat["blindcity.guidance.lever.income_tax_rate"] = "{not json"
+    flat["blindcity.guidance.outcome.road_wear"] = '{"low": "abc"}'
+    flat["blindcity.unrelated.key"] = "ignored"
+
+    back = parse_guidance(flat)
+    assert len(back.levers) == 7, "a corrupt lever took others with it"
+    assert len(back.outcomes) == 4
+    assert all(g.lever != "income_tax_rate" for g in back.levers)
 
 
 # --- Information parity with the human mode --------------------------------------------------

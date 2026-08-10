@@ -39,11 +39,26 @@ Measured spreads, best to worst, over each lever's full legal range:
     transit_fare             0.802 -> 0.818   moderate
     power_contract_mode      0.799 -> 0.813   low
     zoning_release           0.802 -> 0.817   negligible
+
+**This file authors the guidance; it does not deliver it.** `emit.py` publishes everything below to
+DataHub as dataset properties, and `agent/monitor.py` reads it back out of DataHub at run time.
+Nothing on the agent's path imports these constants. That is deliberate, and it is the difference
+between a claim and a demonstration: "DataHub assertions steer the agent" has to mean the bytes the
+agent acted on came from DataHub, not from a Python tuple that happens to sit beside a catalog we
+also populated. It also means an expert editing a band in the DataHub UI changes how the agent
+plays without a code change, which is the workflow this is modelling.
+
+The cost is drift: the same number now exists here and in DataHub. `guidance_properties` and
+`parse_guidance` below are exact inverses, so there is one wire format rather than two, and
+`uv run datahub-emit --check-guidance` fails when what is published differs from what is written
+here.
 """
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -217,6 +232,116 @@ class ResponseLag:
 
     column: str
     note: str
+
+
+# --- The wire format between here and DataHub ---------------------------------------------------
+#
+# One prefix, so everything this project publishes as guidance can be found, audited, and deleted
+# as a group, and nothing collides with the `assertion.N.column` properties `emit_assertions`
+# already writes. Values are JSON because a band is structured -- a monitor that had to re-parse
+# "0.10-0.14" out of prose would be a second, worse wire format hiding inside the first.
+
+GUIDANCE_PREFIX = "blindcity.guidance"
+
+# Which dataset carries which guidance. Levers and lags are properties of a table, so they hang off
+# the table they describe; the lever bands go on `lever_monthly`, whose columns they are.
+LEVER_GUIDANCE_TABLE = "lever_monthly"
+
+
+def guidance_properties() -> dict[str, dict[str, str]]:
+    """Everything above, as `{table: {property_key: json}}` ready for `datasetProperties`."""
+    out: dict[str, dict[str, str]] = {}
+
+    lever_props = out.setdefault(LEVER_GUIDANCE_TABLE, {})
+    for g in LEVER_GUIDANCE:
+        lever_props[f"{GUIDANCE_PREFIX}.lever.{g.lever}"] = json.dumps(
+            {"low": g.low, "high": g.high, "impact": g.impact, "note": g.note},
+            sort_keys=True,
+        )
+
+    for a in OUTCOME_ASSERTIONS:
+        out.setdefault(a.table, {})[f"{GUIDANCE_PREFIX}.outcome.{a.name}"] = json.dumps(
+            {
+                "table": a.table,
+                "column": a.column,
+                "sql": a.sql,
+                "low": a.low,
+                "high": a.high,
+                "note": a.note,
+            },
+            sort_keys=True,
+        )
+
+    for lag in RESPONSE_LAGS:
+        table = lag.column.split(".", 1)[0]
+        out.setdefault(table, {})[f"{GUIDANCE_PREFIX}.lag.{lag.column}"] = json.dumps(
+            {"column": lag.column, "note": lag.note}, sort_keys=True
+        )
+    return out
+
+
+@dataclass(frozen=True)
+class Guidance:
+    """The published guidance, read back. The same three tuples, from DataHub rather than source."""
+
+    levers: tuple[LeverGuidance, ...] = ()
+    outcomes: tuple[OutcomeAssertion, ...] = ()
+    lags: tuple[ResponseLag, ...] = ()
+
+    def __bool__(self) -> bool:
+        return bool(self.levers or self.outcomes or self.lags)
+
+
+def parse_guidance(properties: dict[str, str]) -> Guidance:
+    """Rebuild the guidance from custom properties gathered across every dataset.
+
+    The inverse of `guidance_properties`. Unknown keys are ignored and malformed values are
+    skipped rather than raised on: this reads a live catalog that anyone may have edited, and one
+    bad property should cost that one entry, not the whole block. Ordering is restored from the
+    source tuples so the rendered block does not reshuffle when DataHub returns a different map
+    order -- two runs whose prompts differ only in the order of a list are not comparable.
+    """
+    levers: dict[str, LeverGuidance] = {}
+    outcomes: dict[str, OutcomeAssertion] = {}
+    lags: dict[str, ResponseLag] = {}
+
+    for key, raw in properties.items():
+        if not key.startswith(GUIDANCE_PREFIX + "."):
+            continue
+        kind, _, name = key[len(GUIDANCE_PREFIX) + 1 :].partition(".")
+        try:
+            payload = json.loads(raw)
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(payload, dict):
+            continue
+        try:
+            if kind == "lever":
+                levers[name] = LeverGuidance(
+                    name, float(payload["low"]), float(payload["high"]),
+                    str(payload["impact"]), str(payload["note"]),
+                )
+            elif kind == "outcome":
+                outcomes[name] = OutcomeAssertion(
+                    name, str(payload["table"]), str(payload["column"]), str(payload["sql"]),
+                    float(payload["low"]), float(payload["high"]), str(payload["note"]),
+                )
+            elif kind == "lag":
+                lags[name] = ResponseLag(str(payload["column"]), str(payload["note"]))
+        except (KeyError, TypeError, ValueError):
+            continue
+
+    def ordered(found: dict[str, Any], source: tuple[Any, ...], key: str) -> tuple[Any, ...]:
+        known = [getattr(s, key) for s in source]
+        head = [found[k] for k in known if k in found]
+        tail = [v for k, v in sorted(found.items()) if k not in known]
+        return tuple(head + tail)
+
+    return Guidance(
+        levers=ordered(levers, LEVER_GUIDANCE, "lever"),
+        outcomes=ordered(outcomes, OUTCOME_ASSERTIONS, "name"),
+        lags=ordered(lags, RESPONSE_LAGS, "column"),
+    )
 
 
 # Read from `sim/systems.py`. These are properties of how the data behaves, not tactics, and they

@@ -55,7 +55,67 @@ def build_parser() -> argparse.ArgumentParser:
         help="Evaluate across every run in the warehouse instead of one. Row-count assertions "
         "are not meaningful this way once more than one run is loaded.",
     )
+    parser.add_argument(
+        "--check-guidance",
+        action="store_true",
+        help="Emit nothing. Compare the operating guidance published in DataHub against what "
+        "catalog/operational.py authors, and exit non-zero on any difference. The agent reads "
+        "the published copy, so drift between the two is the catalog steering a run with a band "
+        "nobody reviewed.",
+    )
     return parser
+
+
+def _check_guidance(gms: str) -> int:
+    """Fail when DataHub's guidance is not what this repository authors.
+
+    The point of publishing the guidance is that the agent reads DataHub rather than the source,
+    which necessarily makes them two copies. This is the guard that keeps them one thing: it
+    re-derives the published form from source and diffs it against what GMS actually returns.
+    """
+    from blindcity.agent.guidance import GuidanceUnavailable, fetch_guidance
+    from blindcity.catalog.operational import (
+        LEVER_GUIDANCE,
+        OUTCOME_ASSERTIONS,
+        RESPONSE_LAGS,
+    )
+
+    try:
+        published = fetch_guidance(gms)
+    except GuidanceUnavailable as exc:
+        print(f"datahub-emit: {exc}", file=sys.stderr)
+        return 1
+
+    drift = []
+    for label, want, got in (
+        ("lever", LEVER_GUIDANCE, published.levers),
+        ("outcome", OUTCOME_ASSERTIONS, published.outcomes),
+        ("lag", RESPONSE_LAGS, published.lags),
+    ):
+        missing = [w for w in want if w not in got]
+        extra = [g for g in got if g not in want]
+        for m in missing:
+            drift.append(f"  {label}: not published as authored -> {m}")
+        for e in extra:
+            drift.append(f"  {label}: published but not authored here -> {e}")
+
+    if drift:
+        print(
+            f"datahub-emit: DataHub guidance differs from catalog/operational.py "
+            f"({len(drift)} difference(s)):",
+            file=sys.stderr,
+        )
+        for line in drift[:20]:
+            print(line[:300], file=sys.stderr)
+        print("datahub-emit: re-publish with `uv run datahub-emit`.", file=sys.stderr)
+        return 1
+
+    print(
+        f"datahub-emit: guidance in DataHub matches source "
+        f"({len(published.levers)} levers, {len(published.outcomes)} outcomes, "
+        f"{len(published.lags)} response lags)"
+    )
+    return 0
 
 
 def _evaluate_warehouse(run_id: int | None = None, *, all_runs: bool = False):
@@ -85,6 +145,9 @@ def _evaluate_warehouse(run_id: int | None = None, *, all_runs: bool = False):
 def main() -> int:
     configure_console()
     args = build_parser().parse_args()
+
+    if args.check_guidance:
+        return _check_guidance(args.gms)
 
     if args.dump_lineage:
         graph = lineage_graph_dict()
