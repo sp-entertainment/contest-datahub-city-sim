@@ -42,9 +42,20 @@ Function tools with reasoning_effort are not supported for gpt-5.6-luna in
 reasoning_effort to 'none'.
 ```
 
-Confirmed against the live API — this is a model limitation, not a key permission. The same key
-succeeds on `/v1/chat/completions` at `reasoning_effort='none'`, and the refusal is a `400
-invalid_request_error`, not a `401`.
+Confirmed against the live API, twice, and it is a model limitation rather than a key permission:
+
+- The refusal is `400 invalid_request_error` on the request shape, never `401`/`403`. When the
+  project genuinely lacks a model the error is unmistakable — `gpt-4o` returns
+  `403 Project ... does not have access to model`.
+- Widening the key's permissions changed nothing. The vanilla agent was re-tested afterwards and
+  returned the identical `400`.
+- `gpt-5.6-terra` behaves exactly the same as `gpt-5.6-luna`: same refusal on
+  `/v1/chat/completions`, same two working paths. This is a property of the `gpt-5.6-*` family,
+  not of one model, so switching models within it does not avoid the patch.
+
+Two paths work for both models: `/v1/chat/completions` with `reasoning_effort='none'`, and
+`/v1/responses` at any effort. The vanilla agent can reach neither, because it never sets
+`reasoning_effort` at all and cannot be told to.
 
 That left two options. Running the advisor at `reasoning_effort='none'` would make it the only
 mode with no reasoning at all while the other three run at `low` — a handicap aimed squarely at

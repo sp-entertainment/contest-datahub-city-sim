@@ -1,0 +1,84 @@
+{
+  "scenario_name": "infrastructure_neglect",
+  "seed": 42,
+  "controller_name": "agent_analytics",
+  "mode": "agent_analytics",
+  "run_id": "1",
+  "turn_budget": 1,
+  "green_threshold": 0.62,
+  "baseline_population": 3133,
+  "recovered": false,
+  "green_turn": null,
+  "final_index": 0.3992501612317859,
+  "turns": [
+    {
+      "turn": 0,
+      "tick": 63,
+      "levers": {
+        "income_tax_rate": 0.04,
+        "property_tax_rate": 0.004,
+        "electricity_tariff": 0.65,
+        "road_maintenance_budget": 8000000.0,
+        "water_sewer_capex": 8000000.0,
+        "transit_fare": 2.0,
+        "zoning_release": 0.25,
+        "power_contract_mode": 2
+      },
+      "components": {
+        "solvency": 0.04394333736125213,
+        "satisfaction": 0.34339440899921536,
+        "service": 0.46432237236664015,
+        "population": 0.7407322967488942,
+        "index": 0.3992501612317859
+      },
+      "index": 0.3992501612317859,
+      "green": false
+    }
+  ],
+  "meta": {
+    "crisis_months": 60,
+    "months_per_turn": 3,
+    "warehouse_run_id": 1,
+    "agent": {
+      "controller": "agent_analytics",
+      "model": "analytics-agent@http://localhost:8100",
+      "catalog": "analytics_agent",
+      "monitor": "none",
+      "turns": [
+        {
+          "turn": 0,
+          "question": "You are advising the manager of a city. The city's operational data is in the warehouse you are connected to, catalogued in DataHub: one row per entity per simulated month, covering citizens, buildings, roads, power, water, the municipal budget, and the policy levers in force each month.\n\nThe manager controls exactly eight levers and nothing else:\n\n  income_tax_rate: 0.0 to 0.4 (fraction) - Tax on household income.\n  property_tax_rate: 0.0 to 0.05 (fraction) - Annual tax on assessed value.\n  electricity_tariff: 0.0 to 1.0 (currency/kWh) - Retail rate charged to households.\n  road_maintenance_budget: 0.0 to 8000000.0 (currency/year) - Spend on road repair.\n  water_sewer_capex: 0.0 to 8000000.0 (currency/year) - Capital spend on water and sewer capacity.\n  transit_fare: 0.0 to 10.0 (currency/ride) - Fare charged per transit trip.\n  zoning_release: 0.0 to 1.0 (fraction) - Share of undeveloped land opened for development.\n  power_contract_mode: 0 to 2 (index) - One of ('spot', 'fixed', 'hedged').\n\nInvestigate the data and tell the manager which levers to change and to what values. Be specific: give a number for every lever you want changed, written as `lever_name = value`. Levers you do not mention will be left where they are.\n\nLevers currently in force:\n  income_tax_rate: 0.04\n  property_tax_rate: 0.004\n  electricity_tariff: 0.65\n  road_maintenance_budget: 0\n  water_sewer_capex: 0\n  transit_fare: 8\n  zoning_release: 0\n  power_contract_mode: 0\n\nWhich levers should the manager change now, and to what values? This is decision 1 of 1; 1 remain including this one.",
+          "answer": "The current policy is accumulating cash while core infrastructure deteriorates:\n\n- **Roads:** maintenance is zero; average road wear has risen to **0.969**, with congestion at **0.778**.\n- **Water:** capacity is falling while load ratio has reached **0.852**, leaving little headroom.\n- **Power:** outage fraction remains high at **0.265** on the latest month, with supply below demand.\n- **Residents:** average satisfaction has declined from **0.698** initially to **0.568**.\n- **Transit and development:** the fare is near its maximum at **8**, while zoning release is zero; both constrain affordability and growth.\n- **Finances:** the city has approximately **39.7M** in treasury and no debt, so the infrastructure investments are affordable.\n\nI recommend changing these levers:\n\n```text\nroad_maintenance_budget = 8000000\nwater_sewer_capex = 8000000\npower_contract_mode = 2\ntransit_fare = 2\nzoning_release = 0.25\n```\n\nLeave the following unchanged for now: `income_tax_rate`, `property_tax_rate`, and `electricity_tariff`. The immediate problem is underinvestment and service reliability, not insufficient treasury revenue.",
+          "levers": {
+            "road_maintenance_budget": 8000000.0,
+            "water_sewer_capex": 8000000.0,
+            "transit_fare": 2.0,
+            "zoning_release": 0.25,
+            "power_contract_mode": 2
+          },
+          "seconds": 38.36,
+          "error": null,
+          "queries": [
+            "WITH latest AS (SELECT run_id, MAX(tick) AS tick FROM ticks GROUP BY run_id), m AS (SELECT l.run_id,l.tick,t.year,t.month FROM latest l JOIN ticks t USING(run_id,tick)) SELECT m.*, lm.*, b.balance,b.debt,b.treasury, p.outage_fraction,p.supply_kw,p.demand_kw,w.load_ratio,w.failure_rate, mg.population,mg.net FROM m LEFT JOIN lever_monthly lm USING(run_id,tick) LEFT JOIN budget_monthly b USING(run_id,tick) LEFT JOIN power_monthly p USING(run_id,tick) LEFT JOIN water_monthly w USING(run_id,tick) LEFT JOIN migration_monthly mg USING(run_id,tick) ORDER BY m.run_id",
+            "SELECT t.tick,t.year,t.month,l.income_tax_rate,l.property_tax_rate,l.electricity_tariff,l.road_maintenance_budget,l.water_sewer_capex,l.transit_fare,l.zoning_release,l.power_contract_mode,b.balance,b.treasury,b.debt,p.outage_fraction,p.supply_kw,p.demand_kw,w.capacity,w.demand,w.load_ratio,mg.population,mg.net,cs.avg_sat,cs.avg_disp,rs.avg_cong,rs.avg_wear FROM ticks t JOIN lever_monthly l USING(run_id,tick) LEFT JOIN budget_monthly b USING(run_id,tick) LEFT JOIN power_monthly p USING(run_id,tick) LEFT JOIN water_monthly w USING(run_id,tick) LEFT JOIN migration_monthly mg USING(run_id,tick) LE"
+          ]
+        }
+      ],
+      "answered_turns": 1,
+      "acting_turns": 1,
+      "advisor_errors": [],
+      "usage": {
+        "prompt_tokens": 75787,
+        "output_tokens": 1492,
+        "total_tokens": 77279,
+        "calls": 1,
+        "seconds": 38.36
+      },
+      "phases": {
+        "prepare_seconds": 7.5,
+        "play_seconds": 38.7
+      }
+    },
+    "wall_seconds": 46.3
+  }
+}
