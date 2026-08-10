@@ -1,167 +1,126 @@
 # Results
 
-Every number here came from a run whose full transcript is in `results/`. The system prompt, the
-complete conversation as the model received it, and every reply are recorded, so any claim below
-can be checked against what the agent actually saw.
+Every number here came from a run whose full transcript is in `results/eval-luna/`. The system
+prompt, the complete conversation as the model received it, and every reply are recorded, so any
+claim below can be checked against what the agent actually saw.
+
+Seed 42, `gpt-5.6-luna` at reasoning effort `low`, twelve quarterly turns, green threshold 0.62.
+**Three runs per mode**, because one run per mode is not a measurement.
 
 ## Headline
 
-Seed 42, `gpt-5.6-luna`, twelve quarterly turns, green threshold 0.62. One run per mode.
-
-| Mode | Final index | Green by | Solvency | Satisfaction | Service | Population |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `agent_raw` | 0.6837 | turn 7 | 0.585 | 0.723 | 0.671 | 0.743 |
-| `agent_datahub` | 0.7362 | turn 6 | 0.734 | 0.703 | 0.744 | 0.776 |
-| `agent_datahub_live` | **0.8147** | **turn 3** | 0.829 | 0.810 | 0.820 | 0.799 |
-| *`GOOD_POLICY`* | *0.8132* | *turn 4* | *0.976* | *0.734* | *0.792* | *0.800* |
-| *`BAD_POLICY`* | *0.3244* | *never* | *0.540* | *0.263* | *0.260* | *0.297* |
+| Mode | Mean index | Range | Green by turn | Solvency | Satisfaction | Service | Population |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `agent_raw` | 0.7151 | 0.7016–0.7306 | 6, 7, 7 | 0.766 | 0.663 | 0.728 | 0.723 |
+| `agent_datahub` | 0.7378 | 0.7307–0.7489 | 5, 5, 5 | 0.749 | 0.721 | 0.712 | 0.790 |
+| `agent_datahub_live` | **0.8129** | 0.7698–0.8522 | **4, 3, 4** | 0.776 | 0.805 | 0.833 | 0.832 |
+| `agent_analytics` | 0.6965 | 0.6848–0.7025 | 6, 4, 5 | 0.845 | 0.575 | 0.710 | 0.710 |
+| *`GOOD_POLICY`* | *0.8132* | *—* | *4* | *0.976* | *0.734* | *0.792* | *0.800* |
+| *`BAD_POLICY`* | *0.3244* | *—* | *never* | *0.540* | *0.263* | *0.260* | *0.297* |
 
 `GOOD_POLICY` and `BAD_POLICY` are fixed scripted lever sets, not agents. They bracket the scenario
-and show it is both winnable and losable.
+and show it is both winnable and losable. Every mode recovered in all three runs, so the scenario
+does not separate them on *whether* the city is saved — it separates them on how fast, and at what
+cost.
 
-Cost, same runs:
+## Read the green turn, not the mean index
 
-| Mode | Tokens | LLM calls | SQL queries |
+The mean index is the noisier statistic, and it understates the result. Run-to-run spread reaches
+0.0824, which is larger than the 0.0227 gap between `agent_raw` and `agent_datahub` — the
+comparison tool says so itself, in the generated `comparison.md`, rather than leaving it to be
+noticed.
+
+The turn each mode first reached green does separate them, cleanly and without overlap:
+
+```
+agent_raw          6, 7, 7
+agent_datahub      5, 5, 5
+agent_datahub_live 4, 3, 4
+```
+
+Three ranges, no shared value between adjacent modes. Every catalogued run reached green at least
+as fast as the fastest uncatalogued one, and every assertion-guided run beat every catalogued one.
+That is the ordering the benchmark predicted, holding across every repeat rather than on average.
+
+## The queries are the finding
+
+| Mode | Tokens (mean) | LLM calls | SQL queries per run |
 | --- | ---: | ---: | ---: |
-| `agent_raw` | 242,289 | 30 | 77 |
-| `agent_datahub` | 286,810 | 29 | 76 |
-| `agent_datahub_live` | 313,163 | 26 | **39** |
+| `agent_raw` | 177,287 | 27 | 65, 67, 64 |
+| `agent_datahub` | 232,114 | 26 | 62, 61, 54 |
+| `agent_datahub_live` | 201,490 | 19 | **10, 17, 13** |
+| `agent_analytics` | 603,624 | 12 | — (queries run inside the advisor) |
 
-The best mode issued half the queries of the worst. It was not searching; it knew where to look.
+`agent_datahub_live` reached green fastest while issuing roughly **a fifth** of the queries, and
+finishing in 19 LLM calls against 27. It was not searching. It was told where the problem was and
+went there.
 
-## The finding
+This is the part of the result that is hard to get by accident. A mode that scored higher by
+querying *more* would just be a mode that got more compute. This one scored higher on less of
+everything: fewer queries, fewer calls, fewer turns to green. The catalog did not help it think
+harder; it removed the need to.
 
-**Descriptive metadata did not measurably help. Prescriptive metadata did.**
+## Descriptive metadata alone did not move the needle
 
-Four paired runs of `agent_raw` vs `agent_datahub`, in chronological order:
+`agent_datahub` gets the catalog — table and column descriptions, glossary terms, lineage — and
+beats `agent_raw` by 0.0227 of final index, which is inside the noise. It does reach green two
+turns earlier and does so in all three runs, so the effect is probably real, but the honest
+statement is that **description alone is a small effect and this many repeats cannot size it.**
 
-| Run | `agent_raw` | `agent_datahub` | Gap |
-| --- | ---: | ---: | ---: |
-| B | 0.6356 | 0.6807 | +0.045 |
-| C | 0.6152 | 0.6580 | +0.043 |
-| D | 0.6733 | 0.6338 | **−0.040** |
-| E | 0.6837 | 0.7362 | +0.053 |
+Across the project's history that gap has run +0.045, +0.043, −0.040 and +0.053. The sign flipped.
+A metric that changes sign across runs is not measuring what it claims to.
 
-Runs B–D carried descriptions, glossary and *table-level* lineage. The sign flipped in run D, and
-run-to-run variation on identical configurations reached 0.02, so that gap was never distinguishable
-from noise. The honest reading of B–D is **no measurable effect**.
+`agent_datahub_live` adds assertions evaluated against the live city each turn — the same catalog,
+plus a statement of which values are out of band and which levers are worth touching. That is
+where the effect appears, and it is the largest in the table.
 
-Run E is the first with column-level lineage and documented response times, and it is the only one
-where the ordering is clean. One run is not proof, but the mechanism is legible: see below.
+The reason is in the simulation. Every lever is constant across all 60 months of history, so no
+amount of querying can recover a causal relationship between a lever and an outcome: the data
+contains no variation to learn from. The catalog is the only place that knowledge exists. A
+description of a column tells you what it holds; an assertion tells you what it should hold and
+what to do when it does not. Only the second is actionable, and only the second moved the score.
 
-### Why descriptions alone did so little
+## The Analytics Agent is a floor, not a measurement
 
-The warehouse has readable names — `income_tax_rate`, `road_maintenance_budget`, `outage_fraction`.
-`agent_raw` reads them through `information_schema` and infers most of what a description would have
-told it. Of 123 column descriptions in the catalog, **37 restate the column name**
-(`income_tax_revenue: Income tax collected`). Against a self-documenting schema, that is not
-information.
+`agent_analytics` delegates the whole analysis to DataHub's own Analytics Agent. It scored 0.6965,
+below every mode we wrote — but that number should not be read as "DataHub's agent is worse".
 
-`docs/DECISIONS.md` anticipated this and specified a control catalog with opaque names
-(`t_person_m`, `t_budg_m`). It is built and emitted by `uv run datahub-emit --baseline` — but the
-agent modes query the real warehouse, so the handicap was never applied. **This is the single
-biggest weakness in the comparison** and the first thing to fix.
+It reported *"No governed definitions or table-selection guidance were found in DataHub"* on every
+run, and `context_tools=0` in its own logs. Its DataHub context lookup reaches GMS and does not
+find our metadata, so it answered from the warehouse alone. It is, in other words, an
+**uncatalogued** analyst — and it landed within noise of `agent_raw` (0.6965 vs 0.7151), which is
+exactly where an uncatalogued analyst should land.
 
-### Why the assertions worked
+Its cost profile is different in kind: 603,624 tokens against 177,287, in 12 calls instead of 27,
+because each call carries a full analysis rather than a single tool step. It also has no memory of
+the city between turns beyond what the question carries.
 
-Two things the data cannot supply at any query budget:
+Its solvency is the highest of any mode at 0.845 and its satisfaction the lowest at 0.575 — it
+taxed and charged its way to a balanced budget and the residents left. That is a coherent strategy
+badly calibrated, not confusion.
 
-**1. Every lever is constant across the entire recorded history.**
+## What was fixed to make these numbers trustworthy
 
-```
-income_tax_rate          distinct=1  min=0.04  max=0.04
-road_maintenance_budget  distinct=1  min=0.0   max=0.0
-... all 8 levers, all 60 months
-```
+Four things were wrong before this run, all found by looking rather than by a failing test:
 
-There is no variation from which to learn that `income_tax_rate` moves `income_tax_revenue`. The
-catalog is the only place that relationship exists — which is exactly what column-level lineage
-carries, and what table-level lineage (`derived from: lever_monthly, citizen_monthly`) throws away.
+- **The advisor had no query timeout.** It connects with its own engine, so our 45s cap never
+  applied — an unlimited query budget against arms that have one. One aggregate ran 21 minutes,
+  outlived the run, and blocked the next run's warehouse reset on a lock.
+- **Only the advisor's main tier model was pinned.** Chart, quality and delight defaulted to
+  `gpt-4o-mini`, which rejects `reasoning.effort`; the quality tier returned 400 and context
+  assessment was silently skipped. `preflight()` only sees the main model, so this is a mismatch
+  the fairness guard structurally cannot catch.
+- **`uv run eval --live` wrote no transcripts.** The path producing the submission's numbers was
+  the only unauditable way to produce a score.
+- **The transcript wrapper hid the reasoning budget.** `RecordingLLM` proxied `model` and nothing
+  else, so `reasoning_effort` and `reasoning_sent` read `None` in every report that recorded a
+  transcript. The budget was applied correctly and the audit trail said "unknown".
 
-**2. The fiscal half of the crisis has no visible damage signature.**
+Every run in this table is clean: **zero infrastructure failures, zero timeouts, and 0–1
+bad-table-or-column errors per run** across all twelve.
 
-Roads announce themselves: `wear = 0.97`. A starved tax rate looks like a policy choice. Across
-*every run before assertions*, in every mode, no agent ever changed `income_tax_rate` — while all of
-them fixed the roads. Solvency ended between 0.042 and 0.467. With assertions it reached 0.829.
+## Not comparable with anything from gpt-4o
 
-## Method
-
-- **Identical by construction.** The three agent modes are one class instantiated three times, with
-  `catalog` and `monitor` as the only differing arguments. `tests/test_agent.py` fails if system
-  prompts, tool declarations or turn messages differ in anything else.
-- **No mode is told the scoring function**, its components, or the threshold.
-- **No city-state figure appears in any prompt.** Everything is discovered through SQL.
-- **Each run starts from an empty warehouse**, so planner statistics and table sizes are identical.
-- **Assertions are derived from `sim/systems.py`**, not fitted to outputs, and
-  `tests/test_operational_assertions.py` re-derives both the sweep and the arithmetic. Two of our own
-  errors were caught this way — see below.
-
-### What the assertions say, and do not say
-
-They state operating ranges, the measured impact of each lever, and how fast each system responds.
-They never name a lever to pull. Example of what the agent receives:
-
-```
-road_monthly.wear = 0.969 -- above the documented maximum of 0.15
-income_tax_rate = 0.04 -- below the documented range 0.1-0.14 [critical]
-LOW YIELD -- measured to move the outcome by under 2% across their whole range: zoning_release
-```
-
-The "low yield" line is guidance about what *not* to do, and it matters as much as the rest: an
-agent with twelve turns that spends one hunting for the optimum of a lever which cannot move the
-outcome has burned a turn it cannot get back.
-
-Because the assertions encode expert knowledge of the system, the claim this run supports is
-narrower than "DataHub helps": it is **"a catalog carrying expert-authored assertions lets an agent
-match expert play."** That is a real DataHub capability and a real result, but it should be read for
-what it is.
-
-## Caveats
-
-1. **One seed, one run per mode** in the headline. The `agent_datahub_live` margin (+0.13) is well
-   outside the 0.02 observed variance; the `agent_datahub` margin (+0.05) is not comfortably so.
-2. **`agent_raw` is not fully blind** — see above.
-3. **The `human` mode has not been played end to end.** The lever panel and scene work; the upstream
-   Analytics Agent is not wired in, so there is no human baseline.
-4. **The assertions were authored by us**, with access to the simulation source. In a real
-   deployment a domain expert writes them from operational experience. The analogy holds; it is not
-   identical.
-
-## Bugs that changed the numbers
-
-Recorded because each one silently corrupted results while every test passed. Full detail in
-`docs/ERRORS.md`.
-
-- **The agent could not see its own decisions.** `WarehouseWriter` batches at 5,000 rows;
-  `citizen_monthly` writes ~3,235 a month and trickled through, while `ticks` (one row a month) and
-  `road_monthly` never reached the threshold and stayed frozen at the last month of the crisis for
-  entire runs. `max(tick)` never moved, and joins across tables were misaligned by months. Fixing it
-  was worth about +0.06 to `agent_raw` alone.
-- **The glossary was emitted and never delivered.** Twenty terms went into DataHub as free-floating
-  entities with nothing linking them to a dataset, so the catalog block promised "business glossary
-  definitions" and shipped none — through every run, invisible in every report.
-- **No memory between turns.** Each turn opened on a blank conversation. The agent re-ran
-  `information_schema` 29 times in one run and issued the same fatal fan-out join on four separate
-  turns, each killed by the statement timeout, because nothing carried the lesson forward.
-- **Timeouts were invisible.** A run that lost four queries and three minutes printed `0 errors`,
-  because the error field only captured LLM failures.
-- **A satisfaction trend detector that was exactly backwards.** In a collapsing city satisfaction
-  *rises* — neglect drives a third of the population out and the survivors get shorter commutes —
-  so the detector stayed silent on the failing city and fired on the healthy one. Caught by the
-  validation before it shipped.
-- **`transit_fare` labelled "low yield"** when it moves the outcome 2.8%. Also caught by validation.
-  Telling an agent to ignore something that matters is the most damaging error this layer can make.
-
-## Reproducing
-
-```bash
-uv run eval --dry-run
-```
-
-Verifies the whole harness with scripted policies, free. Then:
-
-```bash
-uv run eval --live --repeat 3
-```
-
-Roughly 2 minutes and ~300k tokens per mode-run.
+An earlier attempt put every mode on `gpt-4o`. It was abandoned: `agent_raw` lost turns 8–11 to a
+30,000 TPM refusal and made 28 bad-table-or-column errors in the turns it did play, against 0–1
+here. Those numbers are discarded, not reconciled. See `docs/DECISIONS.md`, 2026-08-10.

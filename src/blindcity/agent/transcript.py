@@ -52,6 +52,21 @@ class RecordingLLM:
     def model(self) -> str:
         return self.inner.model
 
+    def __getattr__(self, name: str) -> Any:
+        """Anything this wrapper does not define, read from the client underneath.
+
+        `model` was proxied explicitly and nothing else was, which meant the report's
+        `reasoning_effort` and `reasoning_sent` both read `None` on every run that recorded a
+        transcript -- which, since transcripts became the default, is every run. The reasoning
+        budget was being applied correctly and the record of it said "unknown".
+
+        That is this module's own failure mode turned on itself: the layer that exists to make a
+        run auditable was quietly deleting a field from the audit. Delegating by name rather than
+        listing the attributes is the point -- a future field on the client shows up without
+        anyone remembering to add it here.
+        """
+        return getattr(self.inner, name)
+
     def _write(self, record: dict[str, Any]) -> None:
         with self.path.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(record, ensure_ascii=False) + "\n")

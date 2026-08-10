@@ -14,7 +14,7 @@ import pytest
 from blindcity.evaluation.compare import EXPECTED_ORDER, ModeSummary, collect, markdown
 
 
-def _write(tmp_path, mode, index, green, tokens=1000, name=None):
+def _write(tmp_path, mode, index, green, tokens=1000, name=None, model="gpt-5.6-luna"):
     path = tmp_path / f"{name or mode}.json"
     path.write_text(json.dumps({
         "scenario_name": "infrastructure_neglect", "seed": 42, "controller_name": mode,
@@ -23,6 +23,7 @@ def _write(tmp_path, mode, index, green, tokens=1000, name=None):
         "final_index": index, "turns": [], "meta": {},
     }), encoding="utf-8")
     path.with_suffix(".agent.json").write_text(json.dumps({
+        "model": model,
         "usage": {"total_tokens": tokens, "calls": 30, "seconds": 100.0},
         "turns": [{"sql_calls": 5}], "timeouts": 0, "infrastructure_failures": 0,
     }), encoding="utf-8")
@@ -181,3 +182,43 @@ def test_lever_parsing_is_strict_about_names_and_ranges():
     # Last mention wins -- analysts restate the recommendation in a closing summary -- and the
     # out-of-range value is clamped rather than taken literally.
     assert out["income_tax_rate"] == LEVERS["income_tax_rate"].maximum
+
+
+def test_the_report_names_the_model_the_runs_actually_used(tmp_path):
+    """`$LLM_MODEL` was printed as the model on every comparison, because the header echoed the
+    command line rather than the runs. A results table that cannot say which model produced it is
+    not a record of anything."""
+    paths = [
+        _write(tmp_path, "agent_raw", 0.71, 6),
+        _write(tmp_path, "agent_datahub", 0.74, 5),
+    ]
+    report = markdown(collect(paths), threshold=0.62, seed=42, model="$LLM_MODEL")
+    assert "`gpt-5.6-luna`" in report
+    assert "$LLM_MODEL" not in report
+
+
+def test_the_report_refuses_to_compare_modes_that_ran_different_models(tmp_path):
+    """The A/B rests entirely on the modes differing in catalog context alone. Two models means
+    every gap has two candidate explanations, and the table would give no sign of it."""
+    paths = [
+        _write(tmp_path, "agent_raw", 0.71, 6, model="gpt-4o"),
+        _write(tmp_path, "agent_datahub", 0.74, 5, model="gpt-5.6-luna"),
+    ]
+    report = markdown(collect(paths), threshold=0.62, seed=42, model="whatever")
+    assert "did not run the same model" in report
+    assert "`gpt-4o`: agent_raw" in report
+    assert "`gpt-5.6-luna`: agent_datahub" in report
+
+
+def test_the_advisor_does_not_count_as_a_model_mismatch(tmp_path):
+    """`agent_analytics` reports its endpoint, not a model id -- the model lives inside a service
+    we do not own, and its parity is enforced by preflight() at runtime instead. Letting that
+    string into the comparison would flag every four-mode run as mismatched."""
+    paths = [
+        _write(tmp_path, "agent_raw", 0.71, 6),
+        _write(tmp_path, "agent_datahub", 0.74, 5),
+        _write(tmp_path, "agent_analytics", 0.69, 5, model="analytics-agent@http://localhost:8100"),
+    ]
+    report = markdown(collect(paths), threshold=0.62, seed=42, model="x")
+    assert "did not run the same model" not in report
+    assert "`gpt-5.6-luna`" in report

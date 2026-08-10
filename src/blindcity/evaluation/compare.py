@@ -36,6 +36,10 @@ class ModeSummary:
     sql_queries: list[int] = field(default_factory=list)
     timeouts: int = 0
     infrastructure_failures: int = 0
+    # Every model id seen across this mode's runs. A list rather than one value because the whole
+    # comparison rests on the modes sharing a model, and the report has to be able to say so from
+    # the recorded runs rather than from what the operator meant to do.
+    models: list[str] = field(default_factory=list)
 
     @property
     def mean_index(self) -> float:
@@ -96,6 +100,9 @@ def collect(paths: list[Path]) -> dict[str, ModeSummary]:
         s.llm_calls.append(usage.get("calls", 0))
         s.llm_seconds.append(round(usage.get("seconds", 0.0), 1))
         s.sql_queries.append(sum(t.get("sql_calls", 0) for t in report.get("turns", [])))
+        model = report.get("model")
+        if isinstance(model, str) and model and model not in s.models:
+            s.models.append(model)
         s.timeouts += report.get("timeouts", 0)
         s.infrastructure_failures += report.get("infrastructure_failures", 0)
     return summaries
@@ -105,6 +112,33 @@ def collect(paths: list[Path]) -> dict[str, ModeSummary]:
 # ordering does not hold, that is the finding, and a comparison that quietly sorted by score
 # would hide exactly the result worth knowing.
 EXPECTED_ORDER = ("agent_raw", "agent_datahub", "agent_datahub_live")
+
+
+def _model_line(summaries: dict[str, ModeSummary], fallback: str) -> tuple[str, str | None]:
+    """What model the runs actually used, and a warning if they disagree.
+
+    The A/B is only worth anything if every mode ran the same model, and that is a fact about the
+    recorded runs, not about the command line -- so it is read back out of them. `agent_analytics`
+    is excluded from the comparison: it reports its advisor's endpoint rather than a model id,
+    because the model is configured inside a service we do not own. Its parity is enforced at
+    runtime instead, by `AnalyticsAgentAdvisor.preflight`.
+    """
+    seen: dict[str, list[str]] = {}
+    for name, s in summaries.items():
+        if name == "agent_analytics":
+            continue
+        for m in s.models:
+            seen.setdefault(m, []).append(name)
+    if not seen:
+        return fallback, None
+    if len(seen) == 1:
+        return next(iter(seen)), None
+    detail = "; ".join(f"`{m}`: {', '.join(sorted(modes))}" for m, modes in sorted(seen.items()))
+    return (
+        "MIXED",
+        "**These modes did not run the same model, so their scores are not comparable.** "
+        + detail,
+    )
 
 
 def markdown(summaries: dict[str, ModeSummary], *, threshold: float, seed: int, model: str) -> str:
@@ -125,14 +159,20 @@ def markdown(summaries: dict[str, ModeSummary], *, threshold: float, seed: int, 
             f"{statistics.fmean(s.sql_queries):.0f} |"
         )
 
+    resolved, mismatch = _model_line(summaries, model)
     lines = [
         "# Blind City — mode comparison",
         "",
-        f"Seed {seed} · model `{model}` · green threshold {threshold} · commit `{git_commit()}`",
+        (
+            f"Seed {seed} · model `{resolved}` · green threshold {threshold} · "
+            f"commit `{git_commit()}`"
+        ),
         "",
         *rows,
         "",
     ]
+    if mismatch:
+        lines += [mismatch, ""]
 
     # Only meaningful when at least two of the benchmark modes are present. A dry run plays the
     # scripted policies, which have no expected ordering to check against.

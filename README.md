@@ -16,29 +16,43 @@ Built for [Build with DataHub: The Agent Hackathon](https://datahub.devpost.com/
 Same model, same seed, same crisis, same levers, same turn budget. The only difference is what
 DataHub gave each agent.
 
-| Mode | What the catalog provides | Final health index | Green by |
-| --- | --- | ---: | ---: |
-| `agent_raw` | Nothing. Schema discovery via `information_schema` only | 0.6837 | turn 7 |
-| `agent_datahub` | Descriptions, glossary, column-level lineage | **0.7362** | turn 6 |
-| `agent_datahub_live` | The above, plus expert assertions evaluated each turn | **0.8147** | turn 3 |
-| *`GOOD_POLICY`* | *hand-calibrated reference, not an agent* | *0.8132* | *turn 4* |
-| *`BAD_POLICY`* | *deliberate neglect, not an agent* | *0.3244* | *never* |
+Three runs per mode, `gpt-5.6-luna` at reasoning effort `low`.
 
-Green is 0.62. **The fully-catalogued agent beat the hand-tuned expert policy and got there in a
-quarter of the turns.**
+| Mode | What the catalog provides | Mean index | Green by turn | SQL queries |
+| --- | --- | ---: | ---: | ---: |
+| `agent_raw` | Nothing. Schema discovery via `information_schema` only | 0.7151 | 6, 7, 7 | 65 |
+| `agent_datahub` | Descriptions, glossary, column-level lineage | 0.7378 | 5, 5, 5 | 59 |
+| `agent_datahub_live` | The above, plus expert assertions evaluated each turn | **0.8129** | **4, 3, 4** | **13** |
+| `agent_analytics` | DataHub's own Analytics Agent answers instead | 0.6965 | 6, 4, 5 | — |
+| *`GOOD_POLICY`* | *hand-calibrated reference, not an agent* | *0.8132* | *4* | *—* |
+| *`BAD_POLICY`* | *deliberate neglect, not an agent* | *0.3244* | *never* | *—* |
+
+Green is 0.62. **The fully-catalogued agent matched the hand-tuned expert policy, got there
+faster, and used a fifth of the queries to do it.**
+
+Read the green turn rather than the mean index — it is the cleaner signal. The three ranges do not
+overlap: every catalogued run reached green at least as fast as the fastest uncatalogued one, and
+every assertion-guided run beat every catalogued one. The mean index has run-to-run spread of
+0.0824, which is larger than the `agent_raw`/`agent_datahub` gap, and the comparison tool says so
+itself rather than leaving it to be noticed.
 
 ### What we actually learned
 
 The interesting result is not "catalogs help." It is *which kind* of metadata helped:
 
-- **Descriptive metadata alone was worth little.** Across three earlier paired runs, `agent_datahub`
-  vs `agent_raw` produced gaps of +0.045, +0.043 and **−0.040** — the sign flipped, so descriptions
-  and glossary alone sat inside the run-to-run noise. Our table names are already human-readable, so
-  a description that says `income_tax_revenue: Income tax collected` adds nothing the column name
-  did not.
+- **Descriptive metadata alone was worth little.** `agent_datahub` beats `agent_raw` by 0.0227 of
+  final index — inside the noise. Across earlier paired runs that gap ran +0.045, +0.043 and
+  **−0.040**; the sign flipped, and a quantity that changes sign across runs is not measuring what
+  it claims to. It does reach green two turns earlier in all three runs, so the effect is probably
+  real, but it is small and this many repeats cannot size it. Our table names are already
+  human-readable, so a description that says `income_tax_revenue: Income tax collected` adds
+  nothing the column name did not.
 - **Prescriptive metadata transformed behaviour.** Assertions that document the operating range a
   healthy city holds to — and, just as importantly, which levers are *not worth tuning* — moved the
-  agent from muddling through to expert play.
+  agent from muddling through to expert play — and, tellingly, on *less* of everything: a fifth of
+  the queries, 19 LLM calls against 27, and green three turns sooner. A mode that scored higher by
+  querying more would just be a mode given more compute. This one stopped searching because it was
+  told where to look.
 - **Relationships the data cannot show are where lineage earns its keep.** Every lever is constant
   across the entire recorded history, so no amount of querying reveals that `income_tax_rate` drives
   `income_tax_revenue`. The catalog is the only place that relationship exists.
@@ -90,11 +104,15 @@ Known imperfections, stated plainly:
   catalog is built and emitted by `uv run datahub-emit --baseline`, but the agent modes query the
   real warehouse with its readable names, so the handicap was never applied. This is very likely why
   descriptive metadata showed no measurable effect.
-- **One seed, one run per mode** in the headline table. Repeated identical runs have varied by about
-  0.02 of final index. The `agent_datahub_live` margin is far outside that; the `agent_datahub`
-  margin is not comfortably so.
-- **The `human` mode has not been played end to end.** The lever panel and scene work; wiring the
-  upstream Analytics Agent is unfinished.
+- **One seed.** Three runs per mode, but all on seed 42. The spread across those three reaches
+  0.0824 of final index, which is larger than the `agent_datahub`/`agent_raw` gap — so that gap
+  is unresolved, and the table says so. The `agent_datahub_live` margin and the green-turn
+  ordering are both outside the noise.
+- **`agent_analytics` is a floor, not a measurement.** DataHub's own Analytics Agent reported "No
+  governed definitions ... were found in DataHub" on every run and answered from the warehouse
+  alone. Its score is where an *uncatalogued* analyst lands, which is within noise of
+  `agent_raw`, and it is not evidence about the agent's ceiling.
+- **The `human` mode has not been played end to end.** The lever panel and scene work.
 
 ## Quick start
 

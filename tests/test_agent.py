@@ -1000,3 +1000,29 @@ def test_reasoning_effort_is_set_explicitly_and_shared():
     client = Client(model="m", api_key="k")
     client.generate(system="s", history=[user_turn("q")], tools=tool_declarations())
     assert sent["reasoning"] == {"effort": LLM_REASONING_EFFORT}, sent.get("reasoning")
+
+
+def test_the_transcript_wrapper_does_not_hide_the_reasoning_budget(tmp_path):
+    """Recording a run must not cost the run's own record of how it was configured.
+
+    `model` was proxied explicitly and nothing else was, so `reasoning_effort` and
+    `reasoning_sent` both read `None` in the report of every run that wrote a transcript --
+    which, once transcripts became the default, was every run. The budget was applied correctly
+    and the audit trail said "unknown", which is the exact failure this module exists to prevent.
+    """
+    from blindcity.agent.transcript import RecordingLLM
+
+    class Client(FakeLLM):
+        reasoning_effort = "low"
+        reasoning_sent = True
+        rate_limited = 3
+
+    rec = RecordingLLM(Client(), tmp_path / "t.jsonl", mode="agent_raw")
+
+    assert rec.reasoning_effort == "low"
+    assert rec.reasoning_sent is True
+    # Delegation is by name rather than a list, so a field added to the client later is visible
+    # here without anyone remembering to proxy it.
+    assert rec.rate_limited == 3
+    # ...and the wrapper's own attributes still win over the client's.
+    assert rec.mode == "agent_raw"
