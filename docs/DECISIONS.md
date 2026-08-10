@@ -550,3 +550,43 @@ plainer word was there first.
 
 **Consequences.** `RunResult.arm` is now `RunResult.mode` and `--arm` is now `--mode`. Done before
 any scored results existed, so no recorded data uses the old field name.
+
+## 2026-08-10 — Every mode runs gpt-4o
+
+**Context.** The benchmark had been running `gpt-5.6-luna`. Adding `agent_analytics`, which
+delegates to DataHub's own Analytics Agent, exposed a hard constraint: that agent cannot drive any
+`gpt-5.6-*` model at all. It needs function tools, it calls `/v1/chat/completions`, and the whole
+gpt-5.6 family refuses that combination unless reasoning is disabled — which the agent has no way
+to do, since it never sets `reasoning_effort` and exposes no option for it. Every question returned
+a `400`.
+
+Searching all 72 commits of that repository: `reasoning_effort` and `use_responses_api` have never
+appeared, and no gpt-5 model has ever been referenced in its source, README, or model picker. Its
+OpenAI integration was written for `gpt-4o` and `gpt-4o-mini`, they are the only two options its
+setup wizard offers, and `gpt-4o` is labelled "Recommended".
+
+**Decision.** All four modes run **`gpt-4o`**. The Analytics Agent runs entirely unmodified.
+
+**Rationale.** Two reasons, and the second is the stronger one.
+
+The narrow reason is compatibility: `gpt-4o` is what the Analytics Agent supports, so it is the
+only model on which every mode can run without patching a third-party component. A run that
+depended on our modification of DataHub's agent would carry an asterisk nobody should have to
+explain.
+
+The broader reason is that a shared model is what makes the arms comparable at all. With every
+mode on one model, the only thing that varies between them is the tools and context each is given
+— which is the quantity the benchmark exists to measure. Different models across arms would mean
+every gap had two candidate explanations, and no way to separate them.
+
+**Consequences.**
+
+- `gpt-4o` is not a reasoning model and rejects `reasoning.effort` outright. `ResponsesClient` now
+  drops the parameter on the first refusal and records `reasoning_sent` in the report, so a run
+  where the budget was applied and one where it was silently discarded do not look identical.
+  Every mode shares one client, so this flips for all of them at once.
+- Absolute scores are not comparable with anything recorded before this date. Earlier results in
+  `docs/RESULTS.md` were produced on `gpt-5.6-luna` at reasoning effort `low`, and are labelled.
+- `gpt-4o` is an older model. Some of the behaviour the newer model showed — holding a plan across
+  twelve turns, recovering from a fan-out join — may not survive, and a drop in every arm at once
+  is the expected shape rather than a regression in any one of them.

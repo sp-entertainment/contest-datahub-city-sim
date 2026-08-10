@@ -4,12 +4,13 @@
 a separate service. This directory is what it took to stand that up. Nothing here is checked out
 into the repo — clone upstream, drop these three files in, and bring it up.
 
+**No patch is applied.** The agent runs exactly as upstream ships it.
+
 ```bash
 git clone https://github.com/datahub-project/analytics-agent.git
 cd analytics-agent
 cp <blindcity>/infra/analytics-agent/config.yaml .
 cp <blindcity>/infra/analytics-agent/docker-compose.override.yml .
-git apply <blindcity>/infra/analytics-agent/reasoning-model.patch
 ```
 
 Then an `.env` alongside them:
@@ -20,10 +21,14 @@ DATAHUB_GMS_TOKEN=unauthenticated-quickstart
 BLINDCITY_URL=postgresql+psycopg2://blindcity:blindcity@host.docker.internal:5432/blindcity
 LLM_PROVIDER=openai
 OPENAI_API_KEY=<your key>
-LLM_MODEL=gpt-5.6-luna
-CHART_LLM_MODEL=gpt-5.6-luna
-LLM_REASONING_EFFORT=low
+LLM_MODEL=gpt-4o
+CHART_LLM_MODEL=gpt-4o
 ```
+
+`gpt-4o` because it is what this agent supports — its own setup wizard offers `gpt-4o`
+("Recommended") and `gpt-4o-mini`, and nothing else. Every mode in the benchmark runs the same
+model for the same reason, so the only thing differing between arms is the tools and context each
+is given. See `docs/DECISIONS.md`, 2026-08-10.
 
 ```bash
 docker compose up -d --build
@@ -32,9 +37,11 @@ uv run agent --mode agent_analytics --out results/analytics.json
 
 ## Why each piece is here
 
-**`reasoning-model.patch` — the one that matters.** The Analytics Agent builds `ChatOpenAI` with
-no way to set the endpoint or the reasoning budget, so it always calls `/v1/chat/completions`.
-`gpt-5.6-luna` refuses function tools there unless reasoning is switched off entirely:
+**`reasoning-model.patch` — kept for reference, not applied.** It is only needed if you point this
+agent at a reasoning model, which the benchmark no longer does. The Analytics Agent builds
+`ChatOpenAI` with no way to set the endpoint or the reasoning budget, so it always calls
+`/v1/chat/completions`, and the whole `gpt-5.6-*` family refuses function tools there unless
+reasoning is switched off entirely:
 
 ```
 Function tools with reasoning_effort are not supported for gpt-5.6-luna in
@@ -91,6 +98,14 @@ engine. Two details that cost time:
 - `DATAHUB_GMS_TOKEN` must be non-empty. The DataHub context is gated on `cfg.url and cfg.token`,
   so an empty token reads as unconfigured even though our quickstart GMS ignores auth entirely. Any
   placeholder works.
+
+## Reasoning models are not supported upstream
+
+Searching all 72 commits of that repository: `reasoning_effort` and `use_responses_api` have never
+appeared, and no gpt-5 model is referenced anywhere in its source, README, or model picker. The
+OpenAI integration traces to a single commit — the initial release — and targets `gpt-4o` and
+`gpt-4o-mini`. This is untested territory rather than a regression, and the patch here is a
+two-line demonstration of the fix, worth sending upstream.
 
 ## Known limitation of the current run
 

@@ -368,6 +368,10 @@ class AgentController:
             "model": self.llm.model,
             "catalog": getattr(self.catalog, "name", type(self.catalog).__name__),
             "monitor": getattr(self.monitor, "name", type(self.monitor).__name__),
+            # Whether a reasoning budget actually reached the provider. gpt-4o rejects the
+            # parameter, so "set to low" and "silently dropped" must not read the same in a report.
+            "reasoning_sent": getattr(self.llm, "reasoning_sent", None),
+            "reasoning_effort": getattr(self.llm, "reasoning_effort", None),
             "tool_budget": self.tool_budget,
             "system_prompt_chars": len(self._system),
             "usage": self.usage.to_dict(),

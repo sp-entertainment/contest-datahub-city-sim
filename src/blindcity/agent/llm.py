@@ -427,6 +427,15 @@ class ResponsesClient(_HttpClient):
         # Reasoning models reject a non-default temperature outright, so it is not sent at all.
         self.temperature = temperature
         self.reasoning_effort = (reasoning_effort or LLM_REASONING_EFFORT) or None
+        # Only reasoning models accept a reasoning budget; gpt-4o rejects the parameter outright.
+        # Rather than keep a list of which models are which -- a list that is wrong the moment a
+        # model is released -- the first refusal turns it off for the rest of the run. One client
+        # is shared by every mode, so this flips for all of them at once and cannot become a
+        # difference between them. `reasoning_sent` records what actually happened, because "the
+        # budget was set to low" and "the budget was silently dropped" must not look alike in a
+        # report.
+        self._send_reasoning = bool(self.reasoning_effort)
+        self.reasoning_sent: bool | None = None
         self._key = (
             api_key or os.environ.get("LLM_API_KEY") or os.environ.get("OPENAI_API_KEY") or ""
         )
@@ -496,15 +505,22 @@ class ResponsesClient(_HttpClient):
             body["tools"] = converted
         if self.temperature is not None:
             body["temperature"] = self.temperature
-        if self.reasoning_effort:
+        if self._send_reasoning:
             body["reasoning"] = {"effort": self.reasoning_effort}
 
+        url = f"{self.base_url}/responses"
+        headers = {"Authorization": f"Bearer {self._key}", "Content-Type": "application/json"}
         started = time.monotonic()
-        data = self.post(
-            f"{self.base_url}/responses",
-            body,
-            {"Authorization": f"Bearer {self._key}", "Content-Type": "application/json"},
-        )
+        try:
+            data = self.post(url, body, headers)
+        except LLMError as exc:
+            if self._send_reasoning and "reasoning" in str(exc).lower():
+                self._send_reasoning = False
+                body.pop("reasoning", None)
+                data = self.post(url, body, headers)
+            else:
+                raise
+        self.reasoning_sent = self._send_reasoning
         elapsed = time.monotonic() - started
 
         raw_usage = data.get("usage") or {}
