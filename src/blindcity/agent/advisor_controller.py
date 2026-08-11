@@ -29,6 +29,14 @@ Withholding them was not neutrality, it was a handicap, and it showed up in the 
     their last decision, including anything clamped. Every figure restated here is one the advisor
     itself produced, so this is parity rather than a hint.
 
+And one thing it is told that no other mode needs to be: **where the expert guidance lives.**
+`agent_datahub_live` has the bands and the response lags rendered into its prompt by us. This mode
+is given an address instead -- the dataset URNs and the property prefix -- and has to fetch the
+guidance itself through DataHub's own tools. That is a harder test, not an easier one, and it is
+the only version of the claim worth making: the bytes it reasons from came out of DataHub, fetched
+by DataHub's agent, with no band of ours anywhere in the question. See `CATALOG` for what the
+alternatives measured.
+
 **On the output contract and the clarification rounds.** This mode is asked to end every answer
 with a JSON block, and when it does not, `lever_review` reads the answer and may ask up to three
 times for a usable number before the run is abandoned. That looks like an allowance the other modes
@@ -50,11 +58,12 @@ from __future__ import annotations
 
 import json
 import time
+from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from blindcity.agent.advisor import Advice, AnalyticsAgentAdvisor
+from blindcity.agent.advisor import GUIDANCE_BEARING_TOOLS, Advice, AnalyticsAgentAdvisor
 from blindcity.agent.lever_review import read_decision
 from blindcity.levers import LEVERS
 from blindcity.sim.model import CityState
@@ -81,11 +90,72 @@ The manager controls exactly eight levers and nothing else:
 
 {levers}
 
+{catalog}
+
 Investigate the data and tell the manager which levers to change and to what values. Explain your \
 reasoning in prose, then end your answer with the decision block described below.
 
 {contract}\
 """
+
+# Where the expert guidance lives, and how to fetch it. An address, never a value: every band and
+# every note stays in DataHub, and this paragraph is assembled from the same constants that
+# published them, so it cannot drift into quoting one.
+#
+# It names the datasets and the one tool that works rather than inviting a search, and both halves
+# of that were measured rather than argued. Probed on 2026-08-11 with turn-0 questions:
+#
+#   * told nothing, the advisor called `search_documents`, found nothing, and went straight to the
+#     warehouse. No catalog read on any of its eleven tool calls -- which is what the recorded
+#     twelve-turn run did too, and why the published guidance went unreferenced.
+#   * told only that the catalog carries operating guidance, it searched for the *concept* --
+#     "operating guidance", "lever bands" -- and reported back: "The catalog search returned no
+#     operating guidance ... so the recommended bands and response times could not be verified."
+#     `search` matches names and descriptions, not custom property values, so a concept query
+#     cannot find them. It then set `property_tax_rate` to 0.015, nearly twice the documented
+#     ceiling: it had looked, found nothing, and proceeded with more confidence than it had earned.
+#   * told to call `get_entities` on the six URNs, it did, twenty-five times across twelve turns,
+#     and every single call returned null. `get_entities` sends a 42KB query selecting fields that
+#     exist only in DataHub Cloud (`DataFlow.documentation`, `DatasetStatsSummary.rowCount`, and
+#     nine more), so against DataHub Core the whole query fails validation and no data comes back.
+#     The run scored 0.7527 having never once read the guidance, and said so in its own prose.
+#
+# `search` by dataset *name* is the path that works: one call returns `lever_monthly` with all
+# eight `{prefix}.lever.*` properties attached. That is why the instruction names the tool.
+CATALOG = """\
+The warehouse is catalogued in DataHub, and the catalog carries expert-authored operating guidance \
+for exactly these levers, published as custom properties under the key prefix `{prefix}.` on these \
+datasets:
+
+{names}
+
+`{prefix}.lever.*` gives the band each lever should sit in and how much moving it is worth at all; \
+`{prefix}.outcome.*` gives the healthy range for each outcome; `{prefix}.lag.*` gives how many \
+months each system takes to respond to a change. None of it is in any table -- every lever is \
+constant across the whole recorded history, so no query can reveal it.
+
+Read it with the `search` tool, one dataset name at a time -- `search` returns each matching \
+dataset with its custom properties attached, and searching for the dataset name is what finds \
+them. Searching for the guidance itself will not: the catalog indexes names and descriptions, not \
+property values. Do not use `get_entities` for this; it fails against this DataHub.
+
+Start with `{lever_table}`, which carries the band for all eight levers, and read it before your \
+first recommendation.\
+"""
+
+
+def catalog_pointer() -> str:
+    """The `CATALOG` paragraph, addressed at the datasets that actually carry guidance."""
+    from blindcity.catalog.operational import (
+        GUIDANCE_PREFIX,
+        LEVER_GUIDANCE_TABLE,
+        guidance_properties,
+    )
+
+    names = "\n".join(f"  {table}" for table in sorted(guidance_properties()))
+    return CATALOG.format(
+        prefix=GUIDANCE_PREFIX, names=names, lever_table=LEVER_GUIDANCE_TABLE
+    )
 
 # The output contract, restated on every turn. It is repeated rather than stated once at the start
 # because it is the one part of the brief that must survive twelve turns of accumulated context --
@@ -156,7 +226,12 @@ class AdvisorController:
         current = "\n".join(f"  {n}: {state.levers.get(n, LEVERS[n].default):g}" for n in LEVERS)
 
         if turn == 0:
-            head = BRIEF.format(levers=levers, objective=OBJECTIVE, contract=CONTRACT)
+            head = BRIEF.format(
+                levers=levers,
+                objective=OBJECTIVE,
+                catalog=catalog_pointer(),
+                contract=CONTRACT,
+            )
         else:
             # After the first turn the advisor has the conversation; restating the brief each time
             # would crowd its own accumulated context. What must be restated is the instruction to
@@ -165,7 +240,12 @@ class AdvisorController:
             # recommendations drifted on memory of a city three, six, nine months out of date.
             head = (
                 "Three months have passed since your last recommendation and the city has moved. "
-                "Query the warehouse again before answering -- the earlier figures are stale.\n\n"
+                "Query the warehouse again before answering -- the earlier figures are stale. "
+                # One line, not the whole paragraph: the URNs are in the conversation from turn 0.
+                # What fades over twelve turns is the habit of consulting the guidance at all, and
+                # the bands are what keep the later turns from drifting outside them.
+                "The catalog guidance you read at the start still applies; check a band there "
+                "before moving a lever rather than estimating one.\n\n"
                 # The contract is repeated every turn rather than trusted to survive from turn 0.
                 # It is the one instruction whose failure is not a worse answer but an unreadable
                 # one, and twelve turns of accumulated context is a long way from where it was said.
@@ -227,6 +307,7 @@ class AdvisorController:
                 "answer": advice.answer,
                 "levers": advice.levers,
                 "queries": advice.queries,
+                "tools": advice.tools,
                 "error": advice.error,
                 "seconds": round(advice.seconds, 2),
             }
@@ -275,6 +356,19 @@ class AdvisorController:
         answered = [t for t in self.history if not t["error"]]
         acted = [t for t in self.history if t["levers"]]
         parses = [t["parse"] for t in self.history if t.get("parse")]
+        calls = Counter(c["name"] for t in self.history for c in t.get("tools", ()))
+        failed = Counter(
+            c["name"] for t in self.history for c in t.get("tools", ()) if c.get("error")
+        )
+
+        def read_guidance(turn: dict[str, Any]) -> int:
+            """Calls on this turn that could have returned guidance *and* came back."""
+            return sum(
+                1
+                for c in turn.get("tools", ())
+                if c["name"] in GUIDANCE_BEARING_TOOLS and not c.get("error")
+            )
+
         return {
             "controller": self.name,
             "model": f"analytics-agent@{self.advisor.base_url}",
@@ -297,6 +391,17 @@ class AdvisorController:
                 "vague_levers": sorted({v for p in parses for v in p["vague"]}),
                 "regex_disagreements": [d for p in parses for d in p["disagreements"]],
             },
+            # What the advisor actually called, and on how many turns it *successfully* read
+            # metadata that could have carried the published guidance. Three separate claims --
+            # "we published it", "the agent asked for it", "the agent got it" -- and a run has
+            # already been observed where the first two held and the third did not, on all twelve
+            # turns, while the summary line said 25 catalog reads.
+            "tool_calls": dict(calls.most_common()),
+            # Deliberately not `tool_failures`: the other modes report that as an integer and
+            # `_print_diagnostics` does arithmetic on it.
+            "failed_tool_calls": dict(failed.most_common()),
+            "guidance_reads": sum(read_guidance(t) for t in self.history),
+            "turns_reading_guidance": sum(1 for t in self.history if read_guidance(t)),
             # Tokens are the advisor's own, reported back over its stream. We never call the
             # model here, but the mode is not free and must not read as though it were.
             "usage": {

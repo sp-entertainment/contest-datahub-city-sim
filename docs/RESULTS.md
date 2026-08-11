@@ -103,6 +103,24 @@ uncatalogued one. Three things to know before reading that as a verdict on it:
 Its highest component is population (0.803) and its lowest is service (0.606) — a coherent strategy,
 differently balanced, not confusion.
 
+### Since this table was recorded: 0.8038 on the `refinements` branch
+
+Point 2 above turned out to understate it. The guidance had been published to DataHub, and
+`agent_analytics` had **never read it** — not on this run, and not on the twelve-turn run that
+followed. It was never told the guidance existed, and when it was told, the tool it was pointed at
+(`get_entities`) returned `data: null` on all twenty-five calls, because that query selects fields
+that exist only in DataHub Cloud. The full account is in `docs/ERRORS.md`.
+
+Told where the guidance is *and* which tool can fetch it — `search`, by dataset name — one run
+scored **0.8038, green at turn 4**, against 0.674–0.727 across the nine runs before it. Every lever
+sat inside its documented band from turn 0 to turn 11, and `zoning_release` was never touched: the
+catalog says its impact is negligible, and the advisor said so in its own words.
+
+Two caveats that matter. **This is one run**, and the mode's spread across nine earlier runs was
+0.05, so a single number is a direction and not a measurement. And it **lost a turn to a rate
+limit** — it governed the city on eleven decisions, not twelve. The table above is left as recorded
+rather than rewritten around a probe.
+
 ## What this cannot tell you
 
 **This is one run per mode on one seed.** That is the honest limit of the table and it is a real

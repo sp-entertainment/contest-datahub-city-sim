@@ -175,6 +175,23 @@ def _print_diagnostics(report: dict[str, Any]) -> None:
         )
         print("run: the score stands, but the model was denied data it asked for.")
 
+    # Whether the advisor actually got the guidance it was sent for. A run that asked twenty-five
+    # times and was refused every time scores like a run that never asked, and until this line
+    # existed it also *read* like one -- the mode's whole claim is that it acted on what DataHub
+    # holds, so a silent zero here invalidates the number rather than merely annotating it.
+    if "guidance_reads" in report:
+        turns = report["turns_reading_guidance"]
+        if turns:
+            print(
+                f"run: read the catalog guidance on {turns} of {len(report['turns'])} turn(s) "
+                f"({report['guidance_reads']} successful call(s))"
+            )
+        else:
+            print("run: NO GUIDANCE -- every attempt to read the catalog failed or was never made.")
+            print("run: this mode scores on what DataHub told it; it was told nothing.")
+        for name, count in (report.get("failed_tool_calls") or {}).items():
+            print(f"run: {count} failed call(s) to {name}")
+
     advisor_errors = report.get("advisor_errors") or []
     if advisor_errors:
         print(f"run: {len(advisor_errors)} turn(s) got no advice; first: {advisor_errors[0][:200]}")

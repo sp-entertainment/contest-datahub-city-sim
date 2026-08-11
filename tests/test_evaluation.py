@@ -251,7 +251,7 @@ def test_a_rate_limited_question_is_re_put_not_forfeited(monkeypatch):
                 raise ValueError(
                     "Rate limit reached for gpt-5.6-luna ... Please try again in 1.631s."
                 )
-            return "income_tax_rate = 0.11", ["SELECT 1"]
+            return "income_tax_rate = 0.11", ["SELECT 1"], ["execute_sql"]
 
         def start(self, client):
             return "conv"
@@ -316,6 +316,106 @@ class _NullClient:
 
     def __exit__(self, *a):
         return False
+
+
+# --- Did the advisor read the catalog, or only have the option to? ------------------------------
+
+
+class _StreamingClient:
+    """An Analytics Agent whose SSE stream is fixed in advance."""
+
+    def __init__(self, events):
+        self.events = events
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def stream(self, method, url, json=None):
+        return self
+
+    def raise_for_status(self):
+        return None
+
+    def iter_lines(self):
+        import json as _json
+
+        for event in self.events:
+            yield "data: " + _json.dumps(event)
+        yield "data: [DONE]"
+
+
+def test_a_failed_tool_call_is_not_recorded_as_a_read():
+    """The first version of this kept names only, and reported 25 catalog reads on a run where
+    every one of them returned null -- the metric meant to prove the guidance had been read was
+    what concealed that it never was. The event shape is theirs, so this breaks quietly if it
+    moves."""
+    from blindcity.agent.advisor import AnalyticsAgentAdvisor
+
+    advisor = AnalyticsAgentAdvisor()
+    client = _StreamingClient([
+        {"event": "TOOL_RESULT", "payload": {"tool_name": "search"}},
+        {
+            "event": "TOOL_RESULT",
+            "payload": {"tool_name": "get_entities", "is_error": True, "result": "null data"},
+        },
+        {"event": "SQL", "payload": {"sql": "SELECT 1"}},
+        {"event": "TOOL_RESULT", "payload": {"tool_name": "execute_sql"}},
+        {"event": "TEXT", "payload": {"text": "roads are worn"}},
+    ])
+
+    answer, statements, tools = advisor._send(client, "conv", "what now?")
+    assert answer == "roads are worn"
+    assert statements == ["SELECT 1"]
+    assert [t["name"] for t in tools] == ["search", "get_entities", "execute_sql"]
+    assert [t["error"] for t in tools] == [None, "null data", None]
+
+
+def test_a_turn_that_asked_for_the_guidance_and_was_refused_counts_as_no_read():
+    """Only `search` and `get_entities` return `datasetProperties.customProperties`, which is where
+    the guidance is published -- and only when they succeed. This is the exact shape of the run
+    that scored 0.7527 while `get_entities` returned null on all twenty-five calls."""
+    from blindcity.agent.advisor import Advice
+    from blindcity.agent.advisor_controller import AdvisorController
+
+    def call(name, error=None):
+        return {"name": name, "error": error}
+
+    class FakeAdvisor:
+        base_url = "http://advisor"
+        tokens: ClassVar[dict] = {"input_tokens": 1, "output_tokens": 2, "total_tokens": 3}
+
+        def __init__(self):
+            self.turn = 0
+
+        def ask(self, question):
+            # Turn 0 reads the catalog. Turn 1 asks and is refused, which is not a read.
+            tools = (
+                [call("search"), call("get_entities"), call("execute_sql")] if self.turn == 0
+                else [call("get_entities", "no data"), call("execute_sql")]
+            )
+            self.turn += 1
+            return Advice(
+                question=question,
+                answer='```json\n{"income_tax_rate": 0.11}\n```',
+                tools=tools,
+            )
+
+    class State:
+        # Populated, because turn 1 restates what last turn's advice became.
+        levers: ClassVar[dict] = {"income_tax_rate": 0.11}
+
+    controller = AdvisorController(name="agent_analytics", advisor=FakeAdvisor(), turn_budget=12)
+    controller.decide(State(), 0, {})
+    controller.decide(State(), 1, {})
+
+    report = controller.report()
+    assert report["tool_calls"] == {"get_entities": 2, "execute_sql": 2, "search": 1}
+    assert report["failed_tool_calls"] == {"get_entities": 1}
+    assert report["guidance_reads"] == 2, "a refused call was counted as a read"
+    assert report["turns_reading_guidance"] == 1
 
 
 # --- Publishing the catalog must not silently destroy someone's edits --------------------------

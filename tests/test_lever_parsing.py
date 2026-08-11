@@ -229,6 +229,47 @@ def test_every_turn_restates_the_output_contract():
         assert "11%" in question, f"turn {turn} did not forbid percentages"
 
 
+def test_turn_zero_points_at_the_guidance_and_at_the_tool_that_works():
+    """Told nothing, the advisor never looked. Told to use `get_entities`, it asked twenty-five
+    times and got null every time -- that tool sends a query DataHub Core rejects wholesale. Naming
+    `search` is not a style choice; it is the only path that returns the properties."""
+    from blindcity.agent.advisor_controller import AdvisorController
+    from blindcity.catalog.operational import GUIDANCE_PREFIX, LEVER_GUIDANCE_TABLE
+
+    class Stub:
+        base_url = "http://x"
+        tokens = {}  # noqa: RUF012
+
+    class State:
+        levers = {}  # noqa: RUF012
+
+    question = AdvisorController(name="agent_analytics", advisor=Stub(), turn_budget=12)._question(
+        State(), 0
+    )
+    assert GUIDANCE_PREFIX in question
+    assert LEVER_GUIDANCE_TABLE in question, "the dataset carrying the lever bands is not named"
+    assert "`search`" in question, "nothing tells it how to read the properties"
+    assert "get_entities" in question, "the tool that silently fails is not ruled out"
+
+
+def test_the_brief_gives_an_address_and_never_a_band():
+    """The mode's whole claim is that the guidance came out of DataHub. A band that leaked into the
+    question would make the run a measurement of our prompt wearing DataHub's name."""
+    from blindcity.agent.advisor_controller import catalog_pointer
+    from blindcity.catalog.operational import LEVER_GUIDANCE, OUTCOME_ASSERTIONS
+
+    pointer = catalog_pointer()
+    for g in LEVER_GUIDANCE:
+        assert g.note not in pointer
+        for edge in (g.low, g.high):
+            # 0.0 and 1.0 and 2 are ordinary numbers that appear in URNs and prose; the bands worth
+            # protecting are the ones an agent could not have guessed.
+            if edge not in (0.0, 1.0, 2.0):
+                assert f"{edge:g}" not in pointer, f"{g.lever}'s band leaked into the brief"
+    for a in OUTCOME_ASSERTIONS:
+        assert a.note not in pointer
+
+
 def test_the_contract_example_is_itself_valid():
     """The example in the brief is what the advisor will copy. If it does not parse, we have told
     it to do the wrong thing."""

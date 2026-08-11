@@ -517,6 +517,91 @@ outstanding.
 that comes last is a claim about that mode, and it has to be earned by checking the mode was
 actually given what it was supposed to have.
 
+## 2026-08-11 — The guidance was published to DataHub and never once read
+
+The entry above closes with "publishing the guidance is the fix, and it is outstanding". It was
+published — eight lever bands, five outcome ranges, four response lags, as
+`blindcity.guidance.*` custom properties across six datasets — and `agent_datahub_live` reads them
+back out of GMS at run start. That part worked.
+
+`agent_analytics` referenced them **zero times across all twelve turns** of the recorded run.
+
+The first instinct was that the properties were unreachable, as the context connection had been
+before. They were not, and this was checked rather than assumed: `get_entities` selects
+`customProperties` in its `entityPreview` fragment, `search` selects them in the shared
+`fragments.gql`, neither strips them on the way back, and the Analytics Agent's own system prompt
+already says custom properties "often encode org-specific semantics". Tool, habit and data were all
+in place.
+
+**Nothing in our question said the guidance existed.** We described the warehouse, listed the eight
+levers, and asked for a decision. `agent_datahub_live` had the bands rendered into its prompt by us;
+the mode running on DataHub's own agent was told nothing and, reasonably, went looking for nothing.
+
+The fix could have been argued either way, so it was measured instead — three turn-0 questions,
+about 40 seconds and 200k tokens each, against the full run's seven minutes and 1.5M:
+
+| Told | What it called | Guidance used |
+|---|---|---|
+| nothing | `search_documents`, then straight to the warehouse | none |
+| "the catalog carries operating guidance, find it" | `search` ×1–3 | **none — it searched for the wrong thing** |
+| the dataset URNs, "call `get_entities`" | `get_entities` ×6, `search` ×5 | quoted throughout |
+
+The middle row looked like the finding. Told the guidance existed, the advisor went looking and
+reported back:
+
+> The catalog search returned no operating guidance, glossary definitions, or data-product
+> documentation for these levers, so the recommended bands and response times could not be verified.
+
+It had searched for the *concept* — "operating guidance", "lever bands". DataHub matches names and
+descriptions, not custom property values, so a concept query cannot find them however well they are
+published. That arm then set `property_tax_rate` to 0.015, nearly twice the documented ceiling: it
+had looked, found nothing, and proceeded with more confidence than it had earned.
+
+So the brief was written to name the URNs and instruct `get_entities`, and a twelve-turn run
+followed. **It scored 0.7527 — the best `agent_analytics` result on record — having never once read
+the guidance.**
+
+### `get_entities` returns nothing at all against DataHub Core
+
+The run's own diagnostics said so, and were nearly missed:
+
+> I attempted to check the required guidance bands on the lever and water datasets again, but
+> DataHub returned the same parser-limit failure, so I cannot verify the catalog-authored bands.
+
+That line is in the prose of turn 2. Turn 0 says the same. All twelve turns did, while the summary
+line reported **25 catalog reads**, because the first version of the counter recorded tool *calls*
+and never looked at whether they returned anything.
+
+Posting the tool's own query straight at GMS explains it. `get_entities` sends a 42KB
+`entity_details.gql` selecting eleven fields that exist only in DataHub Cloud —
+`DataFlow.documentation`, `DatasetStatsSummary.rowCount`, `queryCountPercentileLast30Days` and the
+rest — so DataHub Core fails the whole document at validation and returns `data: null`. Not a size
+limit, not our URNs, not intermittent: `get_entities` cannot work here at all. (The Analytics Agent
+already ships a workaround of this shape for `list_schema_fields`, whose full query "exceeds
+DataHub's 15K grammar-token limit" — `context/datahub.py:145`.)
+
+`search` by dataset *name* works and is the whole answer: one call returns `lever_monthly` with all
+eight `blindcity.guidance.lever.*` properties attached. Verified end to end — a turn-0 question with
+the corrected instruction retrieved on the first `search`, then set every lever inside its
+documented band and left `zoning_release` alone, quoting the reason: its impact is negligible.
+
+So `BRIEF` now names the dataset names, the property prefix, the tool that works, and the tool to
+avoid. It never carries a band value — a test asserts no band from `LEVER_GUIDANCE` appears in the
+rendered question. This mode still has to fetch the guidance itself through DataHub's tools, where
+`agent_datahub_live` is handed it.
+
+**The metric that hid it is fixed too.** `Advice` recorded SQL only, then tool names, and neither
+could distinguish "read the catalog and ignored it" from "asked and was refused". It now records
+`{"name", "error"}` per call; `guidance_reads` counts only calls that came back; and a run where
+nothing came back prints `NO GUIDANCE -- every attempt to read the catalog failed or was never
+made` instead of a clean summary.
+
+**The lesson, and it is the same one twice.** Publishing metadata makes it reachable, not read —
+and then *counting the attempt* makes it look read. Every layer of this went wrong in the same
+direction: the guidance was published and not fetched, then fetched and not returned, then not
+returned and counted anyway. The only thing that caught it was the advisor saying so in prose that
+nothing was checking.
+
 ## 2026-08-11 — `2e6` was read as `2`, and the feedback loop made it stick
 
 `agent_analytics` scored 0.6825 in the recorded run. Part of that was our parser, not the advisor.

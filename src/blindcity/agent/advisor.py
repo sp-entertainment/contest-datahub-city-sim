@@ -65,6 +65,18 @@ def _rate_limit_delay(exc: Exception, attempt: int = 0) -> float | None:
     return min(max(suggested, _RATE_LIMIT_FLOOR * (2**attempt)), _RATE_LIMIT_CEILING)
 
 
+# The two Analytics Agent tools verified to return `datasetProperties.customProperties`, which is
+# where this project's operating guidance is published. `get_entities` selects them in its
+# `entityPreview` fragment and `search` in the shared `fragments.gql`; neither is stripped on the way
+# back. Every other tool it has -- lineage, schema fields, documents, assertions -- can reach the
+# catalog but cannot return a `blindcity.guidance.*` property, so a run that called only those has
+# still never seen the guidance.
+#
+# Their tool names, not ours, so this can drift with their package. All tool calls are counted
+# regardless; this set only decides which of them could possibly have carried the guidance.
+GUIDANCE_BEARING_TOOLS = frozenset({"get_entities", "search"})
+
+
 class LLMMismatch(RuntimeError):
     """The advisor is not configured like the modes it is being compared against."""
 
@@ -79,6 +91,16 @@ class Advice:
     seconds: float = 0.0
     error: str | None = None
     queries: list[str] = field(default_factory=list)
+    # Every tool call, in order, as `{"name": ..., "error": str | None}`. `queries` records only
+    # SQL, so without this there is no way to tell whether the advisor read the catalog or merely
+    # could have: the published guidance went unreferenced for twelve turns and nothing in any
+    # artifact said whether it had been fetched and ignored or never fetched at all.
+    #
+    # The error matters as much as the name. A first version recorded names alone and reported 25
+    # catalog reads on a run where every one of them failed -- `get_entities` returns null against
+    # DataHub Core -- so the metric intended to prove the guidance was read instead concealed that
+    # it never had been. A tool call is not a read.
+    tools: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -88,6 +110,7 @@ class Advice:
             "seconds": round(self.seconds, 2),
             "error": self.error,
             "queries": self.queries,
+            "tools": self.tools,
         }
 
 
@@ -272,7 +295,7 @@ class AnalyticsAgentAdvisor:
             try:
                 with self._client() as client:
                     conv = self.start(client)
-                    answer, statements = self._send(client, conv, question)
+                    answer, statements, tools = self._send(client, conv, question)
             except (httpx.HTTPError, KeyError, ValueError) as exc:
                 delay = _rate_limit_delay(exc, attempt)
                 if delay is not None and attempt < RATE_LIMIT_ATTEMPTS - 1:
@@ -294,17 +317,22 @@ class AnalyticsAgentAdvisor:
             levers=parse_levers(answer),
             seconds=time.monotonic() - started,
             queries=statements,
+            tools=tools,
         )
 
-    def _send(self, client: httpx.Client, conv: str, question: str) -> tuple[str, list[str]]:
+    def _send(
+        self, client: httpx.Client, conv: str, question: str
+    ) -> tuple[str, list[str], list[dict[str, Any]]]:
         """Post the question and read the streamed reply to completion.
 
         Events arrive as `{"event": KIND, "payload": {...}}`. `TEXT` carries the answer a token at
-        a time, `SQL` the statements it ran, and `USAGE` its token counts -- which are recorded so
-        this mode's cost sits beside the others' rather than reading as free.
+        a time, `SQL` the statements it ran, `TOOL_RESULT` the name of every tool it called, and
+        `USAGE` its token counts -- which are recorded so this mode's cost sits beside the others'
+        rather than reading as free.
         """
         text_parts: list[str] = []
         statements: list[str] = []
+        tools: list[dict[str, Any]] = []
         with client.stream(
             "POST",
             f"{self.base_url}/api/conversations/{conv}/messages",
@@ -329,6 +357,14 @@ class AnalyticsAgentAdvisor:
                     sql = payload.get("sql") or payload.get("query")
                     if isinstance(sql, str):
                         statements.append(sql[:600])
+                elif kind == "TOOL_RESULT":
+                    name = payload.get("tool_name")
+                    if isinstance(name, str) and name:
+                        failed = bool(payload.get("is_error"))
+                        tools.append({
+                            "name": name,
+                            "error": str(payload.get("result", ""))[:300] if failed else None,
+                        })
                 elif kind == "USAGE":
                     for key in self.tokens:
                         self.tokens[key] += int(payload.get(key, 0) or 0)
@@ -336,4 +372,4 @@ class AnalyticsAgentAdvisor:
                     message = payload.get("error") or payload.get("message")
                     if isinstance(message, str) and message:
                         raise ValueError(message[:300])
-        return "".join(text_parts).strip(), statements
+        return "".join(text_parts).strip(), statements, tools
