@@ -124,9 +124,7 @@ Auth stays off. DataHub OSS quickstart accepts unauthenticated writes to
 - `docs/ENVIRONMENT.md` — verified setup commands, running topology, credentials, lifecycle.
 - `docs/DECISIONS.md` — append-only decision log with context and rationale.
 - `docs/ERRORS.md` — problems hit and how they were resolved.
-- `docs/SUBMISSION.md` — the contest submission text.
 - `infra/analytics-agent/README.md` — standing up the upstream Analytics Agent for `agent_analytics`.
-- `.tasks/<work-item>/TASKS.md` — plan and status for multi-step work.
 
 ## Commands
 

@@ -1,10 +1,10 @@
 # City Sim Agent Benchmark
 
+![One city, two halves: unlit and unlabelled on the left, and on the right the same blocks lit and wired to a catalog](assets/devpost-split-city-thumbnail.png)
+
 **A benchmark for whether data catalogs make AI agents better at their job.**
 
 Built for [Build with DataHub: The Agent Hackathon](https://datahub.devpost.com/).
-
-![The city under a recovering policy — buildings by type, height by density, shade by condition, and citizens moving between them](assets/viewer-recovered.png)
 
 A city simulation runs, writing hundreds of thousands of rows into Postgres — citizens, households,
 roads, power, water, budget, month by month. Then the city is put into a crisis, and an agent is
