@@ -316,7 +316,7 @@ actually stopping the thing first.
 
 ```
 starting services: initializing Inference manager: listening on
-unix://C:/Users/spect/AppData/Local/Docker/run/dockerInference:
+unix://C:/Users/<user>/AppData/Local/Docker/run/dockerInference:
 remove …/dockerInference: The file cannot be accessed by the system.
 ```
 
@@ -516,3 +516,148 @@ outstanding.
 **The lesson.** Every one of these was invisible in the score and obvious in the artifacts. A mode
 that comes last is a claim about that mode, and it has to be earned by checking the mode was
 actually given what it was supposed to have.
+
+## 2026-08-11 — The guidance was published to DataHub and never once read
+
+The entry above closes with "publishing the guidance is the fix, and it is outstanding". It was
+published — eight lever bands, five outcome ranges, four response lags, as
+`blindcity.guidance.*` custom properties across six datasets — and `agent_datahub_live` reads them
+back out of GMS at run start. That part worked.
+
+`agent_analytics` referenced them **zero times across all twelve turns** of the recorded run.
+
+The first instinct was that the properties were unreachable, as the context connection had been
+before. They were not, and this was checked rather than assumed: `get_entities` selects
+`customProperties` in its `entityPreview` fragment, `search` selects them in the shared
+`fragments.gql`, neither strips them on the way back, and the Analytics Agent's own system prompt
+already says custom properties "often encode org-specific semantics". Tool, habit and data were all
+in place.
+
+**Nothing in our question said the guidance existed.** We described the warehouse, listed the eight
+levers, and asked for a decision. `agent_datahub_live` had the bands rendered into its prompt by us;
+the mode running on DataHub's own agent was told nothing and, reasonably, went looking for nothing.
+
+The fix could have been argued either way, so it was measured instead — three turn-0 questions,
+about 40 seconds and 200k tokens each, against the full run's seven minutes and 1.5M:
+
+| Told | What it called | Guidance used |
+|---|---|---|
+| nothing | `search_documents`, then straight to the warehouse | none |
+| "the catalog carries operating guidance, find it" | `search` ×1–3 | **none — it searched for the wrong thing** |
+| the dataset URNs, "call `get_entities`" | `get_entities` ×6, `search` ×5 | quoted throughout |
+
+The middle row looked like the finding. Told the guidance existed, the advisor went looking and
+reported back:
+
+> The catalog search returned no operating guidance, glossary definitions, or data-product
+> documentation for these levers, so the recommended bands and response times could not be verified.
+
+It had searched for the *concept* — "operating guidance", "lever bands". DataHub matches names and
+descriptions, not custom property values, so a concept query cannot find them however well they are
+published. That arm then set `property_tax_rate` to 0.015, nearly twice the documented ceiling: it
+had looked, found nothing, and proceeded with more confidence than it had earned.
+
+So the brief was written to name the URNs and instruct `get_entities`, and a twelve-turn run
+followed. **It scored 0.7527 — the best `agent_analytics` result on record — having never once read
+the guidance.**
+
+### `get_entities` returns nothing at all against DataHub Core
+
+The run's own diagnostics said so, and were nearly missed:
+
+> I attempted to check the required guidance bands on the lever and water datasets again, but
+> DataHub returned the same parser-limit failure, so I cannot verify the catalog-authored bands.
+
+That line is in the prose of turn 2. Turn 0 says the same. All twelve turns did, while the summary
+line reported **25 catalog reads**, because the first version of the counter recorded tool *calls*
+and never looked at whether they returned anything.
+
+Posting the tool's own query straight at GMS explains it. `get_entities` sends a 42KB
+`entity_details.gql` selecting eleven fields that exist only in DataHub Cloud —
+`DataFlow.documentation`, `DatasetStatsSummary.rowCount`, `queryCountPercentileLast30Days` and the
+rest — so DataHub Core fails the whole document at validation and returns `data: null`. Not a size
+limit, not our URNs, not intermittent: `get_entities` cannot work here at all. (The Analytics Agent
+already ships a workaround of this shape for `list_schema_fields`, whose full query "exceeds
+DataHub's 15K grammar-token limit" — `context/datahub.py:145`.)
+
+`search` by dataset *name* works and is the whole answer: one call returns `lever_monthly` with all
+eight `blindcity.guidance.lever.*` properties attached. Verified end to end — a turn-0 question with
+the corrected instruction retrieved on the first `search`, then set every lever inside its
+documented band and left `zoning_release` alone, quoting the reason: its impact is negligible.
+
+So `BRIEF` now names the dataset names, the property prefix, the tool that works, and the tool to
+avoid. It never carries a band value — a test asserts no band from `LEVER_GUIDANCE` appears in the
+rendered question. This mode still has to fetch the guidance itself through DataHub's tools, where
+`agent_datahub_live` is handed it.
+
+**The metric that hid it is fixed too.** `Advice` recorded SQL only, then tool names, and neither
+could distinguish "read the catalog and ignored it" from "asked and was refused". It now records
+`{"name", "error"}` per call; `guidance_reads` counts only calls that came back; and a run where
+nothing came back prints `NO GUIDANCE -- every attempt to read the catalog failed or was never
+made` instead of a clean summary.
+
+**The lesson, and it is the same one twice.** Publishing metadata makes it reachable, not read —
+and then *counting the attempt* makes it look read. Every layer of this went wrong in the same
+direction: the guidance was published and not fetched, then fetched and not returned, then not
+returned and counted anyway. The only thing that caught it was the advisor saying so in prose that
+nothing was checking.
+
+## 2026-08-11 — `2e6` was read as `2`, and the feedback loop made it stick
+
+`agent_analytics` scored 0.6825 in the recorded run. Part of that was our parser, not the advisor.
+
+At turn 9 it wrote `road_maintenance_budget = 2e6`. The prose regex then in `advisor.py` matched
+`([0-9][0-9,_]*(?:\.[0-9]+)?)`, which stops at the `e`, and took **`2`** — two dollars a year
+instead of two million. Roads went unfunded for the rest of the run.
+
+Then it compounded. The parity feedback block, added days earlier so the advisor could see what its
+last decision became, told it *"in force now: road_maintenance_budget=2"*. At turn 10 the advisor
+wrote `road_maintenance_budget = 2`. It had not made a mistake — it read our report of reality and
+agreed with it. A one-turn parse failure became a three-turn policy, and the mode's index flatlined
+at 0.682 for exactly those turns after gaining 0.056 over the four before.
+
+**Nothing detected it, and the check built for this could not.** `decide` compares
+`advice.levers` against `state.levers` to report clamping — but `advice.levers` is *already the
+parsed value*, so it compared 2.0 against 2.0 and found nothing wrong. Both sides of the comparison
+were downstream of the bug. The corruption lives between the answer text and the parsed dict, and
+nothing looked there.
+
+Probing the parser afterwards, **6 of 12 realistic cases failed**:
+
+| Written | Parsed | Meant |
+| --- | ---: | ---: |
+| `= 6e6` | 6 | 6,000,000 |
+| `= 6M` | 6 | 6,000,000 |
+| `= $6 million` | 6 | 6,000,000 |
+| `= 11%` | 0.4 *(clamped to max)* | 0.11 |
+| `to 11 percent` | 0.4 *(clamped to max)* | 0.11 |
+
+The percentage case is worse than the one that bit us: a correct recommendation of 11% becomes the
+highest legal tax rate, and the clamp makes it look deliberate in a result file.
+
+**The fix is not more regex.** Regex also cannot represent *"leave `transit_fare` where it is"* — a
+clear decision that read as silence — or reject *"a moderate level"*, which is bad advice that
+should be surfaced rather than dropped. So:
+
+1. The advisor is told to end every answer with a fenced JSON block, restated every turn, with
+   explicit rules against scientific notation, magnitude suffixes and percentages. Omission means
+   "leave unchanged"; `{}` means "change nothing".
+2. `extract_lever_block` reads it deterministically and refuses anything that is not a number.
+3. Only when the contract is broken does an LLM reviewer read the prose — and it may report only
+   numbers the advisor actually wrote. Anything else is `vague`, which asks rather than guesses.
+4. Three clarifications, then the run is **abandoned**: no result file is written, so
+   `blindcity compare` cannot sweep a void run into a table.
+5. The prose regex was kept at first as a cross-check, reporting where it disagreed with the block
+   — the line that would have caught this on day one. **It has since been deleted.** Two full runs
+   later it had produced zero disagreements, and could not produce one: an advisor following the
+   contract writes its numbers in the block and nothing in the prose for a regex to match. A
+   tripwire that cannot fire is not a safety net, it is a second parser to maintain and a second
+   thing a reader has to be told not to trust.
+
+Verified against the recorded failure: the old path applied `2`, the new one refuses the answer and
+the reviewer recovers `2000000`. Given "raise it to a moderate level" the reviewer returns `vague`
+and declines to invent a number.
+
+**The lesson.** A parser sitting between a component and its score is part of the measurement, and
+this one had no test, no cross-check and no way to report doubt. The failure was not that the regex
+was weak — it was that nothing anywhere could tell us it had been wrong.

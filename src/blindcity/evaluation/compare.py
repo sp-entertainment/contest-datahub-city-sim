@@ -108,8 +108,11 @@ def collect(paths: list[Path]) -> dict[str, ModeSummary]:
         model = report.get("model")
         if isinstance(model, str) and model and model not in s.models:
             s.models.append(model)
+        # Every mode records a failed turn on the turn itself, `agent_analytics` included, so this
+        # one line covers all four. It used to add `advisor_errors` as well, which is the same
+        # events listed a second time -- the advisor's one lost turn was reported as two, in the
+        # table whose whole job is to say how complete each run was.
         s.lost_turns += sum(1 for turn in report.get("turns", []) if turn.get("error"))
-        s.lost_turns += len(report.get("advisor_errors") or [])
         s.timeouts += report.get("timeouts", 0)
         s.infrastructure_failures += report.get("infrastructure_failures", 0)
     return summaries
@@ -119,6 +122,14 @@ def collect(paths: list[Path]) -> dict[str, ModeSummary]:
 # ordering does not hold, that is the finding, and a comparison that quietly sorted by score
 # would hide exactly the result worth knowing.
 EXPECTED_ORDER = ("agent_raw", "agent_datahub", "agent_datahub_live")
+
+# The modes a model plays, and so the only ones with run-to-run variance to talk about. Named as
+# strings rather than imported from `agent.run` on purpose: this module folds result files into a
+# table and is deliberately free of any dependency on the code that produced them.
+#
+# `good_policy` and `bad_policy` are fixed lever sets and `human` is a person, so all three are
+# deterministic-or-singular and belong in the table without being part of a statement about noise.
+STOCHASTIC_MODES = (*EXPECTED_ORDER, "agent_analytics")
 
 
 def _model_line(summaries: dict[str, ModeSummary], fallback: str) -> tuple[str, str | None]:
@@ -133,9 +144,10 @@ def _model_line(summaries: dict[str, ModeSummary], fallback: str) -> tuple[str, 
     `good_policy` and `bad_policy` are excluded for the opposite reason: they are fixed lever sets
     that call no model at all, so "scripted" is the honest thing for them to report and is not a
     disagreement with anything. Flagging it would fire the mismatch warning on every complete run
-    -- and a warning that is always wrong is a warning nobody reads when it is right.
+    -- and a warning that is always wrong is a warning nobody reads when it is right. `human` is
+    excluded on the same grounds: a person is not a model id.
     """
-    exempt = {"agent_analytics", "good_policy", "bad_policy"}
+    exempt = {"agent_analytics", "good_policy", "bad_policy", "human"}
     seen: dict[str, list[str]] = {}
     for name, s in summaries.items():
         if name in exempt:
@@ -174,7 +186,7 @@ def markdown(summaries: dict[str, ModeSummary], *, threshold: float, seed: int, 
 
     resolved, mismatch = _model_line(summaries, model)
     lines = [
-        "# Blind City — mode comparison",
+        "# City Sim Agent Benchmark — mode comparison",
         "",
         (
             f"Seed {seed} · model `{resolved}` · green threshold {threshold} · "
@@ -202,12 +214,18 @@ def markdown(summaries: dict[str, ModeSummary], *, threshold: float, seed: int, 
                 f"expected {' > '.join(expected)}."
             )
 
-    spreads = [s.index_spread for s in summaries.values() if s.runs > 1]
+    # Both halves of this comparison are statements about the stochastic agent modes, so both are
+    # computed over those alone. Sweeping in every row of the table put a deterministic reference
+    # policy, or a human run, next to an agent by accident of sort order -- and if the two happened
+    # to land close, `min(gaps)` collapsed and the warning fired about a pair nobody was comparing.
+    # In the recorded table that was avoided only by where the alphabet happened to put things.
+    stochastic = [m for m in ordered if m in STOCHASTIC_MODES]
+    spreads = [summaries[m].index_spread for m in stochastic if summaries[m].runs > 1]
     if spreads:
         worst = max(spreads)
         gaps = [
             abs(summaries[a].mean_index - summaries[b].mean_index)
-            for a, b in itertools.pairwise(ordered)
+            for a, b in itertools.pairwise(stochastic)
         ]
         if gaps and worst >= min(gaps):
             lines += [

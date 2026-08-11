@@ -227,7 +227,7 @@ def test_the_live_mode_refuses_to_run_without_guidance_in_datahub(monkeypatch):
     monkeypatch.setattr(
         guidance_mod, "_custom_properties", lambda client, gms, urn: {}
     )
-    with pytest.raises(guidance_mod.GuidanceUnavailable, match="no Blind City operating guidance"):
+    with pytest.raises(guidance_mod.GuidanceUnavailable, match="no City Sim operating guidance"):
         guidance_mod.fetch_guidance("http://gms.invalid")
 
     def explode(client, gms, urn):

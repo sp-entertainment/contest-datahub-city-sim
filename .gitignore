@@ -183,3 +183,16 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
+# macOS / Windows shell junk
+.DS_Store
+Thumbs.db
+
+# Internal working directories. Planning notes, editor state, and local agent
+# tooling — not part of the submission, and not something a clone needs.
+.agents/
+.claude/
+.tasks/
+skills-lock.json
+
+# Playwright MCP scratch output
+.playwright-mcp/

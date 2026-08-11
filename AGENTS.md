@@ -1,4 +1,4 @@
-# Agent Instructions — Blind City
+# Agent Instructions — City Sim Agent Benchmark
 
 ## Vision statement
 
@@ -26,22 +26,25 @@ signal to the user.
 > The vision statement above is immutable and still describes the premise. This section describes
 > the shape the work actually takes — see `docs/DECISIONS.md`, 2026-08-02.
 
-**Blind City is a benchmark for whether catalog metadata improves agent decisions.** It is not a
+**This is a benchmark for whether catalog metadata improves agent decisions.** It is not a
 game, and the city is not the deliverable — it is the substrate that makes the measurement mean
 something.
 
 A **scenario** puts the city into a defined crisis. A **controller** pulls levers over a fixed turn
 budget. A run is scored by a **composite health index**; "recovered" means the index crossed the
-green threshold within the budget. Three controllers face the identical seed, crisis, and budget:
+green threshold within the budget. Five controllers face the identical seed, crisis, and budget:
 
 | Mode | Controller | Sees |
 | --- | --- | --- |
 | `human` | A person | The city render, the levers, and the Analytics Agent to ask questions |
-| `agent_datahub` | Our auto-mode agent | DataHub over MCP, plus SQL against the warehouse |
 | `agent_raw` | Our auto-mode agent | SQL only, no catalog context |
+| `agent_datahub` | Our auto-mode agent | The same, plus DataHub descriptions, glossary, lineage |
+| `agent_datahub_live` | Our auto-mode agent | The same, plus assertions read from DataHub each turn |
+| `agent_analytics` | DataHub's Analytics Agent | It decides; it reads DataHub and the warehouse itself |
 
-Two comparisons fall out: `agent_datahub` vs `agent_raw` measures the metadata; `human` vs
-`agent_datahub` measures the automation.
+Three comparisons fall out: `agent_datahub` vs `agent_raw` measures descriptive metadata;
+`agent_datahub_live` vs `agent_datahub` measures prescriptive metadata; `human` vs the agents
+measures the automation.
 
 **What follows from this.** Simulation fidelity is where effort belongs. The viewer is cosmetic —
 it must look like a city and carry the levers, nothing more. Information parity across modes is an
@@ -61,20 +64,25 @@ experimental control, so a number on screen is not a style violation, it is a co
 
 ```
 src/blindcity/
+  cli.py       The one entry point. Argument parsing only, no business logic.
+  commands/    One handler per subcommand: sim, emit, run, compare. Lazy imports,
+               so `--help` works with no database, no key and no Docker.
   sim/         Headless deterministic city simulation. Writes rows to Postgres.
                Also declares its causal graph, validated per edge (causal_check.py).
-  catalog/     Metadata ingestion: schemas, glossary terms, lineage, assertions.
-  agent/       Auto-mode agent. DataHub MCP + SQL + lever actuation, closed loop.
-               Runs as both the agent_datahub and agent_raw modes.
+  catalog/     Metadata authoring and publication: schemas, glossary terms, lineage,
+               assertions, and the operating guidance in operational.py.
+  agent/       The agents and everything they read. Our own controller for the three
+               SQL modes; advisor.py and advisor_controller.py for the mode that asks
+               DataHub's Analytics Agent instead; guidance.py reads the bands back
+               out of DataHub at run time.
   benchmark/   Scenario definition, health index, turn budget, controller interface,
                run harness, results. The measurement, and the point of the project.
-  evaluation/  Runs the modes and compares them. `uv run blindcity compare`.
+  evaluation/  Folds run results into one comparison. `uv run blindcity compare`.
   levers.py    The eight levers. Single source of truth for ranges and defaults.
   rng.py       Seeded randomness. Determinism is a hard rule.
   config.py    Connection settings.
-viewer/        Cosmetic city scene plus the lever panel — the human mode's control surface.
-               No numbers, no charts, no trends.
-infra/         Docker compose for the warehouse Postgres.
+viewer/        Cosmetic city scene plus the lever panel. No numbers, no charts, no trends.
+infra/         Docker compose for the warehouse Postgres, and the Analytics Agent setup.
 tests/         pytest.
 docs/          See document map below.
 ```
@@ -86,8 +94,13 @@ Two naming notes, both deliberate:
 - **`evaluation/`, not `eval/`.** Avoids a module named after a builtin. The *command* is still
   `uv run blindcity compare`.
 
-Manual mode uses the upstream `datahub-analytics-agent` unmodified. Auto mode is our own agent and is
-the original contribution.
+And one that is not: the distribution and CLI are still named `blindcity`, the project's working
+title. Renaming a published entry point costs every reader with a command in their notes and buys
+nothing the README does not already say.
+
+`agent_analytics` runs the upstream DataHub Analytics Agent, patched only to support OpenAI
+reasoning models — that patch is upstreamed, not vendored. The other three modes are our own agent
+and are the original contribution.
 
 ### Runtime topology
 
@@ -102,32 +115,29 @@ Auth stays off. DataHub OSS quickstart accepts unauthenticated writes to
 
 ## Document map
 
-- `AGENTS.md` — this file. Vision, contest constraints, project map, conventions.
-- `README.md` — human onboarding, dependencies, commands.
-- `CONTRIBUTING.md` — contribution and commit conventions.
+- `AGENTS.md` — this file. Vision, contest constraints, project map, conventions. `CLAUDE.md` is a
+  symlink to it, so both names load the same document.
+- `README.md` — what the project is, the result, and setup from a clean clone.
+- `CONTRIBUTING.md` — project status, and the conventions a fork inherits.
+- `docs/RESULTS.md` — the full mode comparison and method.
 - `docs/FEATURES.md` — what the product does, feature by feature.
 - `docs/ENVIRONMENT.md` — verified setup commands, running topology, credentials, lifecycle.
 - `docs/DECISIONS.md` — append-only decision log with context and rationale.
 - `docs/ERRORS.md` — problems hit and how they were resolved.
-- `.tasks/<work-item>/TASKS.md` — plan and status for multi-step work.
+- `infra/analytics-agent/README.md` — standing up the upstream Analytics Agent for `agent_analytics`.
 
 ## Commands
 
-> Fill in as the toolchain lands. Placeholders are intentional, not decoration. A command is moved
-> above the line only once it has been run and observed to work.
-
-**Verified.** Setup and verification commands, with observed results, are in `docs/ENVIRONMENT.md`.
-
-**Not yet verified.** Everything below is the intended shape, not a working command.
+Setup and verification commands, with observed results, are in `docs/ENVIRONMENT.md`.
 
 ```bash
-# DataHub Core — verified, see docs/ENVIRONMENT.md
+# DataHub Core
 datahub docker quickstart
 
 # Simulation
 uv run blindcity sim --seed 42 --years 20
 
-# Metadata ingestion
+# Metadata publication
 uv run blindcity emit
 
 # Agent, auto mode
@@ -152,8 +162,6 @@ uv run blindcity compare "results/*.json"
 
 ## Dos and don'ts
 
-- **Do set `TOOLS_IS_MUTATION_ENABLED=true`** in the MCP config. Mutation tools are not registered at
-  all without it, so they never appear in the tool list.
 - **Do keep the baseline honest.** The no-DataHub control gets the same model, prompt, seed, tool
   budget, and full SQL access. Only the metadata context differs.
 - **Do spend effort on simulation fidelity, not on rendering.** The sim is the substrate the whole
@@ -170,8 +178,7 @@ uv run blindcity compare "results/*.json"
   `datahub docker quickstart`. The engine on this host restarts often and quickstart resets the
   containers' restart policy. `docker ps` showing two containers instead of seven is the normal
   failure, not a crisis.
-- **Don't trust a green test suite to mean a value is alive.** A constant passes every range check.
-  This project has shipped four columns pinned at a bound, each one through a fully green suite.
-  Require values to *move*, compare modes component by component, and check the fraction of rows
-  sitting at the ceiling rather than the mean. The opening section of `docs/ERRORS.md` is the
-  full version of this, and it is the single most useful thing in the documentation.
+- **Don't trust a green test suite to mean a value is alive.** A constant passes every range check,
+  and a column pinned at a bound passes a bounds test by definition. Require values to *move*,
+  compare modes component by component, and check the fraction of rows sitting at the ceiling
+  rather than the mean. The opening section of `docs/ERRORS.md` works this through in full.

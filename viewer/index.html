@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Blind City</title>
+  <title>City Sim Agent Benchmark</title>
   <style>
     :root {
       --bg: #14141a; --panel: #1c1c24; --line: #2e2e3a; --ink: #e8e8ec; --dim: #8a8a99;
@@ -40,18 +40,41 @@
     #status { font-size: 0.78rem; color: var(--dim); min-height: 1.2em; }
     .legend { display: flex; gap: 0.9rem; flex-wrap: wrap; font-size: 0.72rem; color: var(--dim); margin-top: 0.5rem; }
     .legend i { display: inline-block; width: 0.7rem; height: 0.7rem; border-radius: 2px; margin-right: 0.3rem; vertical-align: -1px; }
+    .aside-head { display: flex; align-items: center; justify-content: space-between; }
+    button.icon {
+      width: 1.6rem; height: 1.6rem; padding: 0; border-radius: 50%; font-weight: 700;
+      line-height: 1; font-size: 0.85rem;
+    }
+    /* Help panel. The only place this UI states a number about the city, and it is the fixed
+       opening position rather than a live readout. */
+    #help-backdrop {
+      position: fixed; inset: 0; background: rgba(6, 6, 10, 0.72); display: none;
+      align-items: center; justify-content: center; padding: 1.5rem; z-index: 10;
+    }
+    #help-backdrop.show { display: flex; }
+    #help {
+      background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+      max-width: 34rem; width: 100%; max-height: 85vh; overflow-y: auto; padding: 1.25rem 1.5rem;
+      box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
+    }
+    #help h3 { margin: 0 0 0.75rem; font-size: 1rem; }
+    #help h4 { margin: 1rem 0 0.3rem; font-size: 0.82rem; color: var(--accent); }
+    #help p { margin: 0 0 0.5rem; font-size: 0.84rem; line-height: 1.55; color: #cfcfda; }
+    #help .close-row { display: flex; justify-content: space-between; align-items: center; }
+    #help b { color: var(--ink); }
+    #help .parts { font-variant-numeric: tabular-nums; }
   </style>
 </head>
 <body>
   <main>
-    <h1>Blind City</h1>
+    <h1>City Sim Agent Benchmark</h1>
     <p class="note">
       You are the city manager. The city is in crisis and you have twelve quarterly decisions to
-      bring it back. <strong>Nothing here tells you a number about the city's state</strong> — no
+      bring it back. <strong>Nothing here tells you a number about the city's state.</strong> No
       population, treasury, satisfaction or health score. Worn roads look worn, unpowered buildings
       go dark, derelict lots look derelict. That is deliberate: the agent modes cannot see those
       numbers either, and the comparison is only fair if you are reading the same city they are.
-      To get numbers, query the warehouse.
+      To get numbers, ask the data.
     </p>
     <canvas id="canvas" width="1120" height="700"></canvas>
     <div class="legend">
@@ -65,7 +88,10 @@
   </main>
 
   <aside>
-    <h2>Levers</h2>
+    <div class="aside-head">
+      <h2>Levers</h2>
+      <button id="help-open" class="icon" type="button" title="How this works">?</button>
+    </div>
     <div id="levers"></div>
     <div class="row">
       <button id="apply" class="primary" type="button">Apply &amp; advance one quarter</button>
@@ -76,6 +102,16 @@
     </div>
     <div id="status"></div>
   </aside>
+
+  <div id="help-backdrop">
+    <div id="help" role="dialog" aria-modal="true" aria-labelledby="help-title">
+      <div class="close-row">
+        <h3 id="help-title">How this works</h3>
+        <button id="help-close" class="icon" type="button" title="Close">&times;</button>
+      </div>
+      <div id="help-body"></div>
+    </div>
+  </div>
 
 <script>
 // The eight levers, mirrored from blindcity.levers. Descriptions match the tool declaration the
@@ -159,11 +195,14 @@ function drawDiamond(x, y, fill, stroke) {
 
 function drawBuilding(tile, b) {
   // Height is density; colour is type; shade is condition. Unpowered goes dark.
-  const heights = { house: 10, apartment: 24, shop: 14, office: 30, factory: 20 };
+  // Keys are the `building_type` values GET /scene actually sends. They are the legend's
+  // categories too -- the swatches below the canvas are these same colours, written by hand.
+  const heights = { residential: 14, commercial: 22, industrial: 18, civic: 28 };
   const h = heights[b.building_type] ?? 12;
   const bandShade = { new: 1.0, worn: 0.7, derelict: 0.42 }[b.condition_band] ?? 0.8;
-  const typeColour = { house: [96, 132, 104], apartment: [104, 124, 156], shop: [128, 116, 156],
-                       office: [96, 128, 168], factory: [150, 118, 86] }[b.building_type] || [110, 110, 130];
+  const typeColour = { residential: [74, 124, 89], commercial: [90, 108, 140],
+                       industrial: [140, 111, 74], civic: [128, 116, 156],
+                     }[b.building_type] || [110, 110, 130];
   const lit = b.power_served ? 1 : 0.35;
   const c = typeColour.map(v => Math.round(v * bandShade * lit));
   const [sx, sy] = iso(tile.x, tile.y);
@@ -235,10 +274,87 @@ async function loadScene() {
   draw();
 }
 
+// Set only during a scored run (`blindcity run --mode human`). Free play leaves both null and the
+// help panel, turn counter and completion state never appear.
+let progress = null;
+let briefing = null;
+
 async function loadLevers() {
   const r = await fetch("/state");
   const s = await r.json();
   buildLeverPanel(s.levers || {});
+  progress = s.progress || null;
+  if (s.briefing) briefing = s.briefing;
+  applyRunState();
+}
+
+function pct(x) { return Math.round(x * 100) + "%"; }
+
+function renderHelp() {
+  if (!briefing) return;
+  const b = briefing;
+  const c = b.components || {};
+  const w = b.weights || {};
+  const months = b.months_per_turn === 3 ? "three months" : `${b.months_per_turn} months`;
+  document.getElementById("help-body").innerHTML = `
+    <h4>The goal</h4>
+    <p>Get the city's health index from <b>${b.index.toFixed(2)}</b> up to
+    <b>${b.green_threshold}</b> or above, in as few of your ${b.turn_budget} quarterly turns as
+    possible. Crossing ${b.green_threshold} counts as recovery, and doing it in three turns is a
+    better result than doing it in ten.</p>
+
+    <h4>How the score works</h4>
+    <p class="parts">It is a weighted composite of four parts: satisfaction
+    ${pct(w.satisfaction)}, service ${pct(w.service)}, solvency ${pct(w.solvency)}, population
+    ${pct(w.population)}.</p>
+    <p class="parts">You start at <b>${b.index.toFixed(2)}</b>. Solvency (<b>${c.solvency}</b>) and
+    service (<b>${c.service}</b>) are the holes. Population (<b>${c.population}</b>) is holding.</p>
+
+    <h4>Where the data is</h4>
+    <p>Nothing on this screen shows you a number about the city as it runs. Its entire history sits
+    in a Postgres data warehouse, one row per entity per simulated month since founding, including
+    the ${b.history_months} months before your first turn.</p>
+    <p><b>Launch the Analytics Agent if you haven't already, and use it to guide your decision
+    making.</b> Ask it about the city in plain English. The history from before turn 1 is usually
+    the fastest route to what went wrong.</p>
+
+    <h4>The controls</h4>
+    <p>Eight levers, and they persist between turns, so change only what you mean to change. Each
+    turn advances ${months}.</p>`;
+}
+
+function showHelp(show) {
+  document.getElementById("help-backdrop").classList.toggle("show", show);
+  if (!show) localStorage.setItem("blindcity.helpSeen", "1");
+}
+
+function applyRunState() {
+  const help = document.getElementById("help-open");
+  const reset = document.getElementById("reset");
+  if (!progress) {
+    // Free play: no budget, no briefing, and resetting the city is allowed.
+    help.style.display = "none";
+    return;
+  }
+  help.style.display = "";
+  // A scored run cannot be reset without desyncing the harness, and the endpoint refuses anyway.
+  reset.style.display = "none";
+  if (!document.getElementById("help-body").innerHTML) renderHelp();
+  if (!localStorage.getItem("blindcity.helpSeen")) showHelp(true);
+
+  const apply = document.getElementById("apply");
+  if (progress.complete) {
+    apply.disabled = true;
+    apply.textContent = "Run complete";
+    say(`All ${progress.turn_budget} turns played. Your result has been recorded.`);
+  } else {
+    apply.textContent = "Apply & advance one quarter";
+  }
+}
+
+function turnLabel() {
+  if (!progress || progress.complete) return "";
+  return ` Turn ${progress.turn + 1} of ${progress.turn_budget}.`;
 }
 
 async function applyAndAdvance() {
@@ -252,16 +368,25 @@ async function applyAndAdvance() {
     });
     say("Advancing three months…");
     // One turn is a quarter, matching the agent modes' months_per_turn.
-    await fetch("/advance", {
+    const r = await fetch("/advance", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ months: 3 }),
     });
+    if (!r.ok) {
+      const detail = await r.json().catch(() => ({}));
+      say(`Could not advance: ${detail.detail || r.status}`);
+      return;
+    }
+    const body = await r.json();
+    progress = (body.state && body.state.progress) || progress;
     await loadScene();
-    say(`Quarter complete. Month ${scene.tick}.`);
+    applyRunState();
+    if (!progress || !progress.complete) say(`Quarter complete.${turnLabel()}`);
   } catch (e) {
     say(`Failed: ${e}`);
   } finally {
-    btn.disabled = false;
+    // A finished run leaves the button disabled; applyRunState owns that decision.
+    if (!progress || !progress.complete) btn.disabled = false;
   }
 }
 
@@ -272,7 +397,14 @@ document.getElementById("reset").addEventListener("click", async () => {
   await loadLevers(); await loadScene(); say("City reset.");
 });
 
-loadLevers().then(loadScene).then(() => say("Ready."));
+document.getElementById("help-open").addEventListener("click", () => showHelp(true));
+document.getElementById("help-close").addEventListener("click", () => showHelp(false));
+document.getElementById("help-backdrop").addEventListener("click", (e) => {
+  if (e.target.id === "help-backdrop") showHelp(false);
+});
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") showHelp(false); });
+
+loadLevers().then(loadScene).then(() => say(`Ready.${turnLabel()}`));
 </script>
 </body>
 </html>

@@ -116,6 +116,10 @@ def test_expected_order_matches_the_modes_that_exist():
     assert set(EXPECTED_ORDER) == set(MODES)
 
 
+# The contract answer the advisor is asked for: prose, then the decision as a fenced JSON block.
+_BLOCK = 'Roads are worn.\n\n```json\n{"income_tax_rate": 0.11}\n```'
+
+
 # --- The advisor mode is a separate service, so parity has to be checked at runtime -----------
 
 
@@ -163,27 +167,6 @@ def test_advisor_refuses_when_it_has_no_key():
     advisor._client = lambda: httpx.Client(transport=httpx.MockTransport(handler))
     with pytest.raises(LLMMismatch, match="no API key"):
         advisor.preflight(expected_model="gpt-5.6-luna")
-
-
-def test_lever_parsing_is_strict_about_names_and_ranges():
-    """The advisor answers in free text, so the parser is forgiving about formatting. It must not
-    be forgiving about which levers exist or what values are legal, or the mode scores the parser
-    rather than the advice."""
-    from blindcity.agent.advisor import parse_levers
-    from blindcity.levers import LEVERS
-
-    text = (
-        "Set **income_tax_rate**: 0.11 and road_maintenance_budget = 5,000,000. "
-        "Also transit_fare -> 1.5, and made_up_lever = 42. "
-        "Finally income_tax_rate = 0.9 as the corrected figure."
-    )
-    out = parse_levers(text)
-    assert "made_up_lever" not in out, "an invented lever was accepted"
-    assert out["road_maintenance_budget"] == 5_000_000.0, "thousands separators broke parsing"
-    assert out["transit_fare"] == 1.5
-    # Last mention wins -- analysts restate the recommendation in a closing summary -- and the
-    # out-of-range value is clamped rather than taken literally.
-    assert out["income_tax_rate"] == LEVERS["income_tax_rate"].maximum
 
 
 def test_the_report_names_the_model_the_runs_actually_used(tmp_path):
@@ -245,13 +228,14 @@ def test_a_rate_limited_question_is_re_put_not_forfeited(monkeypatch):
         def _client(self):
             raise AssertionError("should not be reached")
 
-        def _send(self, client, conv, question):
+        def _send(self, client, conv, question, tools):
             calls["n"] += 1
             if calls["n"] < 3:
                 raise ValueError(
                     "Rate limit reached for gpt-5.6-luna ... Please try again in 1.631s."
                 )
-            return "income_tax_rate = 0.11", ["SELECT 1"]
+            tools.append({"name": "execute_sql", "error": None})
+            return _BLOCK, ["SELECT 1"]
 
         def start(self, client):
             return "conv"
@@ -261,7 +245,7 @@ def test_a_rate_limited_question_is_re_put_not_forfeited(monkeypatch):
     out = adv.ask("what now?")
 
     assert out.error is None, out.error
-    assert out.levers == {"income_tax_rate": 0.11}
+    assert out.answer == _BLOCK
     assert calls["n"] == 3
     assert adv.rate_limited == 2
 
@@ -275,7 +259,7 @@ def test_a_real_failure_is_reported_rather_than_retried(monkeypatch):
     calls = {"n": 0}
 
     class Adv(advisor_mod.AnalyticsAgentAdvisor):
-        def _send(self, client, conv, question):
+        def _send(self, client, conv, question, tools):
             calls["n"] += 1
             raise ValueError("the engine exploded")
 
@@ -299,15 +283,25 @@ def test_the_rate_limit_delay_is_read_from_the_provider(monkeypatch):
     assert _rate_limit_delay(ValueError("Rate limit reached ... try again in 1.6s")) == _RATE_LIMIT_FLOOR
     assert _rate_limit_delay(ValueError("HTTP 429 refused")) == _RATE_LIMIT_FLOOR
 
-    # The wait doubles per attempt, up to a full window. On a tokens-per-minute ceiling the
+    # Every wait clears a full window, starting with the first. On a tokens-per-minute ceiling the
     # provider's own number is close to useless -- a refusal saying "try again in 281ms" was
-    # followed by four failures, because one advisor question costs 57% of the whole minute and
-    # two of them can never share a window.
+    # followed by four failures, because one advisor question costs 57% of the whole minute and two
+    # of them can never share a window.
+    #
+    # A ramp is the wrong shape here, and this is the assertion that says so: a run that ramped from
+    # 8s spent its three sleeps on 14s, 16s and 32s, none of which could clear a minute, and lost
+    # the turn anyway. There is no partial credit for waiting -- a retry inside the window is
+    # refused exactly like the call that preceded it.
     waits = [_rate_limit_delay(ValueError("Rate limit reached ... try again in 281ms"), a)
              for a in range(4)]
     assert waits == sorted(waits) and waits[0] == _RATE_LIMIT_FLOOR
-    assert waits[-1] >= 60.0, f"the longest wait cannot clear a 60s window: {waits}"
-    assert all(w <= 65.0 for w in waits), "waiting longer than a window buys nothing"
+    assert all(w >= 60.0 for w in waits), f"a wait that cannot clear a 60s window is spent: {waits}"
+    assert all(w <= 70.0 for w in waits), "waiting longer than a window buys nothing"
+
+    # The ceiling bounds our ramp, never the provider's own number. These constants are tuned for a
+    # per-minute bucket; a refusal citing an hourly one names a wait far longer, and clamping it to
+    # 70s would burn all four attempts inside three minutes and lose the turn regardless.
+    assert _rate_limit_delay(ValueError("Rate limit reached ... try again in 300s")) == 300.0
 
 
 class _NullClient:
@@ -316,6 +310,214 @@ class _NullClient:
 
     def __exit__(self, *a):
         return False
+
+
+# --- Did the advisor read the catalog, or only have the option to? ------------------------------
+
+
+class _StreamingClient:
+    """An Analytics Agent whose SSE stream is fixed in advance."""
+
+    def __init__(self, events):
+        self.events = events
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def stream(self, method, url, json=None):
+        return self
+
+    def raise_for_status(self):
+        return None
+
+    def iter_lines(self):
+        import json as _json
+
+        for event in self.events:
+            yield "data: " + _json.dumps(event)
+        yield "data: [DONE]"
+
+
+def test_a_lost_turn_does_not_take_the_whole_run_down_with_it():
+    """A turn the advisor never answered leaves no decision, and the record has to say so in the
+    same shape as every other turn. When it did not, `report()` raised `KeyError: 'levers'` at the
+    end of the run -- so one forfeited turn destroyed the eleven good ones beside it, at the point
+    where the results were about to be written."""
+    from blindcity.agent.advisor import Advice
+    from blindcity.agent.advisor_controller import AdvisorController
+
+    class FakeAdvisor:
+        base_url = "http://advisor"
+        tokens: ClassVar[dict] = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+        rate_limited = 4
+
+        def ask(self, question):
+            return Advice(question=question, answer="", error="ValueError: Rate limit reached")
+
+    controller = AdvisorController(name="agent_analytics", advisor=FakeAdvisor(), turn_budget=12)
+    assert controller.decide(_FakeState(), 0, {}) == {}
+
+    report = controller.report()
+    assert report["answered_turns"] == 0
+    assert report["acting_turns"] == 0
+    assert report["advisor_errors"] == ["ValueError: Rate limit reached"]
+    assert report["rate_limited"] == 4
+
+
+def test_a_failed_tool_call_is_not_recorded_as_a_read():
+    """The first version of this kept names only, and reported 25 catalog reads on a run where
+    every one of them returned null -- the metric meant to prove the guidance had been read was
+    what concealed that it never was. The event shape is theirs, so this breaks quietly if it
+    moves."""
+    from blindcity.agent.advisor import AnalyticsAgentAdvisor
+    from blindcity.catalog.operational import GUIDANCE_PREFIX
+
+    advisor = AnalyticsAgentAdvisor()
+    client = _StreamingClient([
+        # Succeeded, and brought a guidance property back.
+        {
+            "event": "TOOL_RESULT",
+            "payload": {"tool_name": "search", "result": f'{{"{GUIDANCE_PREFIX}.lever.x": "{{}}"}}'},
+        },
+        # Succeeded, and returned nothing useful -- a search for the wrong term.
+        {"event": "TOOL_RESULT", "payload": {"tool_name": "search", "result": '{"results": []}'}},
+        {
+            "event": "TOOL_RESULT",
+            "payload": {"tool_name": "get_entities", "is_error": True, "result": "null data"},
+        },
+        {"event": "SQL", "payload": {"sql": "SELECT 1"}},
+        {"event": "TOOL_RESULT", "payload": {"tool_name": "execute_sql"}},
+        {"event": "TEXT", "payload": {"text": "roads are worn"}},
+    ])
+
+    tools: list = []
+    answer, statements = advisor._send(client, "conv", "what now?", tools)
+    assert answer == "roads are worn"
+    assert statements == ["SELECT 1"]
+    assert [t["name"] for t in tools] == ["search", "search", "get_entities", "execute_sql"]
+    assert [t["error"] for t in tools] == [None, None, "null data", None]
+    # A call that succeeded and returned nothing is not a read, and neither is a failed one.
+    assert [t.get("guidance") for t in tools] == [True, False, None, None]
+
+
+def test_tool_calls_survive_a_stream_that_dies_partway():
+    """The turn that fails is the one whose tool calls are most worth having. `_send` appends to a
+    list the caller owns, so an `ERROR` event mid-stream does not take the record with it."""
+    from blindcity.agent.advisor import AnalyticsAgentAdvisor
+
+    advisor = AnalyticsAgentAdvisor()
+    client = _StreamingClient([
+        {"event": "TOOL_RESULT", "payload": {"tool_name": "search", "result": "{}"}},
+        {"event": "ERROR", "payload": {"error": "Rate limit reached for gpt-5.6-luna"}},
+    ])
+
+    tools: list = []
+    with pytest.raises(ValueError, match="Rate limit"):
+        advisor._send(client, "conv", "what now?", tools)
+    assert [t["name"] for t in tools] == ["search"]
+
+
+def test_asking_for_the_guidance_is_not_the_same_as_getting_it():
+    """Three outcomes that must stay apart, because each needs a different fix:
+
+      * called it and got the guidance back -- the working case
+      * called it, no error, nothing useful returned -- searched for the wrong term
+      * called it and was refused -- the run where `get_entities` returned null 25 times
+
+    Every "did it call the tool" measure reads green on all three."""
+    from blindcity.agent.advisor import Advice
+    from blindcity.agent.advisor_controller import AdvisorController
+
+    def call(name, error=None, guidance=None):
+        out = {"name": name, "error": error}
+        if guidance is not None:
+            out["guidance"] = guidance
+        return out
+
+    class FakeAdvisor:
+        base_url = "http://advisor"
+        tokens: ClassVar[dict] = {"input_tokens": 1, "output_tokens": 2, "total_tokens": 3}
+        rate_limited = 0
+
+        def __init__(self):
+            self.turn = 0
+
+        def ask(self, question):
+            tools = [
+                # Turn 0: one search brings the guidance back.
+                [call("search", guidance=True), call("execute_sql")],
+                # Turn 1: a search that succeeded and returned nothing, plus a refusal.
+                [call("search", guidance=False), call("get_entities", "no data")],
+            ][self.turn]
+            self.turn += 1
+            return Advice(
+                question=question,
+                answer='```json\n{"income_tax_rate": 0.11}\n```',
+                tools=tools,
+            )
+
+    class State:
+        # Populated, because turn 1 restates what last turn's advice became.
+        levers: ClassVar[dict] = {"income_tax_rate": 0.11}
+
+    controller = AdvisorController(name="agent_analytics", advisor=FakeAdvisor(), turn_budget=12)
+    controller.decide(State(), 0, {})
+    controller.decide(State(), 1, {})
+
+    report = controller.report()
+    assert report["tool_calls"] == {"search": 2, "execute_sql": 1, "get_entities": 1}
+    assert report["failed_tool_calls"] == {"get_entities": 1}
+    # Two calls could have carried guidance and did not fail; only one actually carried any.
+    assert report["guidance_lookups"] == 2
+    assert report["guidance_reads"] == 1, "an empty search was counted as a read"
+    assert report["turns_reading_guidance"] == 1
+
+
+def test_a_clarification_keeps_the_tools_it_called():
+    """A clarification is another question to the same advisor, so what it called belongs to the
+    turn. Dropping them under-reported exactly the turns that went wrong -- including a search that
+    only fetched the guidance on the second ask."""
+    from blindcity.agent.advisor import Advice
+    from blindcity.agent.advisor_controller import AdvisorController
+
+    class FakeAdvisor:
+        base_url = "http://advisor"
+        tokens: ClassVar[dict] = {"input_tokens": 1, "output_tokens": 2, "total_tokens": 3}
+        rate_limited = 0
+
+        def __init__(self):
+            self.asked = 0
+
+        def ask(self, question):
+            self.asked += 1
+            if self.asked == 1:  # the original answer: no block, and no guidance yet
+                return Advice(question=question, answer="Raise roads a lot.", tools=[])
+            return Advice(  # the clarification, which goes and reads the catalog first
+                question=question,
+                answer='```json\n{"road_maintenance_budget": 3000000}\n```',
+                tools=[{"name": "search", "error": None, "guidance": True}],
+            )
+
+    class Reviewer:
+        model = "fake"
+
+        def generate(self, *, system, history, tools=None):
+            from blindcity.agent.llm import Reply
+
+            return Reply(text='{"levers": {}, "vague": ["road_maintenance_budget"]}')
+
+    controller = AdvisorController(
+        name="agent_analytics", advisor=FakeAdvisor(), llm=Reviewer(), turn_budget=12
+    )
+    assert controller.decide(_FakeState(), 0, {}) == {"road_maintenance_budget": 3_000_000.0}
+
+    report = controller.report()
+    assert report["tool_calls"] == {"search": 1}, "the clarification's tool calls were dropped"
+    assert report["guidance_reads"] == 1
+    assert report["parsing"]["clarification_rounds"] == 1
 
 
 # --- Publishing the catalog must not silently destroy someone's edits --------------------------
@@ -478,8 +680,8 @@ def test_the_advisor_writes_its_own_transcript(tmp_path):
         tokens: ClassVar[dict] = {"input_tokens": 1, "output_tokens": 2, "total_tokens": 3}
 
         def ask(self, question):
-            return Advice(question=question, answer="income_tax_rate = 0.11",
-                          levers={"income_tax_rate": 0.11}, queries=["SELECT 1"])
+            # The contract: prose reasoning, then a fenced JSON block carrying the decision.
+            return Advice(question=question, answer=_BLOCK, queries=["SELECT 1"])
 
     controller = AdvisorController(
         name="agent_analytics", advisor=FakeAdvisor(), turn_budget=12, transcript=str(path)
@@ -490,8 +692,10 @@ def test_the_advisor_writes_its_own_transcript(tmp_path):
     assert [x["phase"] for x in lines] == ["request", "response"]
     # The question is written before the call, so a hang still leaves evidence of what was asked.
     assert "eight levers" in lines[0]["question"]
-    assert lines[1]["levers"] == {"income_tax_rate": 0.11}
+    assert lines[1]["answer"] == _BLOCK
     assert lines[1]["queries"] == ["SELECT 1"]
+    # The decision itself is in the turn record, read from the block rather than from the prose.
+    assert controller.history[0]["levers"] == {"income_tax_rate": 0.11}
 
 
 class _FakeState:
@@ -504,10 +708,24 @@ def test_a_lost_turn_is_reported_in_the_comparison(tmp_path):
     path = _write(tmp_path, "agent_analytics", 0.72, 4)
     side = path.with_suffix(".agent.json")
     report = json.loads(side.read_text(encoding="utf-8"))
-    report["advisor_errors"] = ["rate limit", "rate limit"]
+    report["turns"] = [{"error": "rate limit"}, {"error": "rate limit"}, {"sql_calls": 5}]
     side.write_text(json.dumps(report), encoding="utf-8")
 
     summaries = collect([path])
     assert summaries["agent_analytics"].lost_turns == 2
     out = markdown(summaries, threshold=0.62, seed=42, model="m")
     assert "Incomplete runs" in out and "lost 2 turn(s)" in out
+
+
+def test_a_lost_turn_is_counted_once_not_twice(tmp_path):
+    """`agent_analytics` records a failed turn on the turn *and* in `advisor_errors`, and the
+    comparison counted both -- so a run that lost one turn was reported as having lost two, in the
+    table whose only job is to say how complete each run was."""
+    path = _write(tmp_path, "agent_analytics", 0.72, 4)
+    side = path.with_suffix(".agent.json")
+    report = json.loads(side.read_text(encoding="utf-8"))
+    report["turns"] = [{"error": "rate limit"}, {"sql_calls": 5}]
+    report["advisor_errors"] = ["rate limit"]  # the same event, listed a second time
+    side.write_text(json.dumps(report), encoding="utf-8")
+
+    assert collect([path])["agent_analytics"].lost_turns == 1
