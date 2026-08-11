@@ -192,6 +192,12 @@ def _print_diagnostics(report: dict[str, Any]) -> None:
         for name, count in (report.get("failed_tool_calls") or {}).items():
             print(f"run: {count} failed call(s) to {name}")
 
+    # Whether the backoff earned its wait. Retries with no lost turn means it did; retries beside a
+    # lost turn means the wait is still shorter than the window it is waiting out.
+    retried = report.get("rate_limited")
+    if retried:
+        print(f"run: {retried} question(s) re-put after a rate limit")
+
     advisor_errors = report.get("advisor_errors") or []
     if advisor_errors:
         print(f"run: {len(advisor_errors)} turn(s) got no advice; first: {advisor_errors[0][:200]}")

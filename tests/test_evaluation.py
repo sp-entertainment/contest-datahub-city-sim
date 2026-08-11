@@ -299,15 +299,20 @@ def test_the_rate_limit_delay_is_read_from_the_provider(monkeypatch):
     assert _rate_limit_delay(ValueError("Rate limit reached ... try again in 1.6s")) == _RATE_LIMIT_FLOOR
     assert _rate_limit_delay(ValueError("HTTP 429 refused")) == _RATE_LIMIT_FLOOR
 
-    # The wait doubles per attempt, up to a full window. On a tokens-per-minute ceiling the
+    # Every wait clears a full window, starting with the first. On a tokens-per-minute ceiling the
     # provider's own number is close to useless -- a refusal saying "try again in 281ms" was
-    # followed by four failures, because one advisor question costs 57% of the whole minute and
-    # two of them can never share a window.
+    # followed by four failures, because one advisor question costs 57% of the whole minute and two
+    # of them can never share a window.
+    #
+    # A ramp is the wrong shape here, and this is the assertion that says so: a run that ramped from
+    # 8s spent its three sleeps on 14s, 16s and 32s, none of which could clear a minute, and lost
+    # the turn anyway. There is no partial credit for waiting -- a retry inside the window is
+    # refused exactly like the call that preceded it.
     waits = [_rate_limit_delay(ValueError("Rate limit reached ... try again in 281ms"), a)
              for a in range(4)]
     assert waits == sorted(waits) and waits[0] == _RATE_LIMIT_FLOOR
-    assert waits[-1] >= 60.0, f"the longest wait cannot clear a 60s window: {waits}"
-    assert all(w <= 65.0 for w in waits), "waiting longer than a window buys nothing"
+    assert all(w >= 60.0 for w in waits), f"a wait that cannot clear a 60s window is spent: {waits}"
+    assert all(w <= 70.0 for w in waits), "waiting longer than a window buys nothing"
 
 
 class _NullClient:
@@ -386,6 +391,7 @@ def test_a_turn_that_asked_for_the_guidance_and_was_refused_counts_as_no_read():
     class FakeAdvisor:
         base_url = "http://advisor"
         tokens: ClassVar[dict] = {"input_tokens": 1, "output_tokens": 2, "total_tokens": 3}
+        rate_limited = 0
 
         def __init__(self):
             self.turn = 0

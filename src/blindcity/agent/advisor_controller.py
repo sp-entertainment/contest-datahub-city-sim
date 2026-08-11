@@ -402,6 +402,12 @@ class AdvisorController:
             "failed_tool_calls": dict(failed.most_common()),
             "guidance_reads": sum(read_guidance(t) for t in self.history),
             "turns_reading_guidance": sum(1 for t in self.history if read_guidance(t)),
+            # Questions re-put after a 429. A turn saved this way is a turn the mode got to play,
+            # and one lost is a hole the score cannot show -- but until now neither was in any
+            # artifact, so "the retry works" was an assertion about the code rather than a
+            # measurement. A run with retries and no advisor error means the backoff earned its
+            # wait; retries alongside a lost turn mean it is still too short.
+            "rate_limited": self.advisor.rate_limited,
             # Tokens are the advisor's own, reported back over its stream. We never call the
             # model here, but the mode is not free and must not read as though it were.
             "usage": {

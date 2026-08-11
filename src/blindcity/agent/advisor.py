@@ -44,11 +44,17 @@ RATE_LIMIT_ATTEMPTS = 4
 # because one advisor question costs ~114,000 tokens against a 200,000/minute ceiling -- 57% of the
 # whole minute in a single call, so two questions can never share one window.
 #
-# So the wait doubles per attempt from a floor, up to a full window. Nothing else is consuming this
-# budget, so 60 seconds is a guarantee rather than a guess.
+# So the first retry waits a full window rather than ramping up to one. A ramp from 8 seconds spends
+# its three sleeps on 14s, 16s and 32s -- none of which can clear a minute-long window, so all three
+# are refused and the turn is lost anyway. That is what happened: a turn asking for 59,141 tokens
+# against 187,999 already used was refused four times in 62 seconds and forfeited.
+#
+# Nothing else is consuming this budget, so one window is a guarantee rather than a guess. The
+# ceiling is per wait, not a total: three sleeps of 65-70s, about 3.5 minutes at worst for a turn
+# that would otherwise be lost outright.
 _RATE_LIMIT_DELAY = re.compile(r"try again in ([0-9.]+)\s*(ms|s)", re.IGNORECASE)
-_RATE_LIMIT_FLOOR = 8.0
-_RATE_LIMIT_CEILING = 65.0
+_RATE_LIMIT_FLOOR = 65.0
+_RATE_LIMIT_CEILING = 70.0
 
 
 def _rate_limit_delay(exc: Exception, attempt: int = 0) -> float | None:
