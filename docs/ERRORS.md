@@ -606,7 +606,7 @@ nothing was checking.
 
 `agent_analytics` scored 0.6825 in the recorded run. Part of that was our parser, not the advisor.
 
-At turn 9 it wrote `road_maintenance_budget = 2e6`. `advisor.parse_levers` matched
+At turn 9 it wrote `road_maintenance_budget = 2e6`. The prose regex then in `advisor.py` matched
 `([0-9][0-9,_]*(?:\.[0-9]+)?)`, which stops at the `e`, and took **`2`** — two dollars a year
 instead of two million. Roads went unfunded for the rest of the run.
 
@@ -647,8 +647,12 @@ should be surfaced rather than dropped. So:
    numbers the advisor actually wrote. Anything else is `vague`, which asks rather than guesses.
 4. Three clarifications, then the run is **abandoned**: no result file is written, so
    `blindcity compare` cannot sweep a void run into a table.
-5. The prose regex is retained purely as a cross-check, and a disagreement with the block is
-   printed. That is the line that would have caught this on day one.
+5. The prose regex was kept at first as a cross-check, reporting where it disagreed with the block
+   — the line that would have caught this on day one. **It has since been deleted.** Two full runs
+   later it had produced zero disagreements, and could not produce one: an advisor following the
+   contract writes its numbers in the block and nothing in the prose for a regex to match. A
+   tripwire that cannot fire is not a safety net, it is a second parser to maintain and a second
+   thing a reader has to be told not to trust.
 
 Verified against the recorded failure: the old path applied `2`, the new one refuses the answer and
 the reviewer recovers `2000000`. Given "raise it to a moderate level" the reviewer returns `vague`

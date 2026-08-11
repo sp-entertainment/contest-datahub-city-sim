@@ -116,6 +116,10 @@ def test_expected_order_matches_the_modes_that_exist():
     assert set(EXPECTED_ORDER) == set(MODES)
 
 
+# The contract answer the advisor is asked for: prose, then the decision as a fenced JSON block.
+_BLOCK = 'Roads are worn.\n\n```json\n{"income_tax_rate": 0.11}\n```'
+
+
 # --- The advisor mode is a separate service, so parity has to be checked at runtime -----------
 
 
@@ -163,27 +167,6 @@ def test_advisor_refuses_when_it_has_no_key():
     advisor._client = lambda: httpx.Client(transport=httpx.MockTransport(handler))
     with pytest.raises(LLMMismatch, match="no API key"):
         advisor.preflight(expected_model="gpt-5.6-luna")
-
-
-def test_lever_parsing_is_strict_about_names_and_ranges():
-    """The advisor answers in free text, so the parser is forgiving about formatting. It must not
-    be forgiving about which levers exist or what values are legal, or the mode scores the parser
-    rather than the advice."""
-    from blindcity.agent.advisor import parse_levers
-    from blindcity.levers import LEVERS
-
-    text = (
-        "Set **income_tax_rate**: 0.11 and road_maintenance_budget = 5,000,000. "
-        "Also transit_fare -> 1.5, and made_up_lever = 42. "
-        "Finally income_tax_rate = 0.9 as the corrected figure."
-    )
-    out = parse_levers(text)
-    assert "made_up_lever" not in out, "an invented lever was accepted"
-    assert out["road_maintenance_budget"] == 5_000_000.0, "thousands separators broke parsing"
-    assert out["transit_fare"] == 1.5
-    # Last mention wins -- analysts restate the recommendation in a closing summary -- and the
-    # out-of-range value is clamped rather than taken literally.
-    assert out["income_tax_rate"] == LEVERS["income_tax_rate"].maximum
 
 
 def test_the_report_names_the_model_the_runs_actually_used(tmp_path):
@@ -251,7 +234,7 @@ def test_a_rate_limited_question_is_re_put_not_forfeited(monkeypatch):
                 raise ValueError(
                     "Rate limit reached for gpt-5.6-luna ... Please try again in 1.631s."
                 )
-            return "income_tax_rate = 0.11", ["SELECT 1"], ["execute_sql"]
+            return _BLOCK, ["SELECT 1"], [{"name": "execute_sql", "error": None}]
 
         def start(self, client):
             return "conv"
@@ -261,7 +244,7 @@ def test_a_rate_limited_question_is_re_put_not_forfeited(monkeypatch):
     out = adv.ask("what now?")
 
     assert out.error is None, out.error
-    assert out.levers == {"income_tax_rate": 0.11}
+    assert out.answer == _BLOCK
     assert calls["n"] == 3
     assert adv.rate_limited == 2
 
@@ -585,9 +568,7 @@ def test_the_advisor_writes_its_own_transcript(tmp_path):
 
         def ask(self, question):
             # The contract: prose reasoning, then a fenced JSON block carrying the decision.
-            answer = 'Roads are worn.\n\n```json\n{"income_tax_rate": 0.11}\n```'
-            return Advice(question=question, answer=answer,
-                          levers={"income_tax_rate": 0.11}, queries=["SELECT 1"])
+            return Advice(question=question, answer=_BLOCK, queries=["SELECT 1"])
 
     controller = AdvisorController(
         name="agent_analytics", advisor=FakeAdvisor(), turn_budget=12, transcript=str(path)
@@ -598,8 +579,10 @@ def test_the_advisor_writes_its_own_transcript(tmp_path):
     assert [x["phase"] for x in lines] == ["request", "response"]
     # The question is written before the call, so a hang still leaves evidence of what was asked.
     assert "eight levers" in lines[0]["question"]
-    assert lines[1]["levers"] == {"income_tax_rate": 0.11}
+    assert lines[1]["answer"] == _BLOCK
     assert lines[1]["queries"] == ["SELECT 1"]
+    # The decision itself is in the turn record, read from the block rather than from the prose.
+    assert controller.history[0]["levers"] == {"income_tax_rate": 0.11}
 
 
 class _FakeState:

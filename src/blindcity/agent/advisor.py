@@ -10,9 +10,10 @@ DataHub's own analytics agent, pointed at the same warehouse, better at governin
 agent we wrote". Ours writes SQL and holds a plan across turns; theirs is a text-to-SQL analyst
 grounded in the catalog, with no memory of the city between questions except what we tell it.
 
-The advisor never actuates anything. It returns prose; the controller parses lever values out of
-it and applies them, exactly as a person would read an analyst's answer and then pull the levers
-themselves. Nothing the advisor says can move a lever the controller did not choose to move.
+The advisor never actuates anything. It returns prose ending in a decision block; the controller
+reads the block and applies it, exactly as a person would read an analyst's answer and then pull
+the levers themselves. Nothing the advisor says can move a lever the controller did not choose to
+move.
 """
 
 from __future__ import annotations
@@ -93,7 +94,6 @@ class Advice:
 
     question: str
     answer: str
-    levers: dict[str, float] = field(default_factory=dict)
     seconds: float = 0.0
     error: str | None = None
     queries: list[str] = field(default_factory=list)
@@ -112,7 +112,6 @@ class Advice:
         return {
             "question": self.question,
             "answer": self.answer[:4000],
-            "levers": self.levers,
             "seconds": round(self.seconds, 2),
             "error": self.error,
             "queries": self.queries,
@@ -177,42 +176,6 @@ def extract_lever_block(text: str) -> dict[str, float] | None:
             )
         out[name] = LEVERS[name].clamp(float(value))
     return out
-
-
-def parse_levers(text: str) -> dict[str, float]:
-    """Pull lever settings out of an analyst's prose.
-
-    **No longer the primary reader** -- `extract_lever_block` is. This is kept as a cross-check on
-    the prose surrounding the block, because a disagreement between the two is the cheapest signal
-    that something was misread, and it is the signal that would have caught `road_maintenance_budget
-    = 2e6` being taken as `2` on the day it happened rather than three runs later.
-
-    It is forgiving about formatting and strict about names and ranges, and it is *wrong* often
-    enough that nothing should depend on it alone: it truncates scientific notation (`6e6` -> 6),
-    ignores magnitude suffixes (`6M` -> 6), and reads a percentage as its bare number (`11%` -> 11,
-    then clamped to the legal maximum, which looks deliberate). Those are the reasons the contract
-    exists.
-
-    Accepts `income_tax_rate = 0.11`, `income_tax_rate: 0.11`, `**income_tax_rate**: 0.11`,
-    `- income_tax_rate → 0.11`, and the same with thousands separators or a currency prefix.
-    """
-    found: dict[str, float] = {}
-    for name in LEVERS:
-        # Last occurrence wins: analysts frequently restate the recommendation in a summary at the
-        # end, and the summary is the considered answer.
-        pattern = re.compile(
-            rf"{re.escape(name)}\**\s*(?:=|:|->|→|to|at)\s*\**\s*\$?([0-9][0-9,_]*(?:\.[0-9]+)?)",
-            re.IGNORECASE,
-        )
-        matches = pattern.findall(text)
-        if not matches:
-            continue
-        raw = matches[-1].replace(",", "").replace("_", "")
-        try:
-            found[name] = LEVERS[name].clamp(float(raw))
-        except ValueError:
-            continue
-    return found
 
 
 class AnalyticsAgentAdvisor:
@@ -320,7 +283,6 @@ class AnalyticsAgentAdvisor:
         return Advice(
             question=question,
             answer=answer,
-            levers=parse_levers(answer),
             seconds=time.monotonic() - started,
             queries=statements,
             tools=tools,

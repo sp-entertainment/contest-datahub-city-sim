@@ -107,9 +107,6 @@ class ReviewOutcome:
     source: str = "contract"
     clarifications: int = 0
     vague: list[str] = field(default_factory=list)
-    # Where the retained prose regex disagreed with the authoritative reading. Never fatal --
-    # the regex is the weaker reader -- but it is the signal that would have caught `2e6`.
-    disagreements: list[str] = field(default_factory=list)
 
 
 def _lever_lines() -> str:
@@ -156,8 +153,6 @@ def read_decision(
     clarification arrives with all the context the original answer had. `record`, if given, is
     called with each exchange so clarifications land in the transcript beside everything else.
     """
-    from blindcity.agent.advisor import parse_levers
-
     outcome = ReviewOutcome()
     attempts = [answer]
     text = answer
@@ -176,7 +171,6 @@ def read_decision(
             outcome.levers = block
             outcome.source = "contract" if attempt == 0 else "clarified"
             outcome.clarifications = attempt
-            outcome.disagreements = _disagreements(block, parse_levers(text))
             return outcome
 
         # No block, or a block that says something unusable. Ask a reader that can cope with prose.
@@ -185,7 +179,6 @@ def read_decision(
             outcome.levers = levers
             outcome.source = "reviewed" if attempt == 0 else "clarified"
             outcome.clarifications = attempt
-            outcome.disagreements = _disagreements(levers, parse_levers(text))
             return outcome
 
         outcome.vague = vague
@@ -204,17 +197,3 @@ def read_decision(
                     "answer": text})
 
     raise LeverParseFailure(turn, outcome.vague, attempts)
-
-
-def _disagreements(authoritative: dict[str, float], regex: dict[str, float]) -> list[str]:
-    """Levers the prose regex read differently from the authoritative reading.
-
-    Diagnostic only. The regex truncates scientific notation and misreads percentages, so it loses
-    every argument -- but a disagreement is free to compute and is exactly the signal that went
-    unnoticed for three runs while `2e6` was being read as `2`.
-    """
-    return [
-        f"{name}: block {authoritative[name]:g} vs prose regex {regex[name]:g}"
-        for name in sorted(set(authoritative) & set(regex))
-        if abs(authoritative[name] - regex[name]) > 1e-9
-    ]

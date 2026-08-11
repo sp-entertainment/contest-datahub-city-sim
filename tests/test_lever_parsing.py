@@ -2,10 +2,10 @@
 
 This mode's score is only worth something if the levers we applied are the levers the advisor
 asked for. That went wrong once, silently and expensively: `road_maintenance_budget = 2e6` was
-read as `2` by the prose regex, the parity feedback then told the advisor its budget *was* 2, and
-the advisor agreed and restated it. Three turns of unfunded roads, and no artifact said a word.
-
-So the cases below are the ones that failed, plus the shapes an LLM actually emits.
+read as `2` by the prose regex that used to do this job, the parity feedback then told the advisor
+its budget *was* 2, and the advisor agreed and restated it. Three turns of unfunded roads, and no
+artifact said a word. That regex is gone; these are the shapes an LLM actually emits, held against
+the reader that replaced it.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ import json
 
 import pytest
 
-from blindcity.agent.advisor import LeverBlockInvalid, extract_lever_block, parse_levers
+from blindcity.agent.advisor import LeverBlockInvalid, extract_lever_block
 from blindcity.agent.lever_review import (
     MAX_CLARIFICATIONS,
     LeverParseFailure,
@@ -73,24 +73,6 @@ def test_block_values_are_clamped_like_every_other_mode():
 
 
 # --- Why the contract exists ---------------------------------------------------------------------
-
-
-@pytest.mark.parametrize(
-    "written,meant",
-    [
-        ("road_maintenance_budget = 6e6", 6_000_000),   # the one that cost three turns
-        ("road_maintenance_budget = 6M", 6_000_000),
-        ("road_maintenance_budget = $6 million", 6_000_000),
-        ("income_tax_rate = 11%", 0.11),
-        ("Raise income_tax_rate to 11 percent", 0.11),
-    ],
-)
-def test_the_prose_regex_still_gets_these_wrong(written, meant):
-    """Kept as a regression record, not a wish. These are the cases that motivate the JSON block,
-    and the regex is retained only as a cross-check -- so its failures must stay visible rather
-    than quietly improve and let someone start trusting it again."""
-    got = next(iter(parse_levers(written).values()))
-    assert got != meant, f"{written!r} now parses correctly; the block is still authoritative"
 
 
 def test_the_block_gets_them_all_right():
@@ -189,16 +171,6 @@ def test_the_reviewer_may_not_return_a_non_numeric_value():
     llm = FakeLLM(['{"levers": {"income_tax_rate": "moderate"}, "vague": []}'])
     out = read_decision("raise income_tax_rate", turn=2, llm=llm, ask_again=None)
     assert out.levers == {}
-
-
-def test_prose_disagreeing_with_the_block_is_recorded():
-    """The signal that went unnoticed for three runs while `2e6` was read as `2`. Diagnostic only
-    -- the block wins -- but it must appear somewhere a person will see it."""
-    text = "Spend road_maintenance_budget = 6e6.\n\n```json\n{\"road_maintenance_budget\": 6000000}\n```"
-    out = read_decision(text, turn=4, llm=FakeLLM([]), ask_again=None)
-    assert out.levers == {"road_maintenance_budget": 6_000_000.0}
-    assert out.disagreements, "a 1,000,000x disagreement went unreported"
-    assert "road_maintenance_budget" in out.disagreements[0]
 
 
 def test_the_outcome_defaults_to_the_free_path():

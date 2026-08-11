@@ -215,7 +215,3 @@ def _print_diagnostics(report: dict[str, Any]) -> None:
         )
         if parsing["vague_levers"]:
             print(f"run: levers the advisor left vague: {', '.join(parsing['vague_levers'])}")
-    for note in (parsing or {}).get("regex_disagreements", []):
-        # Never fatal -- the prose regex is the weaker reader and loses every argument -- but this
-        # is the line that would have caught `2e6` being taken as `2` on the day it happened.
-        print(f"run: prose/block disagreement (block wins): {note}")

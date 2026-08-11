@@ -31,7 +31,7 @@ Withholding them was not neutrality, it was a handicap, and it showed up in the 
 
 And one thing it is told that no other mode needs to be: **where the expert guidance lives.**
 `agent_datahub_live` has the bands and the response lags rendered into its prompt by us. This mode
-is given an address instead -- the dataset URNs and the property prefix -- and has to fetch the
+is given an address instead -- the datasets, the property prefix, the tool -- and has to fetch the
 guidance itself through DataHub's own tools. That is a harder test, not an easier one, and it is
 the only version of the claim worth making: the bytes it reasons from came out of DataHub, fetched
 by DataHub's agent, with no band of ours anywhere in the question. See `CATALOG` for what the
@@ -163,7 +163,7 @@ def catalog_pointer() -> str:
 #
 # Each rule is here because the free-text parser it replaces got that exact case wrong: `6e6` read
 # as 6, `6M` read as 6, and `11%` read as 11 and then clamped to the legal maximum, which looks
-# deliberate in a result file. See `advisor.parse_levers`.
+# deliberate in a result file. That parser is gone; see docs/ERRORS.md for what it cost.
 CONTRACT = """\
 End your answer with a fenced JSON block and nothing after it:
 
@@ -305,7 +305,6 @@ class AdvisorController:
                 "call": turn + 1,
                 "phase": "response",
                 "answer": advice.answer,
-                "levers": advice.levers,
                 "queries": advice.queries,
                 "tools": advice.tools,
                 "error": advice.error,
@@ -330,16 +329,13 @@ class AdvisorController:
             ask_again=self._ask_again,
             record=lambda entry: self._record({"mode": self.name, **entry}),
         )
-        # The decision is what the block said, not what the prose regex guessed. `advice.levers`
-        # stays in the record as the weaker reading, so a disagreement between them is auditable
-        # after the fact rather than only at the moment it happens.
+        # The decision is what the block said. There is no second reading to compare it against:
+        # the prose regex that used to run beside it was deleted once the contract made it inert.
         record["levers"] = outcome.levers
-        record["regex_levers"] = advice.levers
         record["parse"] = {
             "source": outcome.source,
             "clarifications": outcome.clarifications,
             "vague": outcome.vague,
-            "disagreements": outcome.disagreements,
         }
         self.history.append(record)
         return dict(outcome.levers)
@@ -389,7 +385,6 @@ class AdvisorController:
                 "needed_clarifying": sum(1 for p in parses if p["source"] == "clarified"),
                 "clarification_rounds": sum(p["clarifications"] for p in parses),
                 "vague_levers": sorted({v for p in parses for v in p["vague"]}),
-                "regex_disagreements": [d for p in parses for d in p["disagreements"]],
             },
             # What the advisor actually called, and on how many turns it *successfully* read
             # metadata that could have carried the published guidance. Three separate claims --
