@@ -11,6 +11,7 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
+import httpx
 import psycopg
 
 from blindcity.agent import runscope, writeback
@@ -61,8 +62,21 @@ SCRIPTED_MODES: dict[str, str] = {
     "bad_policy": "bad_neglect",
 }
 
+# A person, playing the same crisis in a browser. Shares the scenario, the seed, the turn budget,
+# the lever set, the warehouse and the published catalog with every other mode, and is scored by the
+# same harness -- but it is briefed before it starts (the goal, the scoring formula, and the opening
+# score), which every agent is denied. That is a deliberate choice: this mode exists to check the
+# loop works end to end for a person, not to contribute a row to the benchmark table. Human results
+# carry `meta["briefed"] = True` so the difference travels with the number.
+HUMAN_MODE = "human"
+
 # Everything `--mode` accepts, in the order a reader wants them.
-ALL_MODES: tuple[str, ...] = (*MODES, ADVISOR_MODE, *SCRIPTED_MODES)
+ALL_MODES: tuple[str, ...] = (*MODES, ADVISOR_MODE, *SCRIPTED_MODES, HUMAN_MODE)
+
+# Modes that call no model, and so must stay runnable with no API key and no network. The scripted
+# references are the yardstick anyone can reproduce from a clone; the human is a person, who needs
+# no inference budget to pull a lever.
+FREE_MODES: frozenset[str] = frozenset({*SCRIPTED_MODES, HUMAN_MODE})
 
 
 @dataclass
@@ -70,6 +84,9 @@ class ModeRun:
     result: RunResult
     report: dict[str, Any]
     wall_seconds: float
+    # Only `human` sets this: the still-running control surface, so the caller can keep the
+    # finished city on screen. Never serialised -- `result.meta` is what reaches the JSON.
+    server: Any | None = None
 
 
 @dataclass
@@ -103,6 +120,107 @@ class _ScriptedRun:
             "timeouts": 0,
             "infrastructure_failures": 0,
         }
+
+
+HUMAN_HOST = "127.0.0.1"
+HUMAN_PORT = 8000
+
+
+@dataclass
+class HumanServer:
+    """The control surface a human run is played through, still running after the run ends."""
+
+    server: Any
+    thread: Any
+    url: str
+
+    def stop(self) -> None:
+        self.server.should_exit = True
+        self.thread.join(timeout=5)
+
+
+def _advisor_is_up(url: str) -> bool:
+    try:
+        with httpx.Client(timeout=3.0) as client:
+            return client.get(url).status_code < 500
+    except httpx.HTTPError:
+        return False
+
+
+def _serve_human(controller: Any, prepared: Any, scenario: Scenario) -> HumanServer:
+    """Start the browser control surface for a human run, and say where to point a browser.
+
+    The briefing is computed here rather than written into the page, so its numbers cannot drift
+    from the scoring code that produces them. It is the one place a human is told something the
+    agents are not, and it is a fixed opening snapshot rather than a live readout.
+    """
+    import threading
+
+    import uvicorn
+
+    # The advisor mode's own default, so a person and an agent are pointed at the same service.
+    from blindcity.agent.advisor import DEFAULT_BASE_URL as ADVISOR_URL
+    from blindcity.benchmark.health import GREEN_THRESHOLD, WEIGHTS, health_index
+    from blindcity.sim.api import HumanRunSession, create_app
+
+    opening = health_index(prepared.state, prepared.baseline_population)
+    briefing = {
+        "index": round(opening.index, 4),
+        "green_threshold": GREEN_THRESHOLD,
+        "weights": dict(WEIGHTS),
+        "components": {
+            "solvency": round(opening.solvency, 3),
+            "satisfaction": round(opening.satisfaction, 3),
+            "service": round(opening.service, 3),
+            "population": round(opening.population, 3),
+        },
+        "turn_budget": scenario.turn_budget,
+        "months_per_turn": scenario.months_per_turn,
+        "history_months": scenario.crisis_months,
+        "advisor_url": ADVISOR_URL,
+    }
+    session = HumanRunSession(
+        controller,
+        prepared.state,
+        seed=scenario.seed,
+        turn_budget=scenario.turn_budget,
+        months_per_turn=scenario.months_per_turn,
+        briefing=briefing,
+    )
+    config = uvicorn.Config(
+        create_app(session), host=HUMAN_HOST, port=HUMAN_PORT, log_level="warning"
+    )
+    server = uvicorn.Server(config)
+    # uvicorn installs signal handlers on start, which only the main thread may do. The main
+    # thread here belongs to the harness, so the server has to give them up.
+    server.install_signal_handlers = False
+    thread = threading.Thread(target=server.run, name="human-control-surface", daemon=True)
+    thread.start()
+    for _ in range(200):
+        if server.started or not thread.is_alive():
+            break
+        time.sleep(0.05)
+    if not server.started:
+        # Almost always the port is already taken, by a `sim --serve` sandbox or an abandoned run.
+        # Worth failing on rather than continuing: the harness's next move is to block for an hour
+        # waiting for a browser that has nothing to connect to.
+        raise RuntimeError(
+            f"could not serve the control surface on {HUMAN_HOST}:{HUMAN_PORT}. "
+            "Something else is using that port; stop it and run again."
+        )
+
+    url = f"http://{HUMAN_HOST}:{HUMAN_PORT}"
+    print(f"\nrun: the city is at {url}")
+    if _advisor_is_up(ADVISOR_URL):
+        print(f"run: ask questions in the Analytics Agent at {ADVISOR_URL}")
+    else:
+        print(
+            f"run: WARNING the Analytics Agent at {ADVISOR_URL} is not answering.\n"
+            "run: you can still play, but you will have no way to ask the city anything.\n"
+            "run: see infra/analytics-agent/README.md to bring it up."
+        )
+    print(f"run: {scenario.turn_budget} turns, each one quarter. Play them in the browser.\n")
+    return HumanServer(server=server, thread=thread, url=url)
 
 
 def run_mode(
@@ -145,7 +263,7 @@ def run_mode(
     # from a clone. `build_llm` raises when LLM_MODEL is unset, so constructing it here
     # unconditionally would make the free path require a paid one.
     client: Any = None
-    if mode not in SCRIPTED_MODES:
+    if mode not in FREE_MODES:
         client = llm or build_llm(model=model)
         if transcript:
             # Wrapped last, so the recording is of exactly what the controller sent.
@@ -158,6 +276,7 @@ def run_mode(
     agent_conn = connect()
     started = time.perf_counter()
     warehouse_run_id: int | None = None
+    human_server: Any = None
     try:
         phase_start = time.perf_counter()
         ensure_schema(conn)
@@ -187,7 +306,14 @@ def run_mode(
         warehouse_run_id = prepared.warehouse_run_id
 
         controller: Any
-        if mode in SCRIPTED_MODES:
+        if mode == HUMAN_MODE:
+            from blindcity.benchmark.human import HumanController
+
+            controller = HumanController(name=mode, turn_budget=scenario.turn_budget)
+            # Serving starts before the harness does, because the harness's first act is to block
+            # on `decide()` waiting for a browser that has to exist first.
+            human_server = _serve_human(controller, prepared, scenario)
+        elif mode in SCRIPTED_MODES:
             # A fixed lever set played through the same harness as every agent mode. It reports
             # like one too -- an empty usage block rather than no usage block -- so `compare` does
             # not need a branch for the reference rows.
@@ -231,6 +357,10 @@ def run_mode(
         phase_start = time.perf_counter()
         result = harness.run(controller, mode=mode, prepared=prepared)
         play_seconds = time.perf_counter() - phase_start
+        if mode == HUMAN_MODE:
+            controller.finish()
+            # Travels with the number, so a briefed run can never be quietly read as a blind one.
+            result.meta["briefed"] = True
         report = controller.report()
         report["phases"] = {
             "prepare_seconds": round(prepare_seconds, 1),
@@ -240,7 +370,7 @@ def run_mode(
         # After scoring, never before: write-back must not be able to influence the run it
         # describes. The control mode is skipped inside `write_back` rather than here, so the
         # decision stays in one place and no branch on the mode enters this loop.
-        if write_back_findings and mode != ADVISOR_MODE and mode not in SCRIPTED_MODES:
+        if write_back_findings and mode != ADVISOR_MODE and mode not in FREE_MODES:
             report["write_back"] = writeback.write_back(report, str(result.run_id)).to_dict()
     finally:
         # Close the agent's connection FIRST. It is the one that read through the views, and
@@ -261,7 +391,7 @@ def run_mode(
     wall = time.perf_counter() - started
     result.meta["agent"] = report
     result.meta["wall_seconds"] = round(wall, 1)
-    return ModeRun(result=result, report=report, wall_seconds=wall)
+    return ModeRun(result=result, report=report, wall_seconds=wall, server=human_server)
 
 
 def estimate_full_run(report: dict[str, Any], turns_played: int, turn_budget: int) -> dict[str, Any]:

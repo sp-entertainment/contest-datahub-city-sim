@@ -11,6 +11,7 @@ Static files under repo `viewer/` are mounted at `/`.
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 from typing import Any
 
@@ -31,7 +32,16 @@ _VIEWER_DIR = _REPO_ROOT / "viewer"
 
 
 class SimSession:
-    """Mutable in-process session the control surface drives."""
+    """Mutable in-process session the control surface drives.
+
+    Free play: a healthy city at tick 0, advanced as many times as you like. `HumanRunSession`
+    below is the scored counterpart. `create_app` reads the two attributes underneath through
+    `getattr`, so the session types stay duck-typed rather than sharing a base class.
+    """
+
+    # No turn budget and no briefing: free play is not a scored run.
+    progress: dict[str, Any] | None = None
+    briefing: dict[str, Any] | None = None
 
     def __init__(self, seed: int = 42, levers: dict[str, float] | None = None) -> None:
         self.seed = seed
@@ -61,11 +71,112 @@ class SimSession:
         self.state = create_city(self.seed, clamp_levers(levers or defaults()))
 
 
-def state_payload(session: SimSession) -> dict[str, Any]:
-    """Controller-visible state: tick, calendar, levers. No health aggregates."""
+class RunNotAcceptingTurns(RuntimeError):
+    """A turn was submitted after the budget was spent."""
+
+
+class HumanRunSession:
+    """A scored run driven from the browser. The harness owns the city; this only forwards.
+
+    Duck-typed to what `create_app` uses -- `seed`, `state`, `set_levers`, `advance` -- so every
+    endpoint is shared with free play and nothing about the app branches on which one it has.
+
+    `state` is a reference to the very object `RunHarness.run` is stepping. The harness mutates it
+    in place, so one reference stays correct for the whole run and there is no copy to keep in sync.
+    """
+
+    def __init__(
+        self,
+        controller: Any,
+        state: CityState,
+        *,
+        seed: int,
+        turn_budget: int = 12,
+        months_per_turn: int = 3,
+        briefing: dict[str, Any] | None = None,
+        advance_timeout: float = 120.0,
+    ) -> None:
+        self.controller = controller
+        self.state = state
+        self.seed = seed
+        self.turn_budget = turn_budget
+        self.months_per_turn = months_per_turn
+        self.briefing = briefing
+        self.advance_timeout = advance_timeout
+        # The tick the controller took over on, so turns played can be counted from the clock.
+        self.start_tick = state.tick
+
+    @property
+    def turns_played(self) -> int:
+        """Counted from the simulation clock rather than signalled across threads.
+
+        The harness steps one month at a time and only updates its own turn counter when it comes
+        back round to `decide()`, so anything read from the controller mid-turn is a turn behind.
+        The tick cannot be: it is the thing the turn is made of.
+        """
+        return (self.state.tick - self.start_tick) // self.months_per_turn
+
+    @property
+    def progress(self) -> dict[str, Any]:
+        played = self.turns_played
+        return {
+            "turn": min(played, self.turn_budget - 1),
+            "turns_played": played,
+            "turn_budget": self.turn_budget,
+            # Read from the clock as well as the controller's flag. The flag is set on the harness
+            # thread once `run()` returns, which is a moment after the final month lands -- so the
+            # response to the last `/advance` would carry `complete: false` and the browser would
+            # sit on "Quarter complete" until something else polled.
+            "complete": played >= self.turn_budget or bool(self.controller.progress.get("complete")),
+        }
+
+    def set_levers(self, updates: dict[str, float]) -> dict[str, float]:
+        """Stage lever positions. Nothing reaches the simulation until the turn is submitted."""
+        merged = dict(self.state.levers)
+        for name, value in updates.items():
+            if name not in LEVERS:
+                raise KeyError(name)
+            merged[name] = LEVERS[name].clamp(float(value))
+        self.state.levers = merged
+        return dict(self.state.levers)
+
+    def advance(self, months: int = 1) -> CityState:
+        """Submit the staged levers as one turn and wait for the harness to play it.
+
+        `months` is ignored: the scenario's `months_per_turn` decides how far a turn moves, the
+        same as it does for every agent.
+
+        Waits for the *whole* turn, not merely for movement. The harness steps a month at a time,
+        so returning on the first tick change hands the browser a city one month into a three month
+        quarter -- and the canvas then draws a turn that is still being played. Waiting on the clock
+        rather than on a completion signal also means the final turn needs no special case.
+        """
+        if self.progress["complete"]:
+            raise RunNotAcceptingTurns("the run is over; every turn in the budget has been played")
+        target = self.state.tick + self.months_per_turn
+        self.controller.submit(dict(self.state.levers))
+        deadline = time.monotonic() + self.advance_timeout
+        while self.state.tick < target and time.monotonic() < deadline:
+            time.sleep(0.02)
+        if self.state.tick < target:
+            raise TimeoutError("the run did not finish the turn; is the harness still playing?")
+        return self.state
+
+    def reset(self, seed: int | None = None, levers: dict[str, float] | None = None) -> None:
+        raise RunNotAcceptingTurns("a scored run cannot be reset; restart `blindcity run`")
+
+
+def state_payload(session: SimSession | HumanRunSession) -> dict[str, Any]:
+    """Controller-visible state: tick, calendar, levers. No health aggregates.
+
+    Two optional blocks are attached for a scored human run and are absent for free play:
+    `progress`, which is the turn number and budget every agent is also told, and `briefing`,
+    which is the one deliberate exception to the no-numbers rule -- a fixed starting snapshot
+    shown once in the help panel. Neither is a live readout of the city.
+    """
     st = session.state
     year, month = st.year_month()
-    return {
+    payload: dict[str, Any] = {
         "seed": session.seed,
         "tick": st.tick,
         "year": year,
@@ -82,6 +193,13 @@ def state_payload(session: SimSession) -> dict[str, Any]:
             for name, lev in LEVERS.items()
         },
     }
+    progress = getattr(session, "progress", None)
+    if progress is not None:
+        payload["progress"] = dict(progress)
+    briefing = getattr(session, "briefing", None)
+    if briefing is not None:
+        payload["briefing"] = dict(briefing)
+    return payload
 
 
 def scene_payload(state: CityState) -> dict[str, Any]:
@@ -193,12 +311,17 @@ def create_app(session: SimSession | None = None) -> FastAPI:
     def post_advance(body: AdvanceBody | None = None) -> dict[str, Any]:
         months = 1 if body is None else body.months
         before = app.state.session.state.tick
-        app.state.session.advance(months)
+        try:
+            app.state.session.advance(months)
+        except RunNotAcceptingTurns as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except TimeoutError as exc:
+            raise HTTPException(status_code=504, detail=str(exc)) from exc
         after = app.state.session.state.tick
         return {
             "tick_before": before,
             "tick_after": after,
-            "months": months,
+            "months": after - before,
             "state": state_payload(app.state.session),
         }
 
@@ -210,7 +333,10 @@ def create_app(session: SimSession | None = None) -> FastAPI:
     def post_reset(body: ResetBody | None = None) -> dict[str, Any]:
         seed = 42 if body is None else body.seed
         levers = None if body is None else body.levers
-        app.state.session.reset(seed=seed, levers=levers)
+        try:
+            app.state.session.reset(seed=seed, levers=levers)
+        except RunNotAcceptingTurns as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         return state_payload(app.state.session)
 
     if _VIEWER_DIR.is_dir():

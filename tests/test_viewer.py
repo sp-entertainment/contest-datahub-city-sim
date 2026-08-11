@@ -47,9 +47,24 @@ def test_lever_bounds_match_the_source_of_truth(html):
         assert float(block.group(2)) == pytest.approx(lever.maximum)
 
 
+def _without_help_panel(html: str) -> str:
+    """Everything the viewer renders *while the city is being played*.
+
+    The help panel is the one deliberate exception to the no-numbers rule: a fixed opening snapshot,
+    shown once behind a dismissable dialog, stating the goal and where the score starts. It exists
+    because `human` is a sanity check rather than a scored arm of the benchmark, and human results
+    carry `briefed: true` so the difference travels with them. Everything outside it is still held
+    to the rule, which is what this cut preserves -- removing the whole test instead would have
+    dropped the guard over the canvas and the status line too.
+    """
+    start = html.index("function renderHelp")
+    end = html.index("function showHelp")
+    return html[:start] + html[end:]
+
+
 def test_no_city_state_numbers_are_displayed(html):
     """The scene endpoint deliberately omits aggregates; the viewer must not re-derive them."""
-    script = html.lower()
+    script = _without_help_panel(html).lower()
     for banned in ("population", "treasury", "satisfaction", "health", "index", "green"):
         # Allowed to appear in prose that explains the omission, never as a rendered value.
         for match in re.finditer(banned, script):
@@ -57,6 +72,20 @@ def test_no_city_state_numbers_are_displayed(html):
             assert "textcontent" not in window and "innerhtml" not in window, (
                 f"the viewer appears to render {banned!r}: ...{window}..."
             )
+
+
+def test_the_briefing_is_confined_to_the_dismissable_help_panel(html):
+    """The exception must stay an exception.
+
+    A starting score behind a dialog is a briefing. The same number written into the status line or
+    drawn on the canvas would be a live readout, and the human would be playing a different game
+    from the one the agents play.
+    """
+    playing_surface = _without_help_panel(html)
+    for banned in ("green_threshold", "b.index", "components", "weights"):
+        assert banned not in playing_surface, f"{banned!r} escaped the help panel"
+    # And the panel is genuinely dismissable rather than always on screen.
+    assert 'id="help-close"' in html and "showHelp(false)" in html
 
 
 def test_a_turn_advances_a_quarter_like_the_agent_modes(html):

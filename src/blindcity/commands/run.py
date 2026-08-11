@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -23,16 +24,20 @@ def run(args: Any) -> int:
     from blindcity.agent.controller import DEFAULT_TOOL_BUDGET
     from blindcity.agent.lever_review import LeverParseFailure
     from blindcity.agent.llm import LLMError, build_llm
-    from blindcity.agent.run import SCRIPTED_MODES, run_mode
+    from blindcity.agent.run import FREE_MODES, HUMAN_MODE, SCRIPTED_MODES, run_mode
     from blindcity.benchmark.scenario import INFRASTRUCTURE_CRISIS
     from blindcity.catalog.apply import apply_catalog
 
     scripted = args.mode in SCRIPTED_MODES
+    # Calls no model, so needs no key and produces no transcript. Wider than `scripted`: the human
+    # mode is free too, but unlike the scripted policies it does need the catalog published, because
+    # the Analytics Agent it asks questions of reads the catalog.
+    free = args.mode in FREE_MODES
 
     # On by default whenever results are being written: the runs that mattered were the ones
     # nobody thought to record.
     transcript_path = args.transcript
-    if transcript_path is None and args.out and not scripted:
+    if transcript_path is None and args.out and not free:
         transcript_path = str(Path(args.out).with_suffix(".transcript.jsonl"))
 
     # The catalog is published before the scenario is played, so the metadata the agent reads
@@ -57,7 +62,7 @@ def run(args: Any) -> int:
     try:
         run_result = run_mode(
             args.mode,
-            llm=None if scripted else build_llm(args.model),
+            llm=None if free else build_llm(args.model),
             turns=args.turns,
             tool_budget=args.tool_budget or DEFAULT_TOOL_BUDGET,
             keep_views=args.keep_views,
@@ -124,7 +129,27 @@ def run(args: Any) -> int:
         print(f"run: wrote {args.out} and {side}")
     if transcript_path:
         print(f"run: transcript at {transcript_path}")
+
+    if args.mode == HUMAN_MODE and run_result.server is not None:
+        _hold_open(run_result.server)
     return 0
+
+
+def _hold_open(server: Any) -> None:
+    """Keep the finished city on screen until the player is done looking at it.
+
+    The score is already written by the time this is called, so nothing is at risk here. A browser
+    that goes blank the instant the last quarter lands is just a worse way to end a game.
+    """
+    print(f"\nrun: the run is over. The final city is still at {server.url}")
+    print("run: press Ctrl+C when you are finished.")
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        print("\nrun: stopping the control surface.")
+    finally:
+        server.stop()
 
 
 def _record_guidance(report: dict[str, Any], mode: str) -> None:

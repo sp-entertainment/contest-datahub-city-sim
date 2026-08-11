@@ -36,7 +36,7 @@ green threshold within the budget. Five controllers face the identical seed, cri
 
 | Mode | Controller | Sees |
 | --- | --- | --- |
-| `human` | A person | The city render, the levers, and the Analytics Agent to ask questions |
+| `human` | A person | The city render, the levers, and the Analytics Agent to ask questions. Briefed on the goal and the scoring, which no agent is, so results carry `briefed: true` |
 | `agent_raw` | Our auto-mode agent | SQL only, no catalog context |
 | `agent_datahub` | Our auto-mode agent | The same, plus DataHub descriptions, glossary, lineage |
 | `agent_datahub_live` | Our auto-mode agent | The same, plus assertions read from DataHub each turn |

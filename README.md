@@ -158,8 +158,29 @@ makes "they differ in exactly one thing" a property of the code rather than a pr
 
 ## The human mode
 
-The same city, played by a person. The scene carries condition and density but no measurements —
-to get a number you ask the Analytics Agent or query the warehouse, exactly as the agent modes do.
+The same crisis, the same seed, the same twelve quarterly turns, played by a person and scored by
+the same harness.
+
+```bash
+uv run blindcity run --mode human --out results/human.json
+```
+
+That prepares exactly what an agent run prepares — warehouse cleared, the crisis written month by
+month, the catalog published — then serves the city and gets out of the way. Every lever change and
+every turn comes from the browser. Two windows:
+
+| | |
+| --- | --- |
+| **localhost:8000** | the city and the eight levers |
+| **localhost:8100** | the Analytics Agent, to ask the city questions |
+
+The scene carries condition and density but no measurements. To get a number you ask the Analytics
+Agent, exactly as `agent_analytics` does. A help panel explains the goal and the scoring on first
+load, and the `?` button brings it back.
+
+Unlike the agent modes, the human is briefed before starting: the goal, how the score is composed,
+and where the score sits at turn 0. That makes it a good way to play the benchmark and a bad way to
+be measured against it, so human results carry `briefed: true` and are not part of the table above.
 
 | Neglected | Recovering |
 | --- | --- |

@@ -193,3 +193,6 @@ Thumbs.db
 .claude/
 .tasks/
 skills-lock.json
+
+# Playwright MCP scratch output
+.playwright-mcp/

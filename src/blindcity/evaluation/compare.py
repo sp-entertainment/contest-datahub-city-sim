@@ -136,9 +136,10 @@ def _model_line(summaries: dict[str, ModeSummary], fallback: str) -> tuple[str, 
     `good_policy` and `bad_policy` are excluded for the opposite reason: they are fixed lever sets
     that call no model at all, so "scripted" is the honest thing for them to report and is not a
     disagreement with anything. Flagging it would fire the mismatch warning on every complete run
-    -- and a warning that is always wrong is a warning nobody reads when it is right.
+    -- and a warning that is always wrong is a warning nobody reads when it is right. `human` is
+    excluded on the same grounds: a person is not a model id.
     """
-    exempt = {"agent_analytics", "good_policy", "bad_policy"}
+    exempt = {"agent_analytics", "good_policy", "bad_policy", "human"}
     seen: dict[str, list[str]] = {}
     for name, s in summaries.items():
         if name in exempt:
