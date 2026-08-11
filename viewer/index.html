@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Blind City</title>
+  <title>City Sim Agent Benchmark</title>
   <style>
     :root {
       --bg: #14141a; --panel: #1c1c24; --line: #2e2e3a; --ink: #e8e8ec; --dim: #8a8a99;
@@ -44,7 +44,7 @@
 </head>
 <body>
   <main>
-    <h1>Blind City</h1>
+    <h1>City Sim Agent Benchmark</h1>
     <p class="note">
       You are the city manager. The city is in crisis and you have twelve quarterly decisions to
       bring it back. <strong>Nothing here tells you a number about the city's state</strong> — no
@@ -159,11 +159,14 @@ function drawDiamond(x, y, fill, stroke) {
 
 function drawBuilding(tile, b) {
   // Height is density; colour is type; shade is condition. Unpowered goes dark.
-  const heights = { house: 10, apartment: 24, shop: 14, office: 30, factory: 20 };
+  // Keys are the `building_type` values GET /scene actually sends. They are the legend's
+  // categories too -- the swatches below the canvas are these same colours, written by hand.
+  const heights = { residential: 14, commercial: 22, industrial: 18, civic: 28 };
   const h = heights[b.building_type] ?? 12;
   const bandShade = { new: 1.0, worn: 0.7, derelict: 0.42 }[b.condition_band] ?? 0.8;
-  const typeColour = { house: [96, 132, 104], apartment: [104, 124, 156], shop: [128, 116, 156],
-                       office: [96, 128, 168], factory: [150, 118, 86] }[b.building_type] || [110, 110, 130];
+  const typeColour = { residential: [74, 124, 89], commercial: [90, 108, 140],
+                       industrial: [140, 111, 74], civic: [128, 116, 156],
+                     }[b.building_type] || [110, 110, 130];
   const lit = b.power_served ? 1 : 0.35;
   const c = typeColour.map(v => Math.round(v * bandShade * lit));
   const [sx, sy] = iso(tile.x, tile.y);

@@ -2,21 +2,25 @@
 
 **A benchmark for whether data catalogs make AI agents better at their job.**
 
-A city simulation runs, producing hundreds of thousands of rows into Postgres — citizens,
-households, roads, power, water, budget, month by month. Then it is put into a crisis, and an agent
-is asked to get it out using eight policy levers and twelve quarterly decisions.
-
-The agent cannot see the city. It can only query the warehouse. What changes between runs is **how
-much the catalog tells it about that warehouse** — and we measure what that is worth.
-
 Built for [Build with DataHub: The Agent Hackathon](https://datahub.devpost.com/).
+
+![The city under a recovering policy — buildings by type, height by density, shade by condition, and citizens moving between them](assets/viewer-recovered.png)
+
+A city simulation runs, writing hundreds of thousands of rows into Postgres — citizens, households,
+roads, power, water, budget, month by month. Then the city is put into a crisis, and an agent is
+asked to get it out using eight policy levers and twelve quarterly decisions.
+
+The agent never sees the city. It can only query the warehouse. What changes between runs is **how
+much DataHub tells it about that warehouse** — and this measures what that is worth.
+
+---
 
 ## The result
 
 Same model, same seed, same crisis, same levers, same turn budget. The only difference is what
 DataHub gave each agent.
 
-One run per mode, seed 42, `gpt-5.6-luna` at reasoning effort `low`.
+Seed 42, `gpt-5.6-luna` at reasoning effort `low`, one run per mode.
 
 | Mode | What the catalog provides | Index | Green by | SQL queries |
 | --- | --- | ---: | ---: | ---: |
@@ -30,12 +34,7 @@ One run per mode, seed 42, `gpt-5.6-luna` at reasoning effort `low`.
 Green is 0.62. **The fully-catalogued agent beat the hand-tuned expert policy, reached green a turn
 sooner, and used a third of the queries the uncatalogued agent needed.**
 
-This is **one run per mode**, and run-to-run spread on repeats has reached 0.08 of final index —
-larger than the `agent_raw` → `agent_datahub` gap above. That gap is not resolved by this data.
-The `agent_datahub_live` margin is, and the ordering has held on every paired run so far.
-`docs/RESULTS.md` has the full caveats; `blindcity compare` prints them itself.
-
-The reference rows cost nothing to reproduce, no API key required:
+The reference rows reproduce in about a minute and need no API key:
 
 ```bash
 uv run blindcity run --mode good_policy --out results/good.json
@@ -43,36 +42,67 @@ uv run blindcity run --mode bad_policy  --out results/bad.json
 uv run blindcity compare "results/*.json"
 ```
 
-### What we actually learned
+### Which metadata actually moved the needle
 
-The interesting result is not "catalogs help." It is *which kind* of metadata helped:
+The interesting result is not "catalogs help." It is *which kind* of metadata helped.
 
-- **Descriptive metadata alone was worth little.** Across every paired run so far the
-  `agent_datahub` / `agent_raw` gap has sat inside the run-to-run noise, and across four earlier
-  pairs it ran +0.045, +0.043 and **−0.040** — the sign flipped, and a quantity that changes sign
-  is not measuring what it claims to. Our table names are already human-readable, so a description
-  saying `income_tax_revenue: Income tax collected` adds nothing the column name did not.
+- **Descriptive metadata alone was worth little.** Table names like `road_monthly` and columns like
+  `income_tax_revenue` are already readable, so a description restating the column name gives the
+  agent nothing it could not infer.
 - **Prescriptive metadata transformed behaviour.** Assertions that document the operating range a
   healthy city holds to — and, just as importantly, which levers are *not worth tuning* — moved the
-  agent from 0.7187 to 0.8187 and from green at turn 5 to turn 3 — and, tellingly, on *less* of
-  everything: 22 queries against 59, and 19 LLM calls against 25. A mode that scored higher by
-  querying more would just be a mode given more compute. This one stopped searching because it was
-  told where to look.
+  agent from 0.7187 to 0.8187 and from green at turn 5 to turn 3, on **less** of everything: 22
+  queries against 59, 19 model calls against 25. A mode that scored higher by querying more would
+  just be a mode given more compute. This one stopped searching because it was told where to look.
 - **Relationships the data cannot show are where lineage earns its keep.** Every lever is constant
-  across the entire recorded history, so no amount of querying reveals that `income_tax_rate` drives
+  across the recorded history, so no amount of querying reveals that `income_tax_rate` drives
   `income_tax_revenue`. The catalog is the only place that relationship exists.
 
 For a data platform team the practical reading is: documenting your columns will not make your
-warehouse agent-ready. Documenting what *good* looks like might.
+warehouse agent-ready. Documenting what *good* looks like will.
+
+---
+
+## What DataHub holds
+
+The catalog is authored as code and published to DataHub, which then serves it to the agent at run
+time. Nothing below is hand-entered in the UI.
+
+### Operating guidance as custom properties
+
+Each lever carries a band, an impact rating, and a note explaining the trade in the city's own
+units. This is the metadata that produced the jump to 0.8187 — and in `agent_analytics` it is
+fetched back out of DataHub by DataHub's own agent, over its own tools.
+
+![The lever_monthly dataset in DataHub, showing per-lever operating guidance stored as custom properties](assets/datahub-guidance.png)
+
+### Column-level lineage, generated from the simulation
+
+29 column-level edges, emitted from the simulation's declared causal graph. Every edge is proven by
+experiment in `blindcity.sim.causal_check` before it ships, so "derived from" is a demonstrated
+dependency rather than a claim.
+
+![The lineage explorer showing lever_monthly feeding power_monthly, road_monthly, water_monthly and tiles](assets/datahub-lineage.png)
+
+### Schema and business glossary
+
+Every column documented, and every city concept defined once in the glossary and attached to the
+columns that mean it.
+
+![The lever_monthly column list in DataHub with a description on every column](assets/datahub-columns.png)
+
+![The business glossary listing city concepts such as citizen satisfaction, congestion and road wear](assets/datahub-glossary.png)
+
+---
 
 ## How it is a benchmark
 
 The city is the substrate, not the deliverable. A **scenario** puts it into a crisis (five years of
 deferred maintenance plus a fiscal shock); a **controller** pulls levers over twelve quarterly
-turns; a **composite health index** — solvency, satisfaction, service, population retention — scores
-whether it recovered.
+turns; a **composite health index** — solvency, satisfaction, service, population retention —
+scores whether it recovered.
 
-Four controllers face an identical seed, crisis, and budget:
+Five controllers face an identical seed, crisis, and turn budget:
 
 | Mode | Who decides | What they can see |
 | --- | --- | --- |
@@ -80,73 +110,118 @@ Four controllers face an identical seed, crisis, and budget:
 | `agent_raw` | Our agent | SQL against the warehouse. No catalog |
 | `agent_datahub` | Our agent | The same, plus DataHub descriptions, glossary and lineage |
 | `agent_datahub_live` | Our agent | The same, plus assertions evaluated against the city each turn |
+| `agent_analytics` | DataHub's Analytics Agent | It decides how to answer; it reads DataHub and the warehouse itself |
 
-The three agent modes are **one implementation instantiated three times**. There is no `if mode ==`
-anywhere in the loop, and `tests/test_agent.py` fails the build if the prompts, tools or turn
-messages differ by anything other than the catalog block. That is the only way "they differ in
-exactly one thing" is a property of the code rather than a promise in a document.
+The three `agent_*` modes above `agent_analytics` are **one implementation instantiated three
+times**. There is no `if mode ==` anywhere in the loop, and `tests/test_agent.py` fails the build if
+the prompts, tools or turn messages differ by anything other than the catalog block. That is what
+makes "they differ in exactly one thing" a property of the code rather than a promise in a document.
 
-## Fairness, and where it is imperfect
+### Fairness is enforced by tests
 
-Everything below is enforced by tests unless noted.
-
-- **No mode is told the scoring function.** Not the index, not its components, not the threshold. An
-  agent that knew the weights would optimise the metric instead of fixing the city.
+- **No mode is told the scoring function.** Not the index, not its components, not the threshold.
+  An agent that knew the weights would optimise the metric instead of fixing the city.
 - **No city-state numbers appear in any prompt.** Population, treasury and satisfaction are
   discoverable only through SQL.
 - **The viewer shows no numbers either.** Worn roads look worn; unpowered buildings go dark. That is
   information parity with the agent modes, not a style choice.
 - **Every run starts from an empty warehouse**, so no run inherits another's rows or planner
   statistics.
+- **Every mode runs the same model at the same reasoning effort**, including the Analytics Agent in
+  its own service — `preflight()` checks it at run time and refuses to score a mismatch.
 - **Assertions are derived from the simulation's own mechanics** and re-derived by
   `tests/test_operational_assertions.py`, which fails if a documented band stops matching what the
   code does. They state operating ranges and response times; they never name a lever to pull.
 
-Known imperfections, stated plainly:
+---
 
-- **`agent_raw` is not fully blind.** `docs/DECISIONS.md` specifies a control catalog with opaque
-  table names (`t_person_m`, `t_budg_m`) so the control would have to rediscover meaning. That
-  catalog is built and emitted by `uv run blindcity emit --baseline`, but the agent modes query the
-  real warehouse with its readable names, so the handicap was never applied. This is very likely why
-  descriptive metadata showed no measurable effect.
-- **One seed, one run per mode.** Three runs each was planned and cut for time. Run-to-run spread
-  on repeats has reached 0.08 of final index, larger than the `agent_datahub`/`agent_raw` gap — so
-  that gap is unresolved, and `blindcity compare` says so in its own output rather than leaving it
-  to be noticed.
-- **`agent_analytics` is a floor, not a ceiling.** Its DataHub connection was dead until the day of
-  this run — an empty token meant zero context tools loaded — and the guidance that decides this
-  benchmark was published to the catalog the same day. Handed that guidance directly, a prototype
-  scored 0.8454 with green at turn 3, above every mode in the table.
-- **The `human` mode has not been played end to end.** The lever panel and scene work.
+## The human mode
 
-## Quick start
+The same city, played by a person. The scene carries condition and density but no measurements —
+to get a number you ask the Analytics Agent or query the warehouse, exactly as the agent modes do.
 
-Requires 16 GB RAM, 25 GB disk, Docker, Python 3.11+ and [`uv`](https://docs.astral.sh/uv/).
+| Neglected | Recovering |
+| --- | --- |
+| ![A neglected city: sparse, dark, derelict blocks](assets/viewer-neglect.png) | ![A recovering city: dense, lit, populated](assets/viewer-recovered.png) |
+
+---
+
+## Setting it up from a clean clone
+
+### 1. Install the prerequisites
+
+| Program | Why | Install |
+| --- | --- | --- |
+| **Docker Desktop** (or Docker Engine + Compose v2) | DataHub Core and the warehouse both run in containers | [docker.com](https://www.docker.com/products/docker-desktop/) |
+| **Python 3.11 or 3.12** | The project targets `>=3.11,<3.13` | comes with `uv`, below |
+| **`uv`** | Dependency and virtualenv management, and the test runner | [docs.astral.sh/uv](https://docs.astral.sh/uv/getting-started/installation/) |
+| **`git`** | To clone this repository | [git-scm.com](https://git-scm.com/downloads) |
+| **DataHub CLI** (`acryl-datahub`) | Brings up DataHub Core with one command | `uv tool install --python 3.11 "acryl-datahub[datahub-rest]"` |
+
+Hardware: 16 GB RAM and 25 GB free disk. DataHub Core is six containers, and the warehouse is a
+seventh.
+
+An **OpenAI API key** is needed only for the four `agent_*` modes. The simulation, the catalog, the
+viewer, and the `good_policy` / `bad_policy` reference runs all work without one.
+
+### 2. Clone and install
 
 ```bash
-datahub docker quickstart          # DataHub Core on :9002, GraphQL on :8080
-docker compose -f infra/postgres/docker-compose.yml up -d   # warehouse Postgres on :5432
+git clone https://github.com/sp-entertainment/contest-datahub-city-sim.git
+cd contest-datahub-city-sim
 uv sync --group dev
+uv run pytest -q          # confirms the install; needs no Docker and no key
 ```
 
+### 3. Bring up DataHub and the warehouse
+
 ```bash
-uv run blindcity sim --seed 42 --years 20    # generate a city into the warehouse
+datahub docker quickstart                                    # DataHub UI :9002, GraphQL :8080
+docker compose -f infra/postgres/docker-compose.yml up -d    # warehouse Postgres :5432
+```
+
+DataHub's UI signs in with `datahub` / `datahub`. On Windows,
+`powershell -ExecutionPolicy Bypass -File infra/stack.ps1` starts everything in dependency order and
+verifies each endpoint answers; `-Status` reports without changing anything.
+
+### 4. Configure
+
+```bash
+cp .env.example .env
+```
+
+Fill in `LLM_API_KEY` if you intend to run an agent mode. Every other value already matches the
+containers started above. `.env` is gitignored — keys belong in it and nowhere else.
+
+### 5. Generate a city, and look at it
+
+```bash
+uv run blindcity sim --seed 42 --years 20    # writes the city's history to the warehouse
+uv run blindcity emit                        # publishes the catalog to DataHub
 uv run blindcity sim --serve                 # viewer and lever panel on :8000
 ```
 
-```bash
-uv run blindcity run --mode good_policy --out results/good.json   # free reference: 0.8132
-uv run blindcity run --mode bad_policy  --out results/bad.json    # free reference: 0.3244
-uv run blindcity compare "results/*.json"                         # summarise what is on disk
-```
+Open <http://localhost:8000> for the city, and <http://localhost:9002> for the catalog behind it.
+
+### 6. Run the benchmark
 
 ```bash
+uv run blindcity run --mode good_policy --out results/good.json    # no API key needed
 uv run blindcity run --mode agent_datahub_live --out results/run.json
+uv run blindcity compare "results/*.json"
 ```
 
-Every agent run writes a full transcript beside its results — system prompt, the complete
-conversation as the model received it, and every reply. Every context bug in this project was
-invisible in the scores and obvious in the transcript.
+`docs/ENVIRONMENT.md` has the verified command-by-command setup, the container map, and the
+lifecycle commands for stopping and restarting the stack.
+
+### Running `agent_analytics`
+
+This mode delegates the analysis to DataHub's own Analytics Agent, which runs as a separate
+service. `infra/analytics-agent/README.md` covers standing it up: clone upstream, apply the
+reasoning-model branch, drop in the two config files from that directory, and bring it up on
+`:8100`.
+
+---
 
 ## Commands
 
@@ -165,16 +240,29 @@ every parameter reachable inside it:
 ```bash
 for i in 1 2 3; do
   for m in agent_raw agent_datahub agent_datahub_live agent_analytics; do
-    uv run blindcity run --mode $m --out results/$m-$i.json --overwrite-datahub true
+    uv run blindcity run --mode $m --out results/official/$m-$i.json --overwrite-datahub true
   done
 done
-uv run blindcity compare "results/*.json" --out docs/comparison.md
+for m in good_policy bad_policy; do
+  uv run blindcity run --mode $m --out results/official/$m.json --overwrite-datahub true
+done
+uv run blindcity compare "results/official/*.json" --out docs/comparison.md
 ```
 
-This used to be a second command (`eval --live --repeat 3`) that re-implemented the runner. It
-drifted from the real one three times — no transcripts, no way to clear a stale warehouse, and it
-never printed the degradation warnings — so a batch could report a clean table while runs were
-losing queries to timeouts. One runner, and a loop.
+Three things that loop does on purpose:
+
+- **Writes to its own directory.** `results/` also holds ad-hoc runs, so comparing
+  `results/*.json` would fold them into the official table.
+- **Includes the scripted rows.** `good_policy` and `bad_policy` call no model and cost nothing,
+  and the agent scores read much better with a reference either side of them.
+- **Passes `--overwrite-datahub true`.** Without it the run stops to ask, and an unattended batch
+  stops with it.
+
+A completed official batch **replaces every recorded number in the repository** — `docs/RESULTS.md`,
+the headline figures in this file, and `results/final/`.
+
+Every agent run writes a full transcript beside its results: the system prompt, the complete
+conversation as the model received it, and every reply.
 
 ### DataHub is the authoritative copy
 
@@ -184,16 +272,16 @@ widening a band in the UI to see how the agent responds is a thing you are *mean
 do. So publishing looks before it writes:
 
 ```bash
-uv run blindcity run --mode agent_datahub_live                          # asks, if anything differs
-uv run blindcity run --mode agent_datahub_live --overwrite-datahub true # replace, no question
-uv run blindcity run --mode agent_datahub_live --overwrite-datahub false# keep your edits, run on them
+uv run blindcity run --mode agent_datahub_live                           # asks, if anything differs
+uv run blindcity run --mode agent_datahub_live --overwrite-datahub true  # replace, no question
+uv run blindcity run --mode agent_datahub_live --overwrite-datahub false # keep your edits, run on them
 ```
 
-When DataHub is empty or already matches, the snapshot is published either way — there is nothing
-to lose and nothing to ask about. Every run records which copy of the guidance it acted on, and a
-fingerprint of it, in `catalog_source` in its `.agent.json`.
+When DataHub is empty or already matches, the snapshot is published either way. Every run records
+which copy of the guidance it acted on, and a fingerprint of it, in `catalog_source` in its
+`.agent.json`.
 
-See `docs/RESULTS.md` for the full comparison, method and caveats.
+---
 
 ## Architecture
 
@@ -206,20 +294,42 @@ sim ──rows──────────────>  Postgres  <──read
                               └── assertions, evaluated each turn
 ```
 
-The simulation emits its own causal graph as DataHub lineage — 29 column-level edges, every one
-validated against the running model by `blindcity.sim.causal_check`, so "derived from" states a
-demonstrated dependency rather than a claim. Each run gets a private schema of views filtered to its
-own `run_id`, with `search_path` pointed at it, so run isolation is structural rather than
-remembered.
+Each run gets a private schema of views filtered to its own `run_id`, with `search_path` pointed at
+it, so run isolation is structural rather than remembered. The catalog is authored in
+`src/blindcity/catalog/`, published to DataHub over its GraphQL and ingestion APIs, and read back
+at run time — DataHub is the serving layer, not a mirror of a local file.
+
+---
+
+## Built on DataHub
+
+| Project | Used for |
+| --- | --- |
+| [datahub-project/datahub](https://github.com/datahub-project/datahub) | DataHub Core. The catalog is published to its ingestion API and read back over GraphQL at run time; `datahub docker quickstart` brings up the whole stack |
+| [datahub-project/analytics-agent](https://github.com/datahub-project/analytics-agent) | The `agent_analytics` mode. Runs as its own service and answers the controller's questions from DataHub plus the warehouse |
+
+### Contributed upstream
+
+[**datahub-project/analytics-agent#97**](https://github.com/datahub-project/analytics-agent/pull/97)
+— *support OpenAI reasoning models via the Responses API.* The Analytics Agent built its OpenAI
+client with no way to set the reasoning budget, so it always called `/v1/chat/completions`, where
+the `gpt-5.6-*` family refuses function tools unless reasoning is switched off entirely. The change
+adds an `OPENAI_REASONING_EFFORT` setting that routes through `/v1/responses` and passes the effort
+down, in one factory that all four model tiers already share. Details and the live verification are
+in `infra/analytics-agent/README.md`.
+
+---
 
 ## Documentation
 
-- `AGENTS.md` — vision, constraints, conventions
+- `AGENTS.md` — vision, constraints, project map, conventions (`CLAUDE.md` links here)
+- `docs/RESULTS.md` — the full comparison and method
+- `docs/FEATURES.md` — what the project does, feature by feature
+- `docs/ENVIRONMENT.md` — verified setup, running topology, lifecycle
 - `docs/DECISIONS.md` — why it is built this way
-- `docs/ENVIRONMENT.md` — verified setup and running topology
-- `docs/ERRORS.md` — every bug that mattered, and what it cost
-- `.tasks/mvp/TASKS.md` — current state and what remains
+- `docs/ERRORS.md` — the engineering log
+- `CONTRIBUTING.md` — the project's status, and how to fork it
 
 ## License
 
-Apache 2.0.
+Apache 2.0. See `LICENSE`.

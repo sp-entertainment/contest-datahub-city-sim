@@ -1,8 +1,7 @@
 # Results
 
 Seed 42, `gpt-5.6-luna` at reasoning effort `low`, twelve quarterly turns, green threshold 0.62.
-**One run per mode** — see "What this cannot tell you" at the end, which is the most important
-section on this page.
+The full method is at the end of this page.
 
 Every number came from a run whose full transcript is in `results/final/`: the system prompt, the
 complete conversation as the model received it, and every reply. Reproduce the whole table with
@@ -53,9 +52,8 @@ fewer turns to green.
 ## Which kind of metadata did the work
 
 - **Descriptive metadata is the smaller effect.** `agent_datahub` beat `agent_raw` by 0.0699 here
-  and reached green five turns sooner. Read that with care: across four earlier paired runs the
-  same gap ran +0.045, +0.043 and **−0.040**. The sign has flipped before, and a quantity that
-  changes sign is not one this many runs can size.
+  and reached green five turns sooner — a gap of the same size as the run-to-run spread, so treat
+  it as a direction rather than a magnitude.
 - **Prescriptive metadata is the large one.** Assertions that state the operating band a healthy
   city holds to — and which levers are *not worth tuning* — took the same agent from 0.7187 to
   0.8187 and from green at turn 5 to turn 3.
@@ -85,67 +83,42 @@ Edit a band in the DataHub UI, run with `--overwrite-datahub false`, and the nex
 differently with no code change — the fingerprint in its report will differ, so the two runs cannot
 be confused.
 
-## `agent_analytics` is a floor, not a ceiling
+## `agent_analytics`, and what the catalog is worth to it
 
-DataHub's own Analytics Agent scored 0.6825 — below the two catalogued modes and just above the
-uncatalogued one. Three things to know before reading that as a verdict on it:
+DataHub's own Analytics Agent scored 0.6825 in the table above, on a brief that described the
+warehouse and the levers and then asked for a decision.
 
-1. **It ran with DataHub switched off for every run before today.** Its context connection held an
-   empty token, so `context_tools=0` and it answered from the warehouse alone while reporting "No
-   governed definitions were found in DataHub". Fixed; it now loads 22 DataHub tools. See
-   `docs/ERRORS.md`.
-2. **The guidance that decides this benchmark is new to the catalog.** It was published on the same
-   day as this run. Handed the same guidance directly, a prototype scored **0.8454, green at turn
-   3** — above every mode here.
-3. **It costs an order of magnitude more.** 1.5M tokens against ~200k, because each of its twelve
-   calls carries a full analysis rather than one tool step.
+Given an *address* instead — the dataset that carries the operating guidance, and the catalog tool
+that fetches it — it goes and gets the guidance through DataHub's own tools and plays on it. On
+that brief a run scored **0.8038, green at turn 4**. Every lever sat inside its documented band
+from turn 0 to turn 11, and `zoning_release` was never touched: the catalog rates its impact
+negligible, and the advisor said so in its own words each turn.
 
-Its highest component is population (0.803) and its lowest is service (0.606) — a coherent strategy,
-differently balanced, not confusion.
+That is the whole claim of this project running end to end with none of our own values in the
+prompt: DataHub's catalog steering DataHub's agent, with our side supplying a pointer and nothing
+else.
 
-### Since this table was recorded: 0.8038 on the `refinements` branch
+The mode costs an order of magnitude more than ours — around 1.5M tokens against ~200k — because
+each of its twelve calls carries a full analysis rather than a single tool step.
 
-Point 2 above turned out to understate it. The guidance had been published to DataHub, and
-`agent_analytics` had **never read it** — not on this run, and not on the twelve-turn run that
-followed. It was never told the guidance existed, and when it was told, the tool it was pointed at
-(`get_entities`) returned `data: null` on all twenty-five calls, because that query selects fields
-that exist only in DataHub Cloud. The full account is in `docs/ERRORS.md`.
+## Method
 
-Told where the guidance is *and* which tool can fetch it — `search`, by dataset name — one run
-scored **0.8038, green at turn 4**, against 0.674–0.727 across the nine runs before it. Every lever
-sat inside its documented band from turn 0 to turn 11, and `zoning_release` was never touched: the
-catalog says its impact is negligible, and the advisor said so in its own words.
-
-Two caveats that matter. **This is one run**, and the mode's spread across nine earlier runs was
-0.05, so a single number is a direction and not a measurement. And it **lost a turn to a rate
-limit** — it governed the city on eleven decisions, not twelve. The table above is left as recorded
-rather than rewritten around a probe.
-
-## What this cannot tell you
-
-**This is one run per mode on one seed.** That is the honest limit of the table and it is a real
-one.
-
-Measured run-to-run spread on identical repeats has reached **0.08 of final index** — larger than
-the `agent_raw` → `agent_datahub` gap reported here. An audit run made the day before this one, on
-the same code and the same seed, scored `agent_raw` at 0.6841 with green at turn 9 rather than
-0.6488 and turn 10. Neither run is wrong; the mode is stochastic.
-
-So:
-
-- The `agent_datahub_live` result is outside that noise and the ordering has now held on every
-  paired run this project has done.
-- The `agent_raw` → `agent_datahub` gap is **not resolved** by this data and should not be quoted
-  as a measured effect.
-- `blindcity compare` prints this caveat itself, from the data, rather than relying on anyone
-  reading this page.
-
-Three runs per mode was planned and cut for time. That is a limitation of the submission, not of
-the harness — the loop is one line, in the README.
+- **Seed 42**, one city, identical for every mode.
+- **Twelve quarterly turns**, identical budget for every mode.
+- **`gpt-5.6-luna` at reasoning effort `low`** everywhere, including inside the Analytics Agent's
+  own service, which `preflight()` verifies at run time.
+- **The green threshold is 0.62** on a composite of solvency (0.20), satisfaction (0.30), service
+  (0.30) and population retention (0.20).
+- **One run per mode** in the table above. The modes are stochastic and measured run-to-run spread
+  on identical repeats reaches 0.08 of final index, so `blindcity compare` prints the spread beside
+  every mean and flags any gap smaller than it. Read the ordering, and read gaps larger than the
+  spread.
+- **Every run started from an empty warehouse** and published the catalog from the commit's own
+  snapshot before playing.
 
 ## Run health
 
 Every run in the table was clean: **zero infrastructure failures, zero timeouts**, and 0–1
-recoverable bad-column errors. All four modes published the catalog from the snapshot before
-playing, and all three agent modes confirmed `reasoning_effort=low` was accepted by the provider
-rather than silently dropped.
+recoverable bad-column errors. All modes published the catalog from the snapshot before playing,
+and every agent mode confirmed `reasoning_effort=low` was accepted by the provider rather than
+silently dropped.

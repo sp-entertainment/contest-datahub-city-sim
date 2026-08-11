@@ -1,27 +1,41 @@
 # Contributing
 
-## Changes
+## Project status
 
-`main` holds the state the entry was submitted in and is not committed to directly. Work on a
-branch — `refinements` for ongoing work, or your own for anything larger — and open a pull request.
+**This project was built for a contest and is not maintained.** It was written as an entry to
+[Build with DataHub: The Agent Hackathon](https://datahub.devpost.com/), it does what it set out to
+do, and it is finished.
 
-Before the deadline this was a nine-day solo sprint committing straight to `main`, and that was the
-right trade then. It is not now: the published numbers are reproducible from `main`, and a commit
-that lands there changes what a reader gets when they clone it.
+**Pull requests and issues are not accepted.** Nobody is watching the queue, so an open PR here
+would sit unread rather than be reviewed.
 
-- One concern per commit. Small commits are the substitute for review: they are what makes a bad
-  change easy to find and easy to revert.
-- Describe what changed and why. Link the relevant entry in `docs/DECISIONS.md` when a decision drove
-  the change.
-- Update `docs/FEATURES.md` when behaviour visible to a player or judge changes.
-- Run `uv run pytest -q` and `uv run ruff check src tests` before you push.
+**Fork it and make it your own.** The licence is Apache 2.0 and the grant is deliberate: take the
+simulation, the catalog authoring, the benchmark harness, or the whole thing, and do what you like
+with it. No attribution beyond what the licence already requires, and no need to ask.
+
+The rest of this file is the conventions the code was written to. It is here so a fork inherits the
+rules that keep the benchmark meaningful, not as a contribution process.
+
+## Determinism
+
+The simulation must stay reproducible from a seed. Any change that introduces unseeded randomness,
+wall-clock dependence, or iteration over unordered collections breaks the evaluation harness — the
+A/B comparison means nothing if the two arms are not facing the same city.
 
 ## Numbers
 
 A change to the simulation, the health index, the prompts, or the catalog invalidates every recorded
 result. Say so in the commit, and do not leave `docs/RESULTS.md` claiming a figure the code can no
-longer produce. Re-running is cheap for `good_policy` and `bad_policy` and expensive for the agent
-modes — the honest interim state is a result marked stale, never one quietly left standing.
+longer produce. Re-running is fast for `good_policy` and `bad_policy` and expensive for the agent
+modes — a result marked stale is honest, one quietly left standing is not.
+
+## Changes
+
+- One concern per commit. Small commits are what make a bad change easy to find and easy to revert.
+- Describe what changed and why. Link the relevant entry in `docs/DECISIONS.md` when a decision
+  drove the change.
+- Update `docs/FEATURES.md` when behaviour visible to a player or judge changes.
+- Run `uv run pytest -q` and `uv run ruff check src tests` before you push.
 
 ## Commit messages
 
@@ -37,11 +51,4 @@ Types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`.
 
 ## Licensing
 
-Apache 2.0. Do not introduce GPL-licensed code or derivatives — the submission requires Apache 2.0,
-and the two are incompatible.
-
-## Determinism
-
-The simulation must stay reproducible from a seed. Any change that introduces unseeded randomness,
-wall-clock dependence, or iteration over unordered collections breaks the evaluation harness and will
-be rejected.
+Apache 2.0. Do not introduce GPL-licensed code or derivatives — the two licences are incompatible.

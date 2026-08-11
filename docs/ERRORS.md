@@ -316,7 +316,7 @@ actually stopping the thing first.
 
 ```
 starting services: initializing Inference manager: listening on
-unix://C:/Users/spect/AppData/Local/Docker/run/dockerInference:
+unix://C:/Users/<user>/AppData/Local/Docker/run/dockerInference:
 remove …/dockerInference: The file cannot be accessed by the system.
 ```
 

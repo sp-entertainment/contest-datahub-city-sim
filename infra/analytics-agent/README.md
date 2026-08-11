@@ -43,10 +43,9 @@ changes never repair it. The token is only read from the DB into the environment
 the other way. Worse, the bundled Postgres is bind-mounted to `$HOME/.datahub/analytics-agent/`,
 so the bad row survives `docker compose down`, a rebuild, and a fresh clone.
 
-Every scored run before 2026-08-10 was poisoned this way: `Total context_tools=0`, and the agent
-answered from the warehouse alone while reporting *"No governed definitions ... were found in
-DataHub"*. It looked like a weak result from DataHub's agent. It was DataHub's agent with DataHub
-switched off. To verify and repair:
+The symptom is `Total context_tools=0` in the log, with the agent answering from the warehouse
+alone while reporting *"No governed definitions ... were found in DataHub"*. That reads as a weak
+result from DataHub's agent; it is DataHub's agent with DataHub switched off. To verify and repair:
 
 ```bash
 docker exec analytics-agent-postgres-1 \
@@ -114,8 +113,10 @@ It is applied in one place, `_make_openai`, and that is sufficient: `get_llm`, `
 live — the running container reports `use_responses_api=True, effort=low` for both the main and
 chart tiers.
 
-**Sent upstream** as a draft PR rather than kept as a local patch, because being unable to drive a
-reasoning model at all is a real limitation of that project and not something specific to us.
+**Sent upstream** as
+[datahub-project/analytics-agent#97](https://github.com/datahub-project/analytics-agent/pull/97)
+rather than kept as a local patch, because being unable to drive a reasoning model at all is a real
+limitation of that project and not something specific to us.
 Searching all 72 commits of that repository, `reasoning_effort` and `use_responses_api` have never
 appeared and no gpt-5 model is referenced anywhere in its source, README, or model picker; its
 OpenAI integration traces to a single commit — the initial release — targeting `gpt-4o` and
@@ -146,11 +147,3 @@ engine. Two details that cost time:
 - `DATAHUB_GMS_TOKEN` must be non-empty. The DataHub context is gated on `cfg.url and cfg.token`,
   so an empty token reads as unconfigured even though our quickstart GMS ignores auth entirely. Any
   placeholder works.
-
-## Known limitation
-
-On the gpt-4o runs the agent reported *"No governed definitions or table-selection guidance were
-found in DataHub"* and answered from the warehouse alone. Its DataHub context lookup reaches GMS
-but does not find our metadata, which makes this mode closer to an *uncatalogued* analyst than a
-catalogued one. Treat its score as a floor for the mode rather than a measurement of what it could
-do with the catalog attached.

@@ -51,38 +51,18 @@ simulation `POST`s to `/advance`.
 Lever names, ranges, and defaults come from `blindcity.levers` — the single source of truth. Do not
 restate them here or hard-code them in the frontend.
 
-## Not yet built
+## How it is drawn
 
-Plan: Slice 7 in `.tasks/mvp/TASKS.md`.
+One `index.html`, one 2D canvas, no build step and no framework. FastAPI serves it as a static file
+from the same process that runs the simulation.
 
-**Approach, decided** (see `docs/DECISIONS.md`): plain HTML with a 2D canvas, drawing a 2.5D
-isometric tile scene. No build step, no framework, served as static files by the FastAPI process.
-
-**Low fidelity is fine and is the target.** Flat-shaded isometric blocks for buildings, simple
-sprites or dots for citizens. It has to read as a city sim at a glance — silhouette, density, and
-condition are what carry that, not texture detail. Spend effort on making state legible, not on
-making buildings pretty.
-
-### Build this first, and stop
-
-The first version is deliberately plain. Get it working, then leave it alone until everything else
-in `TASKS.md` is done.
-
-- Isometric grid of flat-coloured tiles. Colour by zoning; that is the whole terrain treatment.
+- Isometric grid of flat tiles, coloured by zoning.
 - Buildings as extruded boxes. **Height encodes density, colour encodes type, shade encodes
-  condition.** No textures, no windows, no roofs, no per-building art.
-- Citizens as 2–3px dots that move along roads. No sprites, no animation frames, no pathing
-  finesse — interpolating between endpoints is enough.
-- Roads as lines that get visibly darker and more broken as they wear.
-- Redraw the whole canvas on each tick. No dirty-rect optimisation, no interpolation between ticks.
-- Lever panel as plain HTML `<input type="range">` and `<select>`. No custom controls.
-
-That is a city sim. Three shades of grey on a street grid with moving dots reads as one instantly,
-and it is maybe a day of work.
-
-**Explicitly not in the first version**, and not worth arguing about until the submission is
-otherwise complete: sprite art, animation, day/night, weather, camera pan and zoom, particle
-effects, building variety, shadows, tile bevels, smooth movement between ticks.
-
-If the first version looks flat and schematic, it is correct. The judged claim is that a catalog and
-an agent can replace a game UI — not that we can draw.
+  condition, and unpowered goes dark.** The colour keys are the `building_type` values `GET /scene`
+  sends — `residential`, `commercial`, `industrial`, `civic` — and the swatches in the legend are
+  the same colours, so a change to one is a change to both.
+- Citizens as 2px dots on the tiles they occupy.
+- Roads as lines that pale as they wear.
+- The whole canvas redraws on each tick. No dirty rectangles, no interpolation between ticks.
+- Lever panel built from `GET /state`, using plain `<input type="range">` — names, ranges and
+  defaults all come from `blindcity.levers`, so the panel never restates them.

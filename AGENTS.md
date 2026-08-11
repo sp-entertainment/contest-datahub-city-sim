@@ -32,16 +32,19 @@ something.
 
 A **scenario** puts the city into a defined crisis. A **controller** pulls levers over a fixed turn
 budget. A run is scored by a **composite health index**; "recovered" means the index crossed the
-green threshold within the budget. Three controllers face the identical seed, crisis, and budget:
+green threshold within the budget. Five controllers face the identical seed, crisis, and budget:
 
 | Mode | Controller | Sees |
 | --- | --- | --- |
 | `human` | A person | The city render, the levers, and the Analytics Agent to ask questions |
-| `agent_datahub` | Our auto-mode agent | DataHub over MCP, plus SQL against the warehouse |
 | `agent_raw` | Our auto-mode agent | SQL only, no catalog context |
+| `agent_datahub` | Our auto-mode agent | The same, plus DataHub descriptions, glossary, lineage |
+| `agent_datahub_live` | Our auto-mode agent | The same, plus assertions read from DataHub each turn |
+| `agent_analytics` | DataHub's Analytics Agent | It decides; it reads DataHub and the warehouse itself |
 
-Two comparisons fall out: `agent_datahub` vs `agent_raw` measures the metadata; `human` vs
-`agent_datahub` measures the automation.
+Three comparisons fall out: `agent_datahub` vs `agent_raw` measures descriptive metadata;
+`agent_datahub_live` vs `agent_datahub` measures prescriptive metadata; `human` vs the agents
+measures the automation.
 
 **What follows from this.** Simulation fidelity is where effort belongs. The viewer is cosmetic —
 it must look like a city and carry the levers, nothing more. Information parity across modes is an
@@ -112,32 +115,31 @@ Auth stays off. DataHub OSS quickstart accepts unauthenticated writes to
 
 ## Document map
 
-- `AGENTS.md` — this file. Vision, contest constraints, project map, conventions.
-- `README.md` — human onboarding, dependencies, commands.
-- `CONTRIBUTING.md` — contribution and commit conventions.
+- `AGENTS.md` — this file. Vision, contest constraints, project map, conventions. `CLAUDE.md` is a
+  symlink to it, so both names load the same document.
+- `README.md` — what the project is, the result, and setup from a clean clone.
+- `CONTRIBUTING.md` — project status, and the conventions a fork inherits.
+- `docs/RESULTS.md` — the full mode comparison and method.
 - `docs/FEATURES.md` — what the product does, feature by feature.
 - `docs/ENVIRONMENT.md` — verified setup commands, running topology, credentials, lifecycle.
 - `docs/DECISIONS.md` — append-only decision log with context and rationale.
 - `docs/ERRORS.md` — problems hit and how they were resolved.
+- `docs/SUBMISSION.md` — the contest submission text.
+- `infra/analytics-agent/README.md` — standing up the upstream Analytics Agent for `agent_analytics`.
 - `.tasks/<work-item>/TASKS.md` — plan and status for multi-step work.
 
 ## Commands
 
-> Fill in as the toolchain lands. Placeholders are intentional, not decoration. A command is moved
-> above the line only once it has been run and observed to work.
-
-**Verified.** Setup and verification commands, with observed results, are in `docs/ENVIRONMENT.md`.
-
-**Not yet verified.** Everything below is the intended shape, not a working command.
+Setup and verification commands, with observed results, are in `docs/ENVIRONMENT.md`.
 
 ```bash
-# DataHub Core — verified, see docs/ENVIRONMENT.md
+# DataHub Core
 datahub docker quickstart
 
 # Simulation
 uv run blindcity sim --seed 42 --years 20
 
-# Metadata ingestion
+# Metadata publication
 uv run blindcity emit
 
 # Agent, auto mode
@@ -162,8 +164,6 @@ uv run blindcity compare "results/*.json"
 
 ## Dos and don'ts
 
-- **Do set `TOOLS_IS_MUTATION_ENABLED=true`** in the MCP config. Mutation tools are not registered at
-  all without it, so they never appear in the tool list.
 - **Do keep the baseline honest.** The no-DataHub control gets the same model, prompt, seed, tool
   budget, and full SQL access. Only the metadata context differs.
 - **Do spend effort on simulation fidelity, not on rendering.** The sim is the substrate the whole
@@ -180,8 +180,7 @@ uv run blindcity compare "results/*.json"
   `datahub docker quickstart`. The engine on this host restarts often and quickstart resets the
   containers' restart policy. `docker ps` showing two containers instead of seven is the normal
   failure, not a crisis.
-- **Don't trust a green test suite to mean a value is alive.** A constant passes every range check.
-  This project has shipped four columns pinned at a bound, each one through a fully green suite.
-  Require values to *move*, compare modes component by component, and check the fraction of rows
-  sitting at the ceiling rather than the mean. The opening section of `docs/ERRORS.md` is the
-  full version of this, and it is the single most useful thing in the documentation.
+- **Don't trust a green test suite to mean a value is alive.** A constant passes every range check,
+  and a column pinned at a bound passes a bounds test by definition. Require values to *move*,
+  compare modes component by component, and check the fraction of rows sitting at the ceiling
+  rather than the mean. The opening section of `docs/ERRORS.md` works this through in full.
