@@ -189,7 +189,52 @@ def test_the_scene_still_carries_no_measurement_of_the_city():
         assert not banned & set(building)
 
 
-def test_a_briefed_human_is_exempt_from_the_model_parity_check():
+def _summary(mode: str, index: float, runs: int = 1, spread: float = 0.0,
+             model: str = "gpt-5.6-luna"):
+    """A mode summary with a real mean and a real spread, since both drive the warning."""
+    from blindcity.evaluation.compare import ModeSummary
+
+    if runs == 1:
+        values = [index]
+    else:
+        step = spread / (runs - 1)
+        values = [index - spread / 2 + step * i for i in range(runs)]
+    return ModeSummary(
+        mode=mode, runs=runs, final_index=values, green_turn=[5] * runs,
+        total_tokens=[0] * runs, llm_calls=[0] * runs, llm_seconds=[0.0] * runs,
+        sql_queries=[0] * runs, models=[model],
+    )
+
+
+def test_a_human_row_cannot_trigger_the_noise_warning():
+    """The spread warning is a statement about the modes a model plays.
+
+    A human run, or a scripted reference, landing next to an agent by accident of sort order used
+    to collapse the smallest-gap calculation and fire a warning about a pair nobody was comparing.
+    A warning that is sometimes wrong is one nobody trusts when it is right.
+    """
+    from blindcity.evaluation.compare import markdown
+
+    # Real spread, comfortably smaller than the gaps between the agent modes themselves.
+    agents = {
+        "agent_raw": _summary("agent_raw", 0.64, runs=3, spread=0.03),
+        "agent_datahub": _summary("agent_datahub", 0.74, runs=3, spread=0.03),
+        "agent_datahub_live": _summary("agent_datahub_live", 0.81, runs=3, spread=0.03),
+    }
+    assert "not distinguishable from noise" not in markdown(
+        agents, threshold=0.62, seed=42, model="gpt-5.6-luna"
+    )
+
+    # A human scoring a hair away from an agent mode changes nothing about the agents' spread.
+    with_human = {**agents, "human": _summary("human", 0.8101, model="human")}
+    assert "not distinguishable from noise" not in markdown(
+        with_human, threshold=0.62, seed=42, model="gpt-5.6-luna"
+    )
+    # The row is still shown. Excluding it from the statistic is not the same as hiding it.
+    assert "`human`" in markdown(with_human, threshold=0.62, seed=42, model="gpt-5.6-luna")
+
+
+def test_a_human_run_is_exempt_from_the_model_parity_check():
     """`human` reports "human", not a model id, and must not trip the mismatch warning."""
     from blindcity.evaluation.compare import ModeSummary, markdown
 

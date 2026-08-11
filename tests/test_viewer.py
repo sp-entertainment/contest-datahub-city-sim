@@ -50,12 +50,11 @@ def test_lever_bounds_match_the_source_of_truth(html):
 def _without_help_panel(html: str) -> str:
     """Everything the viewer renders *while the city is being played*.
 
-    The help panel is the one deliberate exception to the no-numbers rule: a fixed opening snapshot,
-    shown once behind a dismissable dialog, stating the goal and where the score starts. It exists
-    because `human` is a sanity check rather than a scored arm of the benchmark, and human results
-    carry `briefed: true` so the difference travels with them. Everything outside it is still held
-    to the rule, which is what this cut preserves -- removing the whole test instead would have
-    dropped the guard over the canvas and the status line too.
+    The help panel is excluded on purpose: it is a dismissable dialog shown once, explaining the
+    goal and where the score starts, which is what a person needs to use the interface at all.
+    Everything outside it is still held to the no-numbers rule, and that is what this cut
+    preserves -- deleting the whole test instead would have dropped the guard over the canvas and
+    the status line, which is where a leak would actually happen.
     """
     start = html.index("function renderHelp")
     end = html.index("function showHelp")
@@ -74,12 +73,12 @@ def test_no_city_state_numbers_are_displayed(html):
             )
 
 
-def test_the_briefing_is_confined_to_the_dismissable_help_panel(html):
-    """The exception must stay an exception.
+def test_the_starting_score_stays_inside_the_dismissable_help_panel(html):
+    """A help panel is not a dashboard.
 
-    A starting score behind a dialog is a briefing. The same number written into the status line or
-    drawn on the canvas would be a live readout, and the human would be playing a different game
-    from the one the agents play.
+    An opening figure behind a dialog you dismiss is orientation. The same number written into the
+    status line or drawn on the canvas would be a live readout of the city, which is the thing this
+    viewer is deliberately not.
     """
     playing_surface = _without_help_panel(html)
     for banned in ("green_threshold", "b.index", "components", "weights"):

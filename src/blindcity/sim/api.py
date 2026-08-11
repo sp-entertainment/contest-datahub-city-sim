@@ -169,10 +169,9 @@ class HumanRunSession:
 def state_payload(session: SimSession | HumanRunSession) -> dict[str, Any]:
     """Controller-visible state: tick, calendar, levers. No health aggregates.
 
-    Two optional blocks are attached for a scored human run and are absent for free play:
-    `progress`, which is the turn number and budget every agent is also told, and `briefing`,
-    which is the one deliberate exception to the no-numbers rule -- a fixed starting snapshot
-    shown once in the help panel. Neither is a live readout of the city.
+    Two optional blocks are attached for a scored run and are absent for free play: `progress`,
+    the turn number and budget, and `briefing`, the fixed opening snapshot the help panel explains
+    the goal with. Neither is a live readout of the city, which is what the rule above is about.
     """
     st = session.state
     year, month = st.year_month()

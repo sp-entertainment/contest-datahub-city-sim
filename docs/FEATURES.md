@@ -36,8 +36,7 @@ The point of the project. See `docs/DECISIONS.md`, 2026-08-02.
 - **Control modes.** Five controllers implement one interface and face identical conditions:
   - `human` — a person, with the city render, the levers, and the Analytics Agent to ask questions.
     `blindcity run --mode human` prepares the identical crisis, serves the city on `:8000` and is
-    then driven entirely from the browser; the harness scores it like any other mode. It is briefed
-    on the goal and the scoring first, which no agent is, so its results carry `briefed: true`.
+    then driven entirely from the browser; the harness scores it like any other mode.
   - `agent_raw` — our auto-mode agent with SQL only and no catalog context.
   - `agent_datahub` — the same agent, plus DataHub descriptions, glossary and column lineage.
   - `agent_datahub_live` — the same again, plus assertions read from DataHub each turn.

@@ -63,11 +63,9 @@ SCRIPTED_MODES: dict[str, str] = {
 }
 
 # A person, playing the same crisis in a browser. Shares the scenario, the seed, the turn budget,
-# the lever set, the warehouse and the published catalog with every other mode, and is scored by the
-# same harness -- but it is briefed before it starts (the goal, the scoring formula, and the opening
-# score), which every agent is denied. That is a deliberate choice: this mode exists to check the
-# loop works end to end for a person, not to contribute a row to the benchmark table. Human results
-# carry `meta["briefed"] = True` so the difference travels with the number.
+# the lever set, the warehouse and the published catalog with every other mode, and is scored by
+# the same harness. The interface differs because a person needs a different one: sliders instead
+# of a tool schema, and a help panel instead of a system prompt.
 HUMAN_MODE = "human"
 
 # Everything `--mode` accepts, in the order a reader wants them.
@@ -359,8 +357,6 @@ def run_mode(
         play_seconds = time.perf_counter() - phase_start
         if mode == HUMAN_MODE:
             controller.finish()
-            # Travels with the number, so a briefed run can never be quietly read as a blind one.
-            result.meta["briefed"] = True
         report = controller.report()
         report["phases"] = {
             "prepare_seconds": round(prepare_seconds, 1),

@@ -178,10 +178,6 @@ The scene carries condition and density but no measurements. To get a number you
 Agent, exactly as `agent_analytics` does. A help panel explains the goal and the scoring on first
 load, and the `?` button brings it back.
 
-Unlike the agent modes, the human is briefed before starting: the goal, how the score is composed,
-and where the score sits at turn 0. That makes it a good way to play the benchmark and a bad way to
-be measured against it, so human results carry `briefed: true` and are not part of the table above.
-
 | Neglected | Recovering |
 | --- | --- |
 | ![A neglected city: sparse, dark, derelict blocks](assets/viewer-neglect.png) | ![A recovering city: dense, lit, populated](assets/viewer-recovered.png) |

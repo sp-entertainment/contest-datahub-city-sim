@@ -123,6 +123,14 @@ def collect(paths: list[Path]) -> dict[str, ModeSummary]:
 # would hide exactly the result worth knowing.
 EXPECTED_ORDER = ("agent_raw", "agent_datahub", "agent_datahub_live")
 
+# The modes a model plays, and so the only ones with run-to-run variance to talk about. Named as
+# strings rather than imported from `agent.run` on purpose: this module folds result files into a
+# table and is deliberately free of any dependency on the code that produced them.
+#
+# `good_policy` and `bad_policy` are fixed lever sets and `human` is a person, so all three are
+# deterministic-or-singular and belong in the table without being part of a statement about noise.
+STOCHASTIC_MODES = (*EXPECTED_ORDER, "agent_analytics")
+
 
 def _model_line(summaries: dict[str, ModeSummary], fallback: str) -> tuple[str, str | None]:
     """What model the runs actually used, and a warning if they disagree.
@@ -206,12 +214,18 @@ def markdown(summaries: dict[str, ModeSummary], *, threshold: float, seed: int, 
                 f"expected {' > '.join(expected)}."
             )
 
-    spreads = [s.index_spread for s in summaries.values() if s.runs > 1]
+    # Both halves of this comparison are statements about the stochastic agent modes, so both are
+    # computed over those alone. Sweeping in every row of the table put a deterministic reference
+    # policy, or a human run, next to an agent by accident of sort order -- and if the two happened
+    # to land close, `min(gaps)` collapsed and the warning fired about a pair nobody was comparing.
+    # In the recorded table that was avoided only by where the alphabet happened to put things.
+    stochastic = [m for m in ordered if m in STOCHASTIC_MODES]
+    spreads = [summaries[m].index_spread for m in stochastic if summaries[m].runs > 1]
     if spreads:
         worst = max(spreads)
         gaps = [
             abs(summaries[a].mean_index - summaries[b].mean_index)
-            for a, b in itertools.pairwise(ordered)
+            for a, b in itertools.pairwise(stochastic)
         ]
         if gaps and worst >= min(gaps):
             lines += [
