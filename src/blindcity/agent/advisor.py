@@ -27,6 +27,7 @@ from typing import Any
 
 import httpx
 
+from blindcity.catalog.operational import GUIDANCE_PREFIX
 from blindcity.levers import LEVERS
 
 # The Analytics Agent answers over SSE and a real analysis runs to tens of seconds. This bounds one
@@ -53,6 +54,12 @@ RATE_LIMIT_ATTEMPTS = 4
 # Nothing else is consuming this budget, so one window is a guarantee rather than a guess. The
 # ceiling is per wait, not a total: three sleeps of 65-70s, about 3.5 minutes at worst for a turn
 # that would otherwise be lost outright.
+#
+# The ceiling bounds the *ramp*, never the provider's own number. These constants are tuned for a
+# per-minute bucket; a refusal citing an hourly or daily one says "try again in 300s", and clamping
+# that to 70 would spend all four attempts inside three minutes, be refused every time, and lose
+# the turn -- the exact failure this backoff exists to prevent, in a bucket it was not tuned for.
+# When the provider names a longer wait than our ramp, the provider is right.
 _RATE_LIMIT_DELAY = re.compile(r"try again in ([0-9.]+)\s*(ms|s)", re.IGNORECASE)
 _RATE_LIMIT_FLOOR = 65.0
 _RATE_LIMIT_CEILING = 70.0
@@ -69,7 +76,7 @@ def _rate_limit_delay(exc: Exception, attempt: int = 0) -> float | None:
         suggested = float(match.group(1))
         if match.group(2).lower() == "ms":
             suggested /= 1000.0
-    return min(max(suggested, _RATE_LIMIT_FLOOR * (2**attempt)), _RATE_LIMIT_CEILING)
+    return max(suggested, min(_RATE_LIMIT_FLOOR * (2**attempt), _RATE_LIMIT_CEILING))
 
 
 # The two Analytics Agent tools verified to return `datasetProperties.customProperties`, which is
@@ -260,11 +267,15 @@ class AnalyticsAgentAdvisor:
         over by trying again.
         """
         started = time.monotonic()
+        # Handed to `_send` so that whatever the advisor called before a stream died is still on
+        # record. A turn that fails halfway is the one whose tool calls are most worth having.
+        tools: list[dict[str, Any]] = []
         for attempt in range(RATE_LIMIT_ATTEMPTS):
+            tools.clear()
             try:
                 with self._client() as client:
                     conv = self.start(client)
-                    answer, statements, tools = self._send(client, conv, question)
+                    answer, statements = self._send(client, conv, question, tools)
             except (httpx.HTTPError, KeyError, ValueError) as exc:
                 delay = _rate_limit_delay(exc, attempt)
                 if delay is not None and attempt < RATE_LIMIT_ATTEMPTS - 1:
@@ -278,6 +289,7 @@ class AnalyticsAgentAdvisor:
                     answer="",
                     seconds=time.monotonic() - started,
                     error=f"{type(exc).__name__}: {str(exc)[:300]}",
+                    tools=list(tools),
                 )
             break
         return Advice(
@@ -289,18 +301,20 @@ class AnalyticsAgentAdvisor:
         )
 
     def _send(
-        self, client: httpx.Client, conv: str, question: str
-    ) -> tuple[str, list[str], list[dict[str, Any]]]:
+        self, client: httpx.Client, conv: str, question: str, tools: list[dict[str, Any]]
+    ) -> tuple[str, list[str]]:
         """Post the question and read the streamed reply to completion.
 
         Events arrive as `{"event": KIND, "payload": {...}}`. `TEXT` carries the answer a token at
         a time, `SQL` the statements it ran, `TOOL_RESULT` the name of every tool it called, and
         `USAGE` its token counts -- which are recorded so this mode's cost sits beside the others'
         rather than reading as free.
+
+        `tools` is appended to rather than returned, so a stream that dies partway still leaves the
+        caller holding everything the advisor had called up to that point.
         """
         text_parts: list[str] = []
         statements: list[str] = []
-        tools: list[dict[str, Any]] = []
         with client.stream(
             "POST",
             f"{self.base_url}/api/conversations/{conv}/messages",
@@ -329,10 +343,19 @@ class AnalyticsAgentAdvisor:
                     name = payload.get("tool_name")
                     if isinstance(name, str) and name:
                         failed = bool(payload.get("is_error"))
-                        tools.append({
+                        result = str(payload.get("result", ""))
+                        call: dict[str, Any] = {
                             "name": name,
-                            "error": str(payload.get("result", ""))[:300] if failed else None,
-                        })
+                            "error": result[:300] if failed else None,
+                        }
+                        # Whether this call actually brought the guidance back. A `search` for the
+                        # wrong thing succeeds and returns nothing, and "did not fail" cannot tell
+                        # that apart from "returned all eight bands" -- which is the exact run this
+                        # metric exists to catch: the advisor searched for the concept, got an empty
+                        # result, and reported that the bands could not be verified.
+                        if name in GUIDANCE_BEARING_TOOLS and not failed:
+                            call["guidance"] = GUIDANCE_PREFIX in result
+                        tools.append(call)
                 elif kind == "USAGE":
                     for key in self.tokens:
                         self.tokens[key] += int(payload.get(key, 0) or 0)
@@ -340,4 +363,4 @@ class AnalyticsAgentAdvisor:
                     message = payload.get("error") or payload.get("message")
                     if isinstance(message, str) and message:
                         raise ValueError(message[:300])
-        return "".join(text_parts).strip(), statements, tools
+        return "".join(text_parts).strip(), statements

@@ -228,13 +228,14 @@ def test_a_rate_limited_question_is_re_put_not_forfeited(monkeypatch):
         def _client(self):
             raise AssertionError("should not be reached")
 
-        def _send(self, client, conv, question):
+        def _send(self, client, conv, question, tools):
             calls["n"] += 1
             if calls["n"] < 3:
                 raise ValueError(
                     "Rate limit reached for gpt-5.6-luna ... Please try again in 1.631s."
                 )
-            return _BLOCK, ["SELECT 1"], [{"name": "execute_sql", "error": None}]
+            tools.append({"name": "execute_sql", "error": None})
+            return _BLOCK, ["SELECT 1"]
 
         def start(self, client):
             return "conv"
@@ -258,7 +259,7 @@ def test_a_real_failure_is_reported_rather_than_retried(monkeypatch):
     calls = {"n": 0}
 
     class Adv(advisor_mod.AnalyticsAgentAdvisor):
-        def _send(self, client, conv, question):
+        def _send(self, client, conv, question, tools):
             calls["n"] += 1
             raise ValueError("the engine exploded")
 
@@ -296,6 +297,11 @@ def test_the_rate_limit_delay_is_read_from_the_provider(monkeypatch):
     assert waits == sorted(waits) and waits[0] == _RATE_LIMIT_FLOOR
     assert all(w >= 60.0 for w in waits), f"a wait that cannot clear a 60s window is spent: {waits}"
     assert all(w <= 70.0 for w in waits), "waiting longer than a window buys nothing"
+
+    # The ceiling bounds our ramp, never the provider's own number. These constants are tuned for a
+    # per-minute bucket; a refusal citing an hourly one names a wait far longer, and clamping it to
+    # 70s would burn all four attempts inside three minutes and lose the turn regardless.
+    assert _rate_limit_delay(ValueError("Rate limit reached ... try again in 300s")) == 300.0
 
 
 class _NullClient:
@@ -335,16 +341,49 @@ class _StreamingClient:
         yield "data: [DONE]"
 
 
+def test_a_lost_turn_does_not_take_the_whole_run_down_with_it():
+    """A turn the advisor never answered leaves no decision, and the record has to say so in the
+    same shape as every other turn. When it did not, `report()` raised `KeyError: 'levers'` at the
+    end of the run -- so one forfeited turn destroyed the eleven good ones beside it, at the point
+    where the results were about to be written."""
+    from blindcity.agent.advisor import Advice
+    from blindcity.agent.advisor_controller import AdvisorController
+
+    class FakeAdvisor:
+        base_url = "http://advisor"
+        tokens: ClassVar[dict] = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+        rate_limited = 4
+
+        def ask(self, question):
+            return Advice(question=question, answer="", error="ValueError: Rate limit reached")
+
+    controller = AdvisorController(name="agent_analytics", advisor=FakeAdvisor(), turn_budget=12)
+    assert controller.decide(_FakeState(), 0, {}) == {}
+
+    report = controller.report()
+    assert report["answered_turns"] == 0
+    assert report["acting_turns"] == 0
+    assert report["advisor_errors"] == ["ValueError: Rate limit reached"]
+    assert report["rate_limited"] == 4
+
+
 def test_a_failed_tool_call_is_not_recorded_as_a_read():
     """The first version of this kept names only, and reported 25 catalog reads on a run where
     every one of them returned null -- the metric meant to prove the guidance had been read was
     what concealed that it never was. The event shape is theirs, so this breaks quietly if it
     moves."""
     from blindcity.agent.advisor import AnalyticsAgentAdvisor
+    from blindcity.catalog.operational import GUIDANCE_PREFIX
 
     advisor = AnalyticsAgentAdvisor()
     client = _StreamingClient([
-        {"event": "TOOL_RESULT", "payload": {"tool_name": "search"}},
+        # Succeeded, and brought a guidance property back.
+        {
+            "event": "TOOL_RESULT",
+            "payload": {"tool_name": "search", "result": f'{{"{GUIDANCE_PREFIX}.lever.x": "{{}}"}}'},
+        },
+        # Succeeded, and returned nothing useful -- a search for the wrong term.
+        {"event": "TOOL_RESULT", "payload": {"tool_name": "search", "result": '{"results": []}'}},
         {
             "event": "TOOL_RESULT",
             "payload": {"tool_name": "get_entities", "is_error": True, "result": "null data"},
@@ -354,22 +393,49 @@ def test_a_failed_tool_call_is_not_recorded_as_a_read():
         {"event": "TEXT", "payload": {"text": "roads are worn"}},
     ])
 
-    answer, statements, tools = advisor._send(client, "conv", "what now?")
+    tools: list = []
+    answer, statements = advisor._send(client, "conv", "what now?", tools)
     assert answer == "roads are worn"
     assert statements == ["SELECT 1"]
-    assert [t["name"] for t in tools] == ["search", "get_entities", "execute_sql"]
-    assert [t["error"] for t in tools] == [None, "null data", None]
+    assert [t["name"] for t in tools] == ["search", "search", "get_entities", "execute_sql"]
+    assert [t["error"] for t in tools] == [None, None, "null data", None]
+    # A call that succeeded and returned nothing is not a read, and neither is a failed one.
+    assert [t.get("guidance") for t in tools] == [True, False, None, None]
 
 
-def test_a_turn_that_asked_for_the_guidance_and_was_refused_counts_as_no_read():
-    """Only `search` and `get_entities` return `datasetProperties.customProperties`, which is where
-    the guidance is published -- and only when they succeed. This is the exact shape of the run
-    that scored 0.7527 while `get_entities` returned null on all twenty-five calls."""
+def test_tool_calls_survive_a_stream_that_dies_partway():
+    """The turn that fails is the one whose tool calls are most worth having. `_send` appends to a
+    list the caller owns, so an `ERROR` event mid-stream does not take the record with it."""
+    from blindcity.agent.advisor import AnalyticsAgentAdvisor
+
+    advisor = AnalyticsAgentAdvisor()
+    client = _StreamingClient([
+        {"event": "TOOL_RESULT", "payload": {"tool_name": "search", "result": "{}"}},
+        {"event": "ERROR", "payload": {"error": "Rate limit reached for gpt-5.6-luna"}},
+    ])
+
+    tools: list = []
+    with pytest.raises(ValueError, match="Rate limit"):
+        advisor._send(client, "conv", "what now?", tools)
+    assert [t["name"] for t in tools] == ["search"]
+
+
+def test_asking_for_the_guidance_is_not_the_same_as_getting_it():
+    """Three outcomes that must stay apart, because each needs a different fix:
+
+      * called it and got the guidance back -- the working case
+      * called it, no error, nothing useful returned -- searched for the wrong term
+      * called it and was refused -- the run where `get_entities` returned null 25 times
+
+    Every "did it call the tool" measure reads green on all three."""
     from blindcity.agent.advisor import Advice
     from blindcity.agent.advisor_controller import AdvisorController
 
-    def call(name, error=None):
-        return {"name": name, "error": error}
+    def call(name, error=None, guidance=None):
+        out = {"name": name, "error": error}
+        if guidance is not None:
+            out["guidance"] = guidance
+        return out
 
     class FakeAdvisor:
         base_url = "http://advisor"
@@ -380,11 +446,12 @@ def test_a_turn_that_asked_for_the_guidance_and_was_refused_counts_as_no_read():
             self.turn = 0
 
         def ask(self, question):
-            # Turn 0 reads the catalog. Turn 1 asks and is refused, which is not a read.
-            tools = (
-                [call("search"), call("get_entities"), call("execute_sql")] if self.turn == 0
-                else [call("get_entities", "no data"), call("execute_sql")]
-            )
+            tools = [
+                # Turn 0: one search brings the guidance back.
+                [call("search", guidance=True), call("execute_sql")],
+                # Turn 1: a search that succeeded and returned nothing, plus a refusal.
+                [call("search", guidance=False), call("get_entities", "no data")],
+            ][self.turn]
             self.turn += 1
             return Advice(
                 question=question,
@@ -401,10 +468,56 @@ def test_a_turn_that_asked_for_the_guidance_and_was_refused_counts_as_no_read():
     controller.decide(State(), 1, {})
 
     report = controller.report()
-    assert report["tool_calls"] == {"get_entities": 2, "execute_sql": 2, "search": 1}
+    assert report["tool_calls"] == {"search": 2, "execute_sql": 1, "get_entities": 1}
     assert report["failed_tool_calls"] == {"get_entities": 1}
-    assert report["guidance_reads"] == 2, "a refused call was counted as a read"
+    # Two calls could have carried guidance and did not fail; only one actually carried any.
+    assert report["guidance_lookups"] == 2
+    assert report["guidance_reads"] == 1, "an empty search was counted as a read"
     assert report["turns_reading_guidance"] == 1
+
+
+def test_a_clarification_keeps_the_tools_it_called():
+    """A clarification is another question to the same advisor, so what it called belongs to the
+    turn. Dropping them under-reported exactly the turns that went wrong -- including a search that
+    only fetched the guidance on the second ask."""
+    from blindcity.agent.advisor import Advice
+    from blindcity.agent.advisor_controller import AdvisorController
+
+    class FakeAdvisor:
+        base_url = "http://advisor"
+        tokens: ClassVar[dict] = {"input_tokens": 1, "output_tokens": 2, "total_tokens": 3}
+        rate_limited = 0
+
+        def __init__(self):
+            self.asked = 0
+
+        def ask(self, question):
+            self.asked += 1
+            if self.asked == 1:  # the original answer: no block, and no guidance yet
+                return Advice(question=question, answer="Raise roads a lot.", tools=[])
+            return Advice(  # the clarification, which goes and reads the catalog first
+                question=question,
+                answer='```json\n{"road_maintenance_budget": 3000000}\n```',
+                tools=[{"name": "search", "error": None, "guidance": True}],
+            )
+
+    class Reviewer:
+        model = "fake"
+
+        def generate(self, *, system, history, tools=None):
+            from blindcity.agent.llm import Reply
+
+            return Reply(text='{"levers": {}, "vague": ["road_maintenance_budget"]}')
+
+    controller = AdvisorController(
+        name="agent_analytics", advisor=FakeAdvisor(), llm=Reviewer(), turn_budget=12
+    )
+    assert controller.decide(_FakeState(), 0, {}) == {"road_maintenance_budget": 3_000_000.0}
+
+    report = controller.report()
+    assert report["tool_calls"] == {"search": 1}, "the clarification's tool calls were dropped"
+    assert report["guidance_reads"] == 1
+    assert report["parsing"]["clarification_rounds"] == 1
 
 
 # --- Publishing the catalog must not silently destroy someone's edits --------------------------

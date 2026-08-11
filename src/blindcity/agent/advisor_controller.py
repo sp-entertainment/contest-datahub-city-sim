@@ -203,6 +203,9 @@ class AdvisorController:
     # the LLM client; this one calls no client, so it writes its own -- same file name, same JSONL
     # shape, so an auditor does not need to know which mode produced which artifact.
     transcript: str | None = None
+    # Tools the advisor called while answering this turn's clarifications, collected by
+    # `_ask_again` and folded into the turn record beside the ones from the original answer.
+    _clarification_tools: list[dict[str, Any]] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         if self.transcript:
@@ -313,15 +316,22 @@ class AdvisorController:
         )
         # A turn the advisor never answered is a lost turn, not an unreadable one. There is no
         # text to parse and nothing to clarify, so it passes with no change exactly as before.
+        #
+        # `levers` is seeded here rather than only on the path that produces one, because every
+        # record must have the same shape: `report()` reads `t["levers"]` across the whole history,
+        # and a lost turn that omitted the key crashed the run at the end -- destroying eleven
+        # good turns over the one that was already lost.
         record = {
             "turn": turn,
             **advice.to_dict(),
+            "levers": {},
             "seconds": round(time.monotonic() - started, 2),
         }
         if advice.error:
             self.history.append(record)
             return {}
 
+        self._clarification_tools = []
         outcome = read_decision(
             advice.answer,
             turn=turn,
@@ -329,6 +339,10 @@ class AdvisorController:
             ask_again=self._ask_again,
             record=lambda entry: self._record({"mode": self.name, **entry}),
         )
+        # A clarification is another question to the same advisor, so whatever it called while
+        # answering one belongs to this turn. Dropping them under-reported exactly the turns that
+        # went wrong -- including a `search` that only fetched the guidance on the second ask.
+        record["tools"] = [*advice.tools, *self._clarification_tools]
         # The decision is what the block said. There is no second reading to compare it against:
         # the prose regex that used to run beside it was deleted once the contract made it inert.
         record["levers"] = outcome.levers
@@ -346,7 +360,9 @@ class AdvisorController:
         The same session, so the clarification arrives with everything the original answer had --
         the city it just queried, its own reasoning, and the turn it is answering for.
         """
-        return self.advisor.ask(prompt).answer
+        advice = self.advisor.ask(prompt)
+        self._clarification_tools.extend(advice.tools)
+        return advice.answer
 
     def report(self) -> dict[str, Any]:
         answered = [t for t in self.history if not t["error"]]
@@ -357,13 +373,22 @@ class AdvisorController:
             c["name"] for t in self.history for c in t.get("tools", ()) if c.get("error")
         )
 
-        def read_guidance(turn: dict[str, Any]) -> int:
-            """Calls on this turn that could have returned guidance *and* came back."""
+        def looked(turn: dict[str, Any]) -> int:
+            """Calls on this turn that could have carried guidance and did not fail."""
             return sum(
                 1
                 for c in turn.get("tools", ())
                 if c["name"] in GUIDANCE_BEARING_TOOLS and not c.get("error")
             )
+
+        def read_guidance(turn: dict[str, Any]) -> int:
+            """Calls that actually brought a `blindcity.guidance.*` property back.
+
+            Separate from `looked` because the difference is a real and observed outcome: a
+            `search` for the wrong term succeeds, returns nothing, and leaves the advisor deciding
+            without the bands while every "did it call the tool" measure reads green.
+            """
+            return sum(1 for c in turn.get("tools", ()) if c.get("guidance"))
 
         return {
             "controller": self.name,
@@ -395,6 +420,10 @@ class AdvisorController:
             # Deliberately not `tool_failures`: the other modes report that as an integer and
             # `_print_diagnostics` does arithmetic on it.
             "failed_tool_calls": dict(failed.most_common()),
+            # Looked / got it, kept apart. A high `lookups` beside a zero `reads` is the mode
+            # searching the catalog and coming back empty-handed, which is a different diagnosis
+            # from never having searched and needs a different fix.
+            "guidance_lookups": sum(looked(t) for t in self.history),
             "guidance_reads": sum(read_guidance(t) for t in self.history),
             "turns_reading_guidance": sum(1 for t in self.history if read_guidance(t)),
             # Questions re-put after a 429. A turn saved this way is a turn the mode got to play,

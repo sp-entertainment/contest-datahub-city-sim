@@ -181,11 +181,20 @@ def _print_diagnostics(report: dict[str, Any]) -> None:
     # holds, so a silent zero here invalidates the number rather than merely annotating it.
     if "guidance_reads" in report:
         turns = report["turns_reading_guidance"]
+        lookups = report["guidance_lookups"]
         if turns:
             print(
                 f"run: read the catalog guidance on {turns} of {len(report['turns'])} turn(s) "
-                f"({report['guidance_reads']} successful call(s))"
+                f"({report['guidance_reads']} of {lookups} catalog call(s) returned it)"
             )
+        elif lookups:
+            # Looked and came back empty. A different diagnosis from never having looked, and it
+            # needs a different fix -- the search terms, not the instruction to search.
+            print(
+                f"run: NO GUIDANCE -- {lookups} catalog call(s) succeeded and none returned a "
+                "guidance property."
+            )
+            print("run: the advisor went looking and found nothing; check what it searched for.")
         else:
             print("run: NO GUIDANCE -- every attempt to read the catalog failed or was never made.")
             print("run: this mode scores on what DataHub told it; it was told nothing.")
