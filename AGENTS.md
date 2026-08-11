@@ -1,4 +1,4 @@
-# Agent Instructions — Blind City
+# Agent Instructions — City Sim Agent Benchmark
 
 ## Vision statement
 
@@ -26,7 +26,7 @@ signal to the user.
 > The vision statement above is immutable and still describes the premise. This section describes
 > the shape the work actually takes — see `docs/DECISIONS.md`, 2026-08-02.
 
-**Blind City is a benchmark for whether catalog metadata improves agent decisions.** It is not a
+**This is a benchmark for whether catalog metadata improves agent decisions.** It is not a
 game, and the city is not the deliverable — it is the substrate that makes the measurement mean
 something.
 
@@ -61,20 +61,25 @@ experimental control, so a number on screen is not a style violation, it is a co
 
 ```
 src/blindcity/
+  cli.py       The one entry point. Argument parsing only, no business logic.
+  commands/    One handler per subcommand: sim, emit, run, compare. Lazy imports,
+               so `--help` works with no database, no key and no Docker.
   sim/         Headless deterministic city simulation. Writes rows to Postgres.
                Also declares its causal graph, validated per edge (causal_check.py).
-  catalog/     Metadata ingestion: schemas, glossary terms, lineage, assertions.
-  agent/       Auto-mode agent. DataHub MCP + SQL + lever actuation, closed loop.
-               Runs as both the agent_datahub and agent_raw modes.
+  catalog/     Metadata authoring and publication: schemas, glossary terms, lineage,
+               assertions, and the operating guidance in operational.py.
+  agent/       The agents and everything they read. Our own controller for the three
+               SQL modes; advisor.py and advisor_controller.py for the mode that asks
+               DataHub's Analytics Agent instead; guidance.py reads the bands back
+               out of DataHub at run time.
   benchmark/   Scenario definition, health index, turn budget, controller interface,
                run harness, results. The measurement, and the point of the project.
-  evaluation/  Runs the modes and compares them. `uv run blindcity compare`.
+  evaluation/  Folds run results into one comparison. `uv run blindcity compare`.
   levers.py    The eight levers. Single source of truth for ranges and defaults.
   rng.py       Seeded randomness. Determinism is a hard rule.
   config.py    Connection settings.
-viewer/        Cosmetic city scene plus the lever panel — the human mode's control surface.
-               No numbers, no charts, no trends.
-infra/         Docker compose for the warehouse Postgres.
+viewer/        Cosmetic city scene plus the lever panel. No numbers, no charts, no trends.
+infra/         Docker compose for the warehouse Postgres, and the Analytics Agent setup.
 tests/         pytest.
 docs/          See document map below.
 ```
@@ -86,8 +91,13 @@ Two naming notes, both deliberate:
 - **`evaluation/`, not `eval/`.** Avoids a module named after a builtin. The *command* is still
   `uv run blindcity compare`.
 
-Manual mode uses the upstream `datahub-analytics-agent` unmodified. Auto mode is our own agent and is
-the original contribution.
+And one that is not: the distribution and CLI are still named `blindcity`, the project's working
+title. Renaming a published entry point costs every reader with a command in their notes and buys
+nothing the README does not already say.
+
+`agent_analytics` runs the upstream DataHub Analytics Agent, patched only to support OpenAI
+reasoning models — that patch is upstreamed, not vendored. The other three modes are our own agent
+and are the original contribution.
 
 ### Runtime topology
 

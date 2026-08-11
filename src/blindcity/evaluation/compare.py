@@ -108,8 +108,11 @@ def collect(paths: list[Path]) -> dict[str, ModeSummary]:
         model = report.get("model")
         if isinstance(model, str) and model and model not in s.models:
             s.models.append(model)
+        # Every mode records a failed turn on the turn itself, `agent_analytics` included, so this
+        # one line covers all four. It used to add `advisor_errors` as well, which is the same
+        # events listed a second time -- the advisor's one lost turn was reported as two, in the
+        # table whose whole job is to say how complete each run was.
         s.lost_turns += sum(1 for turn in report.get("turns", []) if turn.get("error"))
-        s.lost_turns += len(report.get("advisor_errors") or [])
         s.timeouts += report.get("timeouts", 0)
         s.infrastructure_failures += report.get("infrastructure_failures", 0)
     return summaries
@@ -174,7 +177,7 @@ def markdown(summaries: dict[str, ModeSummary], *, threshold: float, seed: int, 
 
     resolved, mismatch = _model_line(summaries, model)
     lines = [
-        "# Blind City — mode comparison",
+        "# City Sim Agent Benchmark — mode comparison",
         "",
         (
             f"Seed {seed} · model `{resolved}` · green threshold {threshold} · "

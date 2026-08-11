@@ -27,7 +27,7 @@ That turned out to be a testable claim, which made it a benchmark rather than a 
 
 ## What it does
 
-**Blind City is a benchmark for whether data catalogs make AI agents better at their job.**
+**City Sim Agent Benchmark is a benchmark for whether data catalogs make AI agents better at their job.**
 
 A simulation puts a city through five years of deferred maintenance plus a fiscal shock. An agent
 gets twelve quarterly decisions and eight policy levers to bring a composite health index — solvency,

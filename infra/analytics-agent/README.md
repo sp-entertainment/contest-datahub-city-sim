@@ -1,4 +1,4 @@
-# Running the DataHub Analytics Agent against Blind City
+# Running the DataHub Analytics Agent against City Sim
 
 `--mode agent_analytics` delegates the whole analysis to DataHub's own Analytics Agent, running as
 a separate service. This directory is what it took to stand that up. Nothing here is checked out

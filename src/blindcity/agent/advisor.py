@@ -246,7 +246,7 @@ class AnalyticsAgentAdvisor:
             return self.conversation_id
         r = client.post(
             f"{self.base_url}/api/conversations",
-            json={"title": "Blind City", "engine_name": self.engine},
+            json={"title": "City Sim Agent Benchmark", "engine_name": self.engine},
         )
         r.raise_for_status()
         self.conversation_id = r.json()["id"]

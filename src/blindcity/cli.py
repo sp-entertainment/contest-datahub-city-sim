@@ -1,4 +1,4 @@
-"""The Blind City command line. One entry point, four subcommands.
+"""The City Sim Agent Benchmark command line. One entry point, four subcommands.
 
     blindcity sim      generate a city's history, or serve the interactive viewer
     blindcity emit     publish the catalog snapshot to DataHub
@@ -70,7 +70,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     parser = argparse.ArgumentParser(
         prog="blindcity",
-        description="Blind City: a benchmark for whether a data catalog makes an agent better.",
+        description="City Sim Agent Benchmark: a benchmark for whether a data catalog makes an agent better.",
         epilog=EPILOG,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )

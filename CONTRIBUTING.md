@@ -2,17 +2,26 @@
 
 ## Changes
 
-Work on `main` and commit straight to it. This is a nine-day solo sprint against a fixed deadline —
-branch-and-review ceremony buys nothing here and costs time the schedule does not have. Branch only
-if you actually want one, for something long-running or risky.
+`main` holds the state the entry was submitted in and is not committed to directly. Work on a
+branch — `refinements` for ongoing work, or your own for anything larger — and open a pull request.
+
+Before the deadline this was a nine-day solo sprint committing straight to `main`, and that was the
+right trade then. It is not now: the published numbers are reproducible from `main`, and a commit
+that lands there changes what a reader gets when they clone it.
 
 - One concern per commit. Small commits are the substitute for review: they are what makes a bad
   change easy to find and easy to revert.
 - Describe what changed and why. Link the relevant entry in `docs/DECISIONS.md` when a decision drove
   the change.
 - Update `docs/FEATURES.md` when behaviour visible to a player or judge changes.
-- Keep `main` working. Run `uv run pytest -q` before you push. Committing to `main` directly means
-  nothing catches a broken commit before it lands.
+- Run `uv run pytest -q` and `uv run ruff check src tests` before you push.
+
+## Numbers
+
+A change to the simulation, the health index, the prompts, or the catalog invalidates every recorded
+result. Say so in the commit, and do not leave `docs/RESULTS.md` claiming a figure the code can no
+longer produce. Re-running is cheap for `good_policy` and `bad_policy` and expensive for the agent
+modes — the honest interim state is a result marked stale, never one quietly left standing.
 
 ## Commit messages
 

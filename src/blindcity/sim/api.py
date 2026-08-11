@@ -165,7 +165,7 @@ class ResetBody(BaseModel):
 
 def create_app(session: SimSession | None = None) -> FastAPI:
     """Build the app. Tests inject a session; serve creates a default one."""
-    app = FastAPI(title="Blind City control surface", version="0.1.0")
+    app = FastAPI(title="City Sim control surface", version="0.1.0")
     app.state.session = session or SimSession(seed=42)
 
     @app.get("/state")

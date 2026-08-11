@@ -708,10 +708,24 @@ def test_a_lost_turn_is_reported_in_the_comparison(tmp_path):
     path = _write(tmp_path, "agent_analytics", 0.72, 4)
     side = path.with_suffix(".agent.json")
     report = json.loads(side.read_text(encoding="utf-8"))
-    report["advisor_errors"] = ["rate limit", "rate limit"]
+    report["turns"] = [{"error": "rate limit"}, {"error": "rate limit"}, {"sql_calls": 5}]
     side.write_text(json.dumps(report), encoding="utf-8")
 
     summaries = collect([path])
     assert summaries["agent_analytics"].lost_turns == 2
     out = markdown(summaries, threshold=0.62, seed=42, model="m")
     assert "Incomplete runs" in out and "lost 2 turn(s)" in out
+
+
+def test_a_lost_turn_is_counted_once_not_twice(tmp_path):
+    """`agent_analytics` records a failed turn on the turn *and* in `advisor_errors`, and the
+    comparison counted both -- so a run that lost one turn was reported as having lost two, in the
+    table whose only job is to say how complete each run was."""
+    path = _write(tmp_path, "agent_analytics", 0.72, 4)
+    side = path.with_suffix(".agent.json")
+    report = json.loads(side.read_text(encoding="utf-8"))
+    report["turns"] = [{"error": "rate limit"}, {"sql_calls": 5}]
+    report["advisor_errors"] = ["rate limit"]  # the same event, listed a second time
+    side.write_text(json.dumps(report), encoding="utf-8")
+
+    assert collect([path])["agent_analytics"].lost_turns == 1
