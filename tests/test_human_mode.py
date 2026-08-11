@@ -189,6 +189,36 @@ def test_the_scene_still_carries_no_measurement_of_the_city():
         assert not banned & set(building)
 
 
+def test_the_finished_city_is_held_open_and_stops_cleanly_on_interrupt():
+    """Ctrl+C ends the run and takes the server down with it.
+
+    Delivering a real console Ctrl+C to a detached process on Windows is not something a test can
+    do portably, so this raises the exception Ctrl+C actually causes and checks what happens next:
+    the wait ends, and the control surface is stopped rather than left holding the port for the
+    next run to trip over.
+    """
+    from blindcity.commands import run as run_cmd
+
+    class FakeServer:
+        url = "http://127.0.0.1:8000"
+
+        def __init__(self) -> None:
+            self.stopped = False
+
+        def stop(self) -> None:
+            self.stopped = True
+
+    server = FakeServer()
+    original = run_cmd.time.sleep
+    try:
+        run_cmd.time.sleep = lambda _seconds: (_ for _ in ()).throw(KeyboardInterrupt())
+        run_cmd._hold_open(server)
+    finally:
+        run_cmd.time.sleep = original
+
+    assert server.stopped, "the control surface was left running after the player interrupted"
+
+
 def _summary(mode: str, index: float, runs: int = 1, spread: float = 0.0,
              model: str = "gpt-5.6-luna"):
     """A mode summary with a real mean and a real spread, since both drive the warning."""
