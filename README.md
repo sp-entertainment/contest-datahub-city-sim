@@ -20,19 +20,22 @@ much DataHub tells it about that warehouse** — and this measures what that is 
 Same model, same seed, same crisis, same levers, same turn budget. The only difference is what
 DataHub gave each agent.
 
-Seed 42, `gpt-5.6-luna` at reasoning effort `low`, one run per mode.
+Seed 42, `gpt-5.6-luna` at reasoning effort `low`, **three runs per agent mode**, reported as means.
 
-| Mode | What the catalog provides | Index | Green by | SQL queries |
-| --- | --- | ---: | ---: | ---: |
-| `agent_raw` | Nothing. Schema discovery via `information_schema` only | 0.6488 | turn 10 | 62 |
-| `agent_datahub` | Descriptions, glossary, column-level lineage | 0.7187 | turn 5 | 59 |
-| `agent_datahub_live` | The above, plus assertions read from DataHub each turn | **0.8187** | **turn 3** | **22** |
-| `agent_analytics` | DataHub's own Analytics Agent answers instead | 0.6825 | turn 5 | — |
-| *`good_policy`* | *hand-calibrated reference, not an agent* | *0.8132* | *turn 4* | *—* |
-| *`bad_policy`* | *deliberate neglect, not an agent* | *0.3244* | *never* | *—* |
+| Mode | What the catalog provides | Index | Spread | Green by | SQL queries |
+| --- | --- | ---: | ---: | ---: | ---: |
+| `agent_raw` | Nothing. Schema discovery via `information_schema` only | 0.6416 | 0.0238 | 9, 7, 9 | 64 |
+| `agent_datahub` | Descriptions, glossary, column-level lineage | 0.7413 | 0.0710 | 6, 5, 6 | 52 |
+| `agent_datahub_live` | The above, plus assertions read from DataHub each turn | **0.8092** | 0.0175 | **3, 4, 3** | **16** |
+| `agent_analytics` | DataHub's own Analytics Agent answers instead | 0.8017 | 0.0554 | 4, 3, 4 | — |
+| *`good_policy`* | *hand-calibrated reference, not an agent* | *0.8132* | *—* | *turn 4* | *—* |
+| *`bad_policy`* | *deliberate neglect, not an agent* | *0.3244* | *—* | *never* | *—* |
 
-Green is 0.62. **The fully-catalogued agent beat the hand-tuned expert policy, reached green a turn
-sooner, and used a third of the queries the uncatalogued agent needed.**
+Green is 0.62. All twelve agent runs recovered, and the predicted ordering held on every one of the
+three paired rounds, not just on the means.
+
+**The fully-catalogued agent matched a hand-calibrated expert policy, reached green a turn sooner,
+and did it on a quarter of the queries — and fewer tokens — than the uncatalogued control.**
 
 The reference rows reproduce in about a minute and need no API key:
 
@@ -42,24 +45,35 @@ uv run blindcity run --mode bad_policy  --out results/bad.json
 uv run blindcity compare "results/*.json"
 ```
 
-### Which metadata actually moved the needle
+### Both catalog steps clear the noise
 
-The interesting result is not "catalogs help." It is *which kind* of metadata helped.
+The interesting result is not "catalogs help." It is that **each step of catalog quality buys a
+separate, measurable step of performance**, and at three runs a side neither pair of ranges
+overlaps:
 
-- **Descriptive metadata alone was worth little.** Table names like `road_monthly` and columns like
-  `income_tax_revenue` are already readable, so a description restating the column name gives the
-  agent nothing it could not infer.
-- **Prescriptive metadata transformed behaviour.** Assertions that document the operating range a
-  healthy city holds to — and, just as importantly, which levers are *not worth tuning* — moved the
-  agent from 0.7187 to 0.8187 and from green at turn 5 to turn 3, on **less** of everything: 22
-  queries against 59, 19 model calls against 25. A mode that scored higher by querying more would
-  just be a mode given more compute. This one stopped searching because it was told where to look.
-- **Relationships the data cannot show are where lineage earns its keep.** Every lever is constant
-  across the recorded history, so no amount of querying reveals that `income_tax_rate` drives
-  `income_tax_revenue`. The catalog is the only place that relationship exists.
+| Step | Range below | Range above | Gap between means |
+| --- | --- | --- | ---: |
+| Descriptions, glossary, lineage | 0.6330 – 0.6568 | 0.7135 – 0.7846 | **0.0997** |
+| Assertions, read live from DataHub | 0.7135 – 0.7846 | 0.8004 – 0.8179 | **0.0679** |
 
-For a data platform team the practical reading is: documenting your columns will not make your
-warehouse agent-ready. Documenting what *good* looks like will.
+The best uncatalogued run scored below the worst catalogued one, and the best merely-described run
+scored below the worst asserted one.
+
+- **Descriptions and lineage are worth more than they look.** Relationships the data cannot show
+  are where lineage earns its keep: every lever is constant across the recorded history, so no
+  amount of querying reveals that `income_tax_rate` drives `income_tax_revenue`. The catalog is the
+  only place that relationship exists.
+- **Assertions buy consistency, not just score.** `agent_datahub` is the *least* consistent mode in
+  the table — 0.0710 of spread against `agent_datahub_live`'s 0.0175. Descriptions tell the agent
+  what a column means and leave it to decide what to do; assertions tell it what good looks like,
+  and the runs converge.
+- **The catalogued agent won on less of everything.** 16 SQL queries against 64, 17 model calls
+  against 28, and fewer tokens than the uncatalogued control. A mode that scored higher by querying
+  more would just be a mode given more compute. This one stopped searching because it was told
+  where to look.
+
+For a data platform team the practical reading is: documenting your columns is worth doing, and
+documenting what *good* looks like is worth doing next.
 
 ---
 
@@ -71,8 +85,15 @@ time. Nothing below is hand-entered in the UI.
 ### Operating guidance as custom properties
 
 Each lever carries a band, an impact rating, and a note explaining the trade in the city's own
-units. This is the metadata that produced the jump to 0.8187 — and in `agent_analytics` it is
-fetched back out of DataHub by DataHub's own agent, over its own tools.
+units. This is the metadata behind the 0.7413 → 0.8092 step, and it is read back out of DataHub at
+run time rather than imported — `agent_datahub_live` contains none of it, and a test asserts that
+structurally.
+
+In `agent_analytics` it goes further: DataHub's own Analytics Agent is told only *where* the
+guidance lives and which catalog tool fetches it, then goes and gets it with its own tools. It read
+the guidance on **12 of 12 turns in all three runs**, and scored 0.8017 — statistically level with
+our purpose-built catalogued agent. That is the whole claim closing end to end, with none of our
+values in the prompt.
 
 ![The lever_monthly dataset in DataHub, showing per-lever operating guidance stored as custom properties](assets/datahub-guidance.png)
 
@@ -258,8 +279,9 @@ Three things that loop does on purpose:
 - **Passes `--overwrite-datahub true`.** Without it the run stops to ask, and an unattended batch
   stops with it.
 
-A completed official batch **replaces every recorded number in the repository** — `docs/RESULTS.md`,
-the headline figures in this file, and `results/final/`.
+That loop is what produced the table at the top of this file. It takes about 40 minutes, most of it
+`agent_analytics`, and a completed batch **replaces every recorded number in the repository** —
+`docs/RESULTS.md`, the headline figures here, and the contents of `results/official/`.
 
 Every agent run writes a full transcript beside its results: the system prompt, the complete
 conversation as the model received it, and every reply.

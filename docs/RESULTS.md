@@ -1,77 +1,95 @@
 # Results
 
 Seed 42, `gpt-5.6-luna` at reasoning effort `low`, twelve quarterly turns, green threshold 0.62.
-The full method is at the end of this page.
+**Three runs per agent mode.** The full method is at the end of this page.
 
-Every number came from a run whose full transcript is in `results/final/`: the system prompt, the
+Every number came from a run whose full transcript is in `results/official/`: the system prompt, the
 complete conversation as the model received it, and every reply. Reproduce the whole table with
 
 ```bash
-uv run blindcity compare "results/final/*.json"
+uv run blindcity compare "results/official/*.json"
 ```
 
 ## Headline
 
-| Mode | What the catalog gives it | Index | Green by | SQL queries | LLM calls |
-| --- | --- | ---: | ---: | ---: | ---: |
-| `agent_raw` | Nothing but `information_schema` | 0.6488 | turn 10 | 62 | 30 |
-| `agent_datahub` | Descriptions, glossary, column lineage | 0.7187 | turn 5 | 59 | 25 |
-| `agent_datahub_live` | The above, plus assertions read from DataHub each turn | **0.8187** | **turn 3** | **22** | **19** |
-| `agent_analytics` | DataHub's own Analytics Agent answers instead | 0.6825 | turn 5 | — | 12 |
-| *`good_policy`* | *fixed reference lever set, not an agent* | *0.8132* | *turn 4* | *0* | *0* |
-| *`bad_policy`* | *deliberate neglect, not an agent* | *0.3244* | *never* | *0* | *0* |
+Mean of three runs per agent mode. The scripted policies are deterministic and run once.
 
-The predicted ordering held: `agent_datahub_live` > `agent_datahub` > `agent_raw`.
+| Mode | What the catalog gives it | Index | Spread | Green by | Tokens | SQL |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| `agent_raw` | Nothing but `information_schema` | 0.6416 | 0.0238 | 9, 7, 9 | 179,499 | 64 |
+| `agent_datahub` | Descriptions, glossary, column lineage | 0.7413 | 0.0710 | 6, 5, 6 | 221,770 | 52 |
+| `agent_datahub_live` | The above, plus assertions read from DataHub each turn | **0.8092** | 0.0175 | **3, 4, 3** | 177,444 | **16** |
+| `agent_analytics` | DataHub's own Analytics Agent answers instead | 0.8017 | 0.0554 | 4, 3, 4 | 1,456,443 | — |
+| *`good_policy`* | *hand-calibrated reference, not an agent* | *0.8132* | — | *4* | *0* | *0* |
+| *`bad_policy`* | *deliberate neglect, not an agent* | *0.3244* | — | *never* | *0* | *0* |
 
-**The fully-catalogued agent beat the hand-calibrated reference policy** (0.8187 against 0.8132)
-and reached green a turn earlier, on a third of the queries the uncatalogued agent needed.
+Every agent run recovered: 12 of 12 crossed green inside the budget.
 
-## Health components, final turn
+**The predicted ordering held on the means and on all three paired rounds**, not just on average:
 
-| Mode | Solvency | Satisfaction | Service | Population |
-| --- | ---: | ---: | ---: | ---: |
-| `agent_raw` | 0.534 | 0.620 | 0.732 | 0.683 |
-| `agent_datahub` | 0.826 | 0.660 | 0.680 | 0.759 |
-| `agent_datahub_live` | **0.864** | **0.803** | **0.821** | 0.792 |
-| `agent_analytics` | 0.665 | 0.691 | 0.606 | **0.803** |
+| Round | `agent_raw` | `agent_datahub` | `agent_datahub_live` |
+| --- | ---: | ---: | ---: |
+| 1 | 0.6568 | 0.7135 | 0.8092 |
+| 2 | 0.6330 | 0.7846 | 0.8004 |
+| 3 | 0.6349 | 0.7259 | 0.8179 |
 
-`agent_datahub_live` is the only mode above 0.79 on all four at once, which is what the index is
-for: a city can be made solvent by taxing until the residents leave, and three of these four show
-some version of that trade. It did not have to make it.
+## Both catalog steps clear the noise
+
+With one run per mode this table could only report a direction. With three it can compare ranges,
+and **neither pair overlaps**:
+
+| Step | Range below | Range above | Gap between means |
+| --- | --- | --- | ---: |
+| Descriptions, glossary, lineage | 0.6330 – 0.6568 | 0.7135 – 0.7846 | **0.0997** |
+| Assertions, read live from DataHub | 0.7135 – 0.7846 | 0.8004 – 0.8179 | **0.0679** |
+
+Descriptive metadata is the larger of the two steps here, and its arms are cleanly separated: the
+best uncatalogued run scored below the worst catalogued one. Prescriptive metadata adds a second
+step of similar size on top, and does it from a base that is already good.
+
+The two behave differently in a way the means hide. `agent_datahub` is the *least* consistent mode
+in the table — 0.0710 of spread, three times `agent_datahub_live`'s 0.0175. Descriptions tell the
+agent what a column means and leave it to decide what to do; assertions tell it what good looks
+like, and the runs converge.
 
 ## The queries are the finding
 
-`agent_datahub_live` scored highest while issuing **22 SQL queries against `agent_raw`'s 62**, and
-finishing in 19 LLM calls against 30. It did not think harder. It stopped searching, because the
-catalog told it where the problem was and which levers were worth moving.
+`agent_datahub_live` scored highest on **less of everything**:
 
-That shape is hard to get by accident. A mode that scored higher by querying *more* would just be
-a mode given more compute. This one won on less of everything: fewer queries, fewer calls, seven
-fewer turns to green.
+| Mode | Index | SQL queries | Model calls | Tokens | Wall seconds |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `agent_raw` | 0.6416 | 64 | 28 | 179,499 | 114 |
+| `agent_datahub` | 0.7413 | 52 | 25 | 221,770 | 92 |
+| `agent_datahub_live` | **0.8092** | **16** | **17** | **177,444** | **62** |
 
-## Which kind of metadata did the work
+A quarter of the queries, and fewer tokens than the uncatalogued control. That shape is hard to get
+by accident: a mode that scored higher by querying *more* would just be a mode given more compute.
+This one stopped searching, because the catalog told it where the problem was and which levers were
+worth moving.
 
-- **Descriptive metadata is the smaller effect.** `agent_datahub` beat `agent_raw` by 0.0699 here
-  and reached green five turns sooner — a gap of the same size as the run-to-run spread, so treat
-  it as a direction rather than a magnitude.
-- **Prescriptive metadata is the large one.** Assertions that state the operating band a healthy
-  city holds to — and which levers are *not worth tuning* — took the same agent from 0.7187 to
-  0.8187 and from green at turn 5 to turn 3.
+## Health components, mean of the final turn
 
-The reason is in the simulation. Every lever is constant across all 60 months of recorded history,
-so no amount of querying can recover the relationship between a lever and an outcome: the data
-contains no variation to learn from. The catalog is the only place that knowledge exists. A
-description tells you what a column holds; an assertion tells you what it *should* hold and what
-to do when it does not. Only the second is actionable, and only the second moved the score.
+| Mode | Solvency | Satisfaction | Service | Population |
+| --- | ---: | ---: | ---: | ---: |
+| `agent_raw` | 0.524 | 0.575 | 0.756 | 0.687 |
+| `agent_datahub` | 0.744 | 0.728 | 0.736 | 0.767 |
+| `agent_datahub_live` | 0.791 | **0.807** | **0.832** | 0.798 |
+| `agent_analytics` | 0.810 | 0.779 | 0.828 | 0.787 |
+| *`good_policy`* | *0.976* | *0.734* | *0.792* | *0.800* |
+| *`bad_policy`* | *0.540* | *0.263* | *0.260* | *0.297* |
+
+This is where the comparison against the hand-calibrated reference gets interesting. `good_policy`
+edges the catalogued agent on the composite index (0.8132 against 0.8092) and gets there almost
+entirely on solvency — 0.976, a treasury far larger than the city needs. `agent_datahub_live` beats
+it on satisfaction and on service, reaches green a turn earlier, and leaves a more balanced city
+behind. A city can be made solvent by taxing until the residents leave; the index is a composite
+precisely so that trade shows up.
 
 ## The assertions come out of DataHub, not our prompt
 
-Until 2026-08-10 the operating guidance was a Python tuple that `monitor.py` imported and injected.
-The mode would have scored exactly the same with DataHub switched off — the catalog was decorative.
-
-It is now published to DataHub and read back from GMS at run start. `agent_datahub_live` imports
-none of it, and a test asserts that structurally. This run recorded the fingerprint of the guidance
-it actually used:
+The operating guidance is published to DataHub and read back from GMS at run start.
+`agent_datahub_live` imports none of it, and a test asserts that structurally. All three runs
+recorded the fingerprint of the guidance they actually played on, and all three match:
 
 ```
 catalog_source: {"applied": true, "source": "snapshot",
@@ -83,42 +101,49 @@ Edit a band in the DataHub UI, run with `--overwrite-datahub false`, and the nex
 differently with no code change — the fingerprint in its report will differ, so the two runs cannot
 be confused.
 
-## `agent_analytics`, and what the catalog is worth to it
+## DataHub's own agent, given only an address
 
-DataHub's own Analytics Agent scored 0.6825 in the table above, on a brief that described the
-warehouse and the levers and then asked for a decision.
+`agent_analytics` scored **0.8017**, which is 0.0075 from `agent_datahub_live` — inside the noise,
+so the two are not distinguishable at three runs each. Its brief names the dataset that carries the
+operating guidance and the catalog tool that fetches it, and nothing else; it goes and gets the
+guidance through DataHub's own tools and plays on what it finds.
 
-Given an *address* instead — the dataset that carries the operating guidance, and the catalog tool
-that fetches it — it goes and gets the guidance through DataHub's own tools and plays on it. On
-that brief a run scored **0.8038, green at turn 4**. Every lever sat inside its documented band
-from turn 0 to turn 11, and `zoning_release` was never touched: the catalog rates its impact
-negligible, and the advisor said so in its own words each turn.
+**It read the guidance on 12 of 12 turns, in all three runs.** `zoning_release` was never touched:
+the catalog rates its impact negligible, and the advisor said so in its own words.
 
-That is the whole claim of this project running end to end with none of our own values in the
-prompt: DataHub's catalog steering DataHub's agent, with our side supplying a pointer and nothing
-else.
+That is the project's claim closing end to end with none of our own values in the prompt — DataHub's
+catalog steering DataHub's agent, with our side supplying a pointer.
 
-The mode costs an order of magnitude more than ours — around 1.5M tokens against ~200k — because
-each of its twelve calls carries a full analysis rather than a single tool step.
+It is the expensive way to get there. 1,456,443 tokens against `agent_datahub_live`'s 177,444, and
+539 wall seconds against 62, because each of its twelve calls carries a full analysis rather than a
+single tool step.
+
+## Run health
+
+All fourteen runs were clean:
+
+- **Zero lost turns.** Every run played all twelve.
+- **Zero timeouts and zero infrastructure failures.**
+- **Every agent mode ran `gpt-5.6-luna` at reasoning effort `low`**, confirmed accepted by the
+  provider rather than silently dropped, and `preflight()` verified the same model inside the
+  Analytics Agent's own service before scoring it.
+- `agent_analytics` hit provider rate limits eleven times across its three runs and recovered from
+  every one — the backoff waits out the full token window rather than losing the turn.
+- Both scripted references reproduced their previously recorded values exactly (0.8132 and 0.3244),
+  confirming the simulation and the index are unchanged.
 
 ## Method
 
 - **Seed 42**, one city, identical for every mode.
 - **Twelve quarterly turns**, identical budget for every mode.
+- **Three runs per agent mode**, reported as a mean with the observed spread beside it.
+  `blindcity compare` prints the spread from the data and flags any gap between modes smaller than
+  it — the `agent_datahub_live` / `agent_analytics` gap is flagged, and the two catalog steps
+  are not.
 - **`gpt-5.6-luna` at reasoning effort `low`** everywhere, including inside the Analytics Agent's
-  own service, which `preflight()` verifies at run time.
+  own service.
 - **The green threshold is 0.62** on a composite of solvency (0.20), satisfaction (0.30), service
   (0.30) and population retention (0.20).
-- **One run per mode** in the table above. The modes are stochastic and measured run-to-run spread
-  on identical repeats reaches 0.08 of final index, so `blindcity compare` prints the spread beside
-  every mean and flags any gap smaller than it. Read the ordering, and read gaps larger than the
-  spread.
 - **Every run started from an empty warehouse** and published the catalog from the commit's own
   snapshot before playing.
-
-## Run health
-
-Every run in the table was clean: **zero infrastructure failures, zero timeouts**, and 0–1
-recoverable bad-column errors. All modes published the catalog from the snapshot before playing,
-and every agent mode confirmed `reasoning_effort=low` was accepted by the provider rather than
-silently dropped.
+- **No mode was told the scoring function**, and no city-state number appears in any prompt.
