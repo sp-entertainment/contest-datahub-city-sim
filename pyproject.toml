@@ -1,7 +1,7 @@
 [project]
 name = "blindcity"
 version = "0.1.0"
-description = "A city simulation with no interface. DataHub and an agent replace the UI."
+description = "A benchmark for whether data catalogs make AI agents better at their job."
 readme = "README.md"
 license = { text = "Apache-2.0" }
 requires-python = ">=3.11,<3.13"

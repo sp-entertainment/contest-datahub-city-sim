@@ -90,7 +90,7 @@ def _check(gms: str) -> int:
         return 1
 
     if drift.empty:
-        print(f"emit: DataHub at {gms} holds no Blind City catalog. Publish it with `blindcity emit`.")
+        print(f"emit: DataHub at {gms} holds no City Sim catalog. Publish it with `blindcity emit`.")
         return 1
     if not drift:
         print("emit: DataHub matches this commit's catalog snapshot.")

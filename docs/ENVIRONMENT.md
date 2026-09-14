@@ -1,7 +1,6 @@
 # Environment
 
-Every command below was actually run and its result observed. Nothing here is aspirational — for
-commands that have not been run yet, see the placeholders in `AGENTS.md`.
+Every command below was actually run on this host and its result observed.
 
 **Host of record.** Windows 11 Pro, PowerShell. 63 GB RAM, 531 GB free disk, Docker Desktop 29.2.1.
 The original design machine had 8 GB and no Docker, which is why development moved.

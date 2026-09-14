@@ -1,4 +1,4 @@
-"""Emit Blind City metadata into DataHub via the REST emitter.
+"""Emit City Sim metadata into DataHub via the REST emitter.
 
 Full mode: schemas + descriptions + glossary + generated lineage + assertions.
 Baseline mode (`--baseline`): schemas only, realistic opaque table names, no descriptions,

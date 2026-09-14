@@ -33,13 +33,22 @@ The point of the project. See `docs/DECISIONS.md`, 2026-08-02.
 - **Health index.** A composite 0–1 score over solvency, citizen satisfaction, service coverage, and
   population retention. "Green" is a threshold on the index; a run succeeds if it crosses green
   within the budget.
-- **Control modes.** Three controllers implement one interface and face identical conditions:
+- **Control modes.** Five controllers implement one interface and face identical conditions:
   - `human` — a person, with the city render, the levers, and the Analytics Agent to ask questions.
-  - `agent_datahub` — our auto-mode agent with DataHub over MCP plus SQL.
-  - `agent_raw` — the same agent with SQL only and no catalog context.
+    `blindcity run --mode human` prepares the identical crisis, serves the city on `:8000` and is
+    then driven entirely from the browser; the harness scores it like any other mode.
+  - `agent_raw` — our auto-mode agent with SQL only and no catalog context.
+  - `agent_datahub` — the same agent, plus DataHub descriptions, glossary and column lineage.
+  - `agent_datahub_live` — the same again, plus assertions read from DataHub each turn.
+  - `agent_analytics` — DataHub's own Analytics Agent answers the questions instead, reading
+    DataHub and the warehouse through its own tools.
+  - `good_policy` and `bad_policy` — fixed lever sets that call no model, as references either side.
 - **Results.** Per-run health trajectory, turn at which green was reached (if ever), lever history,
-  and the component breakdown. `agent_datahub` vs `agent_raw` measures the metadata;
-  `human` vs `agent_datahub` measures the automation.
+  and the component breakdown. `agent_datahub` vs `agent_raw` measures descriptive metadata;
+  `agent_datahub_live` vs `agent_datahub` measures prescriptive metadata; `human` vs the agents
+  measures the automation.
+- **Full transcripts.** Every agent run writes the system prompt, the complete conversation as the
+  model received it, and every reply, beside its result file.
 - **Run isolation.** Modes run in parallel and all write history, so every row carries a run
   identifier and no mode truncates another's data.
 
@@ -61,12 +70,17 @@ does not need to be.
 
 ## Metadata layer
 
-- **Schema ingestion.** Warehouse schemas pulled into DataHub automatically.
-- **Glossary.** Every city concept defined once, centrally.
-- **Generated lineage.** The simulation's causal graph, emitted as DataHub lineage, table and column
-  level.
+Authored as code in `src/blindcity/catalog/`, published to DataHub, and read back from DataHub at
+run time — the catalog is a serving layer, not a mirror of a local file.
+
+- **Schema publication.** Every warehouse table and column published to DataHub with a description.
+- **Glossary.** Every city concept defined once, centrally, and attached to the columns that mean it.
+- **Generated lineage.** The simulation's causal graph, emitted as DataHub lineage at table and
+  column level. Each edge is proven by experiment before it ships (`sim/causal_check.py`).
 - **Assertions.** Quality and range expectations on simulation outputs, **evaluated as SQL** against
   the warehouse (`blindcity emit --evaluate-assertions`) with pass/fail emitted beside the metadata.
+- **Operating guidance.** Per-lever bands, impact ratings and notes, published as dataset custom
+  properties and fetched back by the agent each turn.
 
 ## Control surface
 
@@ -77,17 +91,21 @@ does not need to be.
 
 ## Agents
 
-- **Manual mode.** Upstream Analytics Agent answers questions. This is the tooling the `human` mode
-  gets — it does not pull levers itself.
-- **Auto mode.** Closed loop — read state, gather context, query Postgres, decide, actuate a lever,
-  advance, observe. Runs as `agent_datahub` (with catalog context) and `agent_raw` (without); the
-  two modes differ only in that context.
-- **Write-back.** The agent records findings into the catalog rather than working around gaps.
+- **Auto mode.** Closed loop — read state, gather context, query Postgres, decide, actuate levers,
+  advance, observe. One implementation instantiated as `agent_raw`, `agent_datahub` and
+  `agent_datahub_live`; the three differ only in the catalog block, and `tests/test_agent.py` fails
+  the build if anything else about their prompts, tools or turn messages diverges.
+- **Advisor mode.** `agent_analytics` hands the analysis to the upstream DataHub Analytics Agent
+  running as its own service, and acts on what it answers. Model parity between the service and the
+  other modes is checked at run time by `preflight()`.
+- **Write-back.** After a run the agent records what it found back into the catalog, rather than
+  keeping the knowledge in a transcript nobody reads.
 
 ## Evaluation
 
-- **Three-mode comparison** on identical seed, crisis, and turn budget.
+- **Multi-mode comparison** on identical seed, crisis, and turn budget, folded into one table by
+  `blindcity compare`.
 - **Reported per mode:** health index trajectory, turn green was reached, whether it was reached at
   all, lever history, and the index components.
-- **Future, not now.** Seed the simulation from real historical city data so the benchmark runs
-  against real conditions.
+- **Provenance in the report.** Model, seed, threshold and git commit are read back out of the
+  recorded runs, so a number can be traced to the code that produced it.

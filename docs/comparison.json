@@ -1,0 +1,236 @@
+{
+  "agent_analytics": {
+    "mode": "agent_analytics",
+    "runs": 3,
+    "final_index": [
+      0.8084,
+      0.826,
+      0.7706
+    ],
+    "green_turn": [
+      4,
+      3,
+      4
+    ],
+    "total_tokens": [
+      1205192,
+      1637580,
+      1526558
+    ],
+    "llm_calls": [
+      12,
+      12,
+      12
+    ],
+    "llm_seconds": [
+      361.6,
+      619.6,
+      599.6
+    ],
+    "sql_queries": [
+      0,
+      0,
+      0
+    ],
+    "timeouts": 0,
+    "infrastructure_failures": 0,
+    "lost_turns": 0,
+    "models": [
+      "analytics-agent@http://localhost:8100"
+    ],
+    "mean_index": 0.8017,
+    "index_spread": 0.0554,
+    "recovered_runs": 3
+  },
+  "agent_datahub": {
+    "mode": "agent_datahub",
+    "runs": 3,
+    "final_index": [
+      0.7135,
+      0.7846,
+      0.7259
+    ],
+    "green_turn": [
+      6,
+      5,
+      6
+    ],
+    "total_tokens": [
+      212381,
+      234239,
+      218690
+    ],
+    "llm_calls": [
+      25,
+      26,
+      25
+    ],
+    "llm_seconds": [
+      77.7,
+      84.9,
+      72.1
+    ],
+    "sql_queries": [
+      29,
+      66,
+      62
+    ],
+    "timeouts": 0,
+    "infrastructure_failures": 0,
+    "lost_turns": 0,
+    "models": [
+      "gpt-5.6-luna"
+    ],
+    "mean_index": 0.7413,
+    "index_spread": 0.0711,
+    "recovered_runs": 3
+  },
+  "agent_datahub_live": {
+    "mode": "agent_datahub_live",
+    "runs": 3,
+    "final_index": [
+      0.8092,
+      0.8004,
+      0.8179
+    ],
+    "green_turn": [
+      3,
+      4,
+      3
+    ],
+    "total_tokens": [
+      192962,
+      164111,
+      175260
+    ],
+    "llm_calls": [
+      17,
+      16,
+      17
+    ],
+    "llm_seconds": [
+      52.5,
+      47.0,
+      46.1
+    ],
+    "sql_queries": [
+      21,
+      12,
+      16
+    ],
+    "timeouts": 0,
+    "infrastructure_failures": 0,
+    "lost_turns": 0,
+    "models": [
+      "gpt-5.6-luna"
+    ],
+    "mean_index": 0.8092,
+    "index_spread": 0.0175,
+    "recovered_runs": 3
+  },
+  "agent_raw": {
+    "mode": "agent_raw",
+    "runs": 3,
+    "final_index": [
+      0.6568,
+      0.633,
+      0.6349
+    ],
+    "green_turn": [
+      9,
+      7,
+      9
+    ],
+    "total_tokens": [
+      173959,
+      176755,
+      187784
+    ],
+    "llm_calls": [
+      28,
+      29,
+      27
+    ],
+    "llm_seconds": [
+      82.2,
+      94.5,
+      70.7
+    ],
+    "sql_queries": [
+      64,
+      60,
+      67
+    ],
+    "timeouts": 0,
+    "infrastructure_failures": 0,
+    "lost_turns": 0,
+    "models": [
+      "gpt-5.6-luna"
+    ],
+    "mean_index": 0.6416,
+    "index_spread": 0.0238,
+    "recovered_runs": 3
+  },
+  "bad_policy": {
+    "mode": "bad_policy",
+    "runs": 1,
+    "final_index": [
+      0.3244
+    ],
+    "green_turn": [
+      null
+    ],
+    "total_tokens": [
+      0
+    ],
+    "llm_calls": [
+      0
+    ],
+    "llm_seconds": [
+      0.0
+    ],
+    "sql_queries": [
+      0
+    ],
+    "timeouts": 0,
+    "infrastructure_failures": 0,
+    "lost_turns": 0,
+    "models": [
+      "scripted"
+    ],
+    "mean_index": 0.3244,
+    "index_spread": 0.0,
+    "recovered_runs": 0
+  },
+  "good_policy": {
+    "mode": "good_policy",
+    "runs": 1,
+    "final_index": [
+      0.8132
+    ],
+    "green_turn": [
+      4
+    ],
+    "total_tokens": [
+      0
+    ],
+    "llm_calls": [
+      0
+    ],
+    "llm_seconds": [
+      0.0
+    ],
+    "sql_queries": [
+      0
+    ],
+    "timeouts": 0,
+    "infrastructure_failures": 0,
+    "lost_turns": 0,
+    "models": [
+      "scripted"
+    ],
+    "mean_index": 0.8132,
+    "index_spread": 0.0,
+    "recovered_runs": 1
+  }
+}

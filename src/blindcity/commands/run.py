@@ -15,23 +15,29 @@ from __future__ import annotations
 
 import json
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
 
 def run(args: Any) -> int:
     from blindcity.agent.controller import DEFAULT_TOOL_BUDGET
+    from blindcity.agent.lever_review import LeverParseFailure
     from blindcity.agent.llm import LLMError, build_llm
-    from blindcity.agent.run import SCRIPTED_MODES, run_mode
+    from blindcity.agent.run import FREE_MODES, HUMAN_MODE, SCRIPTED_MODES, run_mode
     from blindcity.benchmark.scenario import INFRASTRUCTURE_CRISIS
     from blindcity.catalog.apply import apply_catalog
 
     scripted = args.mode in SCRIPTED_MODES
+    # Calls no model, so needs no key and produces no transcript. Wider than `scripted`: the human
+    # mode is free too, but unlike the scripted policies it does need the catalog published, because
+    # the Analytics Agent it asks questions of reads the catalog.
+    free = args.mode in FREE_MODES
 
     # On by default whenever results are being written: the runs that mattered were the ones
     # nobody thought to record.
     transcript_path = args.transcript
-    if transcript_path is None and args.out and not scripted:
+    if transcript_path is None and args.out and not free:
         transcript_path = str(Path(args.out).with_suffix(".transcript.jsonl"))
 
     # The catalog is published before the scenario is played, so the metadata the agent reads
@@ -56,7 +62,7 @@ def run(args: Any) -> int:
     try:
         run_result = run_mode(
             args.mode,
-            llm=None if scripted else build_llm(args.model),
+            llm=None if free else build_llm(args.model),
             turns=args.turns,
             tool_budget=args.tool_budget or DEFAULT_TOOL_BUDGET,
             keep_views=args.keep_views,
@@ -65,6 +71,21 @@ def run(args: Any) -> int:
             transcript=transcript_path,
             advisor_url=args.advisor_url,
         )
+    except LeverParseFailure as exc:
+        # The advisor's decision could not be read, so this run measured our parser rather than the
+        # catalog and its score means nothing. Finishing would be worse than stopping: it would
+        # produce a plausible number indistinguishable from a real one. The transcript is already
+        # on disk from the controller, and the result file is deliberately never written, so a
+        # later `blindcity compare "results/*.json"` cannot sweep a void run into a table.
+        print(f"run: ABANDONED -- {exc}", file=sys.stderr)
+        print(f"run: levers left unreadable: {', '.join(exc.vague) or '(none named)'}", file=sys.stderr)
+        for i, attempt in enumerate(exc.attempts):
+            label = "answer" if i == 0 else f"clarification {i}"
+            print(f"run: --- {label} ---\n{attempt.strip()[:800]}", file=sys.stderr)
+        if transcript_path:
+            print(f"run: full exchange at {transcript_path}", file=sys.stderr)
+        print("run: no result file written; this run must not be scored.", file=sys.stderr)
+        return 1
     except LLMError as exc:
         print(f"run: {exc}", file=sys.stderr)
         return 1
@@ -108,7 +129,27 @@ def run(args: Any) -> int:
         print(f"run: wrote {args.out} and {side}")
     if transcript_path:
         print(f"run: transcript at {transcript_path}")
+
+    if args.mode == HUMAN_MODE and run_result.server is not None:
+        _hold_open(run_result.server)
     return 0
+
+
+def _hold_open(server: Any) -> None:
+    """Keep the finished city on screen until the player is done looking at it.
+
+    The score is already written by the time this is called, so nothing is at risk here. A browser
+    that goes blank the instant the last quarter lands is just a worse way to end a game.
+    """
+    print(f"\nrun: the run is over. The final city is still at {server.url}")
+    print("run: press Ctrl+C when you are finished.")
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        print("\nrun: stopping the control surface.")
+    finally:
+        server.stop()
 
 
 def _record_guidance(report: dict[str, Any], mode: str) -> None:
@@ -159,6 +200,52 @@ def _print_diagnostics(report: dict[str, Any]) -> None:
         )
         print("run: the score stands, but the model was denied data it asked for.")
 
+    # Whether the advisor actually got the guidance it was sent for. A run that asked twenty-five
+    # times and was refused every time scores like a run that never asked, and until this line
+    # existed it also *read* like one -- the mode's whole claim is that it acted on what DataHub
+    # holds, so a silent zero here invalidates the number rather than merely annotating it.
+    if "guidance_reads" in report:
+        turns = report["turns_reading_guidance"]
+        lookups = report["guidance_lookups"]
+        if turns:
+            print(
+                f"run: read the catalog guidance on {turns} of {len(report['turns'])} turn(s) "
+                f"({report['guidance_reads']} of {lookups} catalog call(s) returned it)"
+            )
+        elif lookups:
+            # Looked and came back empty. A different diagnosis from never having looked, and it
+            # needs a different fix -- the search terms, not the instruction to search.
+            print(
+                f"run: NO GUIDANCE -- {lookups} catalog call(s) succeeded and none returned a "
+                "guidance property."
+            )
+            print("run: the advisor went looking and found nothing; check what it searched for.")
+        else:
+            print("run: NO GUIDANCE -- every attempt to read the catalog failed or was never made.")
+            print("run: this mode scores on what DataHub told it; it was told nothing.")
+        for name, count in (report.get("failed_tool_calls") or {}).items():
+            print(f"run: {count} failed call(s) to {name}")
+
+    # Whether the backoff earned its wait. Retries with no lost turn means it did; retries beside a
+    # lost turn means the wait is still shorter than the window it is waiting out.
+    retried = report.get("rate_limited")
+    if retried:
+        print(f"run: {retried} question(s) re-put after a rate limit")
+
     advisor_errors = report.get("advisor_errors") or []
     if advisor_errors:
         print(f"run: {len(advisor_errors)} turn(s) got no advice; first: {advisor_errors[0][:200]}")
+
+    # How the advisor's decisions had to be read. A run entirely on the contract is the quiet
+    # case and says nothing; anything else is a fact about using this agent, and the reason the
+    # numbers are trustworthy at all.
+    parsing = report.get("parsing")
+    if parsing and (parsing["needed_reviewer"] or parsing["needed_clarifying"]):
+        print(
+            f"run: {parsing['on_contract']} turn(s) followed the output contract; "
+            f"{parsing['needed_reviewer']} needed the reviewer, "
+            f"{parsing['needed_clarifying']} needed clarifying "
+            f"({parsing['clarification_rounds']} round(s))"
+        )
+        if parsing["vague_levers"]:
+            print(f"run: levers the advisor left vague: {', '.join(parsing['vague_levers'])}")

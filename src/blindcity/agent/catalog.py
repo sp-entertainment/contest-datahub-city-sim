@@ -1,17 +1,16 @@
-"""The catalog context block — the single difference between the two modes.
+"""The catalog context block — the single difference between the modes.
 
 `agent_datahub` gets the text this module produces prepended to its prompt. `agent_raw` gets
 nothing in its place, not even a placeholder. Everything else about the two modes is byte-identical:
 same model, same temperature, same system prompt, same tools, same tool budget, same turn budget,
 same seed, same scenario, same SQL access.
 
-**On MCP.** `TASKS.md` specifies the DataHub MCP server. This reads the same metadata from the
-same GMS instance over GraphQL instead, because the MCP path needs a second process running
-alongside a Docker stack that has restarted repeatedly on this host, and a transport failure
-mid-run would corrupt the measurement rather than merely inconvenience it. The metadata is
-identical — descriptions, glossary terms, and lineage that `datahub-emit` wrote. `CatalogSource`
-is an interface precisely so an MCP-backed implementation can replace this one without touching
-the controller or the parity guarantees. Recorded in docs/DECISIONS.md.
+**Why GraphQL and not the DataHub MCP server.** This reads the metadata straight from GMS over
+GraphQL, because the MCP path needs a second process running alongside the Docker stack and a
+transport failure mid-run would corrupt the measurement rather than merely inconvenience it. The
+metadata is identical — the descriptions, glossary terms and lineage that `blindcity emit` wrote.
+`CatalogSource` is an interface precisely so an MCP-backed implementation can replace this one
+without touching the controller or the parity guarantees. Recorded in docs/DECISIONS.md.
 """
 
 from __future__ import annotations

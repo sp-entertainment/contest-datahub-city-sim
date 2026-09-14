@@ -702,3 +702,52 @@ lose, and a fresh clone must not stop to ask a question about a state it cannot 
 The run report records which copy of the guidance the run acted on and a fingerprint of it. Once
 DataHub is editable, "the published snapshot" and "someone's edits" are different experiments and
 must not look alike in a result file.
+
+## 2026-08-11 — The advisor is given an address, not the guidance
+
+**Context.** `catalog/operational.py` authors the operating guidance, `emit.py` publishes it to
+DataHub, and `agent_datahub_live` reads it back out of GMS and renders it into its prompt. Across
+twelve recorded turns, `agent_analytics` — the mode that runs on DataHub's own Analytics Agent —
+referenced it zero times. The properties were reachable the whole time; nothing in the question said
+they were there.
+
+**Decision.** Turn 0 of the advisor's brief now names the six datasets that carry guidance, the
+`blindcity.guidance.` property prefix, and the tool that can actually fetch them — `search`, by
+dataset name. Later turns carry a one-line reminder, on the same reasoning as the output contract:
+what fades over twelve turns is the habit, not the address.
+
+Naming the tool is not tidiness. The first version of this brief said `get_entities`, which is the
+obvious choice and the one the Analytics Agent's own prompt recommends. It returns `data: null` on
+every call against DataHub Core, because its query selects eleven fields that exist only in DataHub
+Cloud. A full twelve-turn run asked twenty-five times, was refused twenty-five times, and scored
+0.7527 — the best on record — on no guidance at all.
+
+**What is deliberately not in the brief.** Any band, any note, any number from `LEVER_GUIDANCE` or
+`OUTCOME_ASSERTIONS`. The paragraph is assembled from `guidance.dataset_urn()` and
+`GUIDANCE_PREFIX` — the same constants that publish the guidance — so it cannot drift into quoting
+what it points at, and a test fails if a band appears in the rendered question.
+
+This is the asymmetry worth naming: `agent_datahub_live` is *handed* the guidance by us;
+`agent_analytics` is handed a location and has to fetch the guidance itself through DataHub's own
+tools. That is a harder test, not an easier one. It is also the only version of the claim that
+means anything — the bytes it reasons from came out of DataHub, fetched by DataHub's agent, with no
+band of ours anywhere in the prompt.
+
+**Why the address is specific rather than a hint.** Both were built and measured on one turn-0
+question each, because a full run costs seven minutes and 1.5M tokens and an argument costs neither
+but settles nothing. Told only that the catalog carried guidance, the advisor searched for the
+*concept* — "operating guidance", "lever bands" — found nothing, and said so. DataHub matches names
+and descriptions, not custom property values, so guidance published this way is findable by dataset
+name and invisible to a query for what it contains.
+
+That is a fact about DataHub rather than about this brief, and it is the one to carry forward: if
+guidance must be *discoverable* rather than merely fetchable, custom properties are the wrong home
+for it — documentation entities or glossary terms would be the next thing to try.
+
+**Also decided: the advisor records every tool call and whether it came back.** `Advice` captured
+SQL only, so "read the catalog and ignored it" and "never opened the catalog" were
+indistinguishable. The obvious fix — record the tool names — was worse than nothing: it reported 25
+catalog reads on the run where every call returned null, which is how a broken retrieval path
+survived a full run and a written-up result. Calls now carry their error, `guidance_reads` counts
+only what came back, and a run that read nothing says so in its summary line. The full write-up is
+in `docs/ERRORS.md`.

@@ -1,16 +1,14 @@
 """Auto-mode agent. The closed loop, and the original contribution of this submission.
 
-One iteration: read state from the control surface, gather context from DataHub over MCP, query the
-warehouse over SQL, decide, actuate a lever, advance the simulation, observe the consequence.
+One iteration: read state from the control surface, gather context from DataHub over its GraphQL
+API, query the warehouse over SQL, decide, actuate levers, advance the simulation, observe the
+consequence.
 
-Manual mode is the upstream `datahub-analytics-agent`, unmodified, and lives outside this package.
-Do not ship only that — originality is judged (AGENTS.md).
+Runs as three benchmark modes over one implementation -- `agent_raw`, `agent_datahub` and
+`agent_datahub_live` -- with identical model, prompt, seed, turn budget, tool budget and SQL
+access, differing only in the catalog block. `tests/test_agent.py` fails the build if anything
+else diverges.
 
-Requires `TOOLS_IS_MUTATION_ENABLED=true` in the MCP config or mutation tools are silently absent
-(docs/ERRORS.md).
-
-Runs as two benchmark modes, `agent_datahub` and `agent_raw`, over one implementation — identical
-model, prompt, seed, turn budget, tool budget, and SQL access, differing only in catalog context.
-
-Plan: TASKS.md, Slice 6.
+`advisor.py` and `advisor_controller.py` are the fourth mode, `agent_analytics`, which delegates
+the analysis to the upstream DataHub Analytics Agent running as its own service.
 """

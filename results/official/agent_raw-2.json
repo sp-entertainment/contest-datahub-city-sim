@@ -1,0 +1,747 @@
+{
+  "scenario_name": "infrastructure_neglect",
+  "seed": 42,
+  "controller_name": "agent_raw",
+  "mode": "agent_raw",
+  "run_id": "1",
+  "turn_budget": 12,
+  "green_threshold": 0.62,
+  "baseline_population": 3133,
+  "recovered": true,
+  "green_turn": 7,
+  "final_index": 0.6330257864899895,
+  "turns": [
+    {
+      "turn": 0,
+      "tick": 63,
+      "levers": {
+        "income_tax_rate": 0.04,
+        "property_tax_rate": 0.004,
+        "electricity_tariff": 0.65,
+        "road_maintenance_budget": 5000000.0,
+        "water_sewer_capex": 2000000.0,
+        "transit_fare": 4.0,
+        "zoning_release": 0.0,
+        "power_contract_mode": 1.0
+      },
+      "components": {
+        "solvency": 0.1257180822331406,
+        "satisfaction": 0.252363607151754,
+        "service": 0.390722074082482,
+        "population": 0.7334366877935342,
+        "index": 0.3647566583756058
+      },
+      "index": 0.3647566583756058,
+      "green": false
+    },
+    {
+      "turn": 1,
+      "tick": 66,
+      "levers": {
+        "income_tax_rate": 0.06,
+        "property_tax_rate": 0.006,
+        "electricity_tariff": 0.65,
+        "road_maintenance_budget": 5000000.0,
+        "water_sewer_capex": 8000000.0,
+        "transit_fare": 4.0,
+        "zoning_release": 0.0,
+        "power_contract_mode": 2
+      },
+      "components": {
+        "solvency": 0.05958594980439775,
+        "satisfaction": 0.3360408129113904,
+        "service": 0.4700503276851751,
+        "population": 0.7129177876065843,
+        "index": 0.39632808966116606
+      },
+      "index": 0.39632808966116606,
+      "green": false
+    },
+    {
+      "turn": 2,
+      "tick": 69,
+      "levers": {
+        "income_tax_rate": 0.08,
+        "property_tax_rate": 0.008,
+        "electricity_tariff": 0.65,
+        "road_maintenance_budget": 5000000.0,
+        "water_sewer_capex": 4000000.0,
+        "transit_fare": 2.0,
+        "zoning_release": 0.0,
+        "power_contract_mode": 2
+      },
+      "components": {
+        "solvency": 0.3132728821540393,
+        "satisfaction": 0.4149820101436621,
+        "service": 0.49028285693218626,
+        "population": 0.7019743741735444,
+        "index": 0.47462891138827124
+      },
+      "index": 0.47462891138827124,
+      "green": false
+    },
+    {
+      "turn": 3,
+      "tick": 72,
+      "levers": {
+        "income_tax_rate": 0.08,
+        "property_tax_rate": 0.008,
+        "electricity_tariff": 0.8,
+        "road_maintenance_budget": 3000000.0,
+        "water_sewer_capex": 8000000.0,
+        "transit_fare": 2.0,
+        "zoning_release": 0.0,
+        "power_contract_mode": 2
+      },
+      "components": {
+        "solvency": 0.2724510191711035,
+        "satisfaction": 0.47029999335757106,
+        "service": 0.5660504658680372,
+        "population": 0.6937668140987644,
+        "index": 0.504148704421656
+      },
+      "index": 0.504148704421656,
+      "green": false
+    },
+    {
+      "turn": 4,
+      "tick": 75,
+      "levers": {
+        "income_tax_rate": 0.08,
+        "property_tax_rate": 0.008,
+        "electricity_tariff": 0.9,
+        "road_maintenance_budget": 5000000.0,
+        "water_sewer_capex": 8000000.0,
+        "transit_fare": 2.0,
+        "zoning_release": 0.0,
+        "power_contract_mode": 2
+      },
+      "components": {
+        "solvency": 0.2125114609709524,
+        "satisfaction": 0.5126261688100368,
+        "service": 0.6450580426423453,
+        "population": 0.6910309607405043,
+        "index": 0.528013747778006
+      },
+      "index": 0.528013747778006,
+      "green": false
+    },
+    {
+      "turn": 5,
+      "tick": 78,
+      "levers": {
+        "income_tax_rate": 0.1,
+        "property_tax_rate": 0.008,
+        "electricity_tariff": 0.7,
+        "road_maintenance_budget": 6000000.0,
+        "water_sewer_capex": 8000000.0,
+        "transit_fare": 2.0,
+        "zoning_release": 0.0,
+        "power_contract_mode": 2
+      },
+      "components": {
+        "solvency": 0.2981295149649099,
+        "satisfaction": 0.5758209391881979,
+        "service": 0.7017779300839835,
+        "population": 0.6887510829419543,
+        "index": 0.5806557803630272
+      },
+      "index": 0.5806557803630272,
+      "green": false
+    },
+    {
+      "turn": 6,
+      "tick": 81,
+      "levers": {
+        "income_tax_rate": 0.09,
+        "property_tax_rate": 0.008,
+        "electricity_tariff": 0.55,
+        "road_maintenance_budget": 8000000.0,
+        "water_sewer_capex": 6000000.0,
+        "transit_fare": 2.0,
+        "zoning_release": 0.0,
+        "power_contract_mode": 2
+      },
+      "components": {
+        "solvency": 0.2813165878431285,
+        "satisfaction": 0.6349909189765833,
+        "service": 0.7491200443019307,
+        "population": 0.6896630340613743,
+        "index": 0.6094292133644548
+      },
+      "index": 0.6094292133644548,
+      "green": false
+    },
+    {
+      "turn": 7,
+      "tick": 84,
+      "levers": {
+        "income_tax_rate": 0.1,
+        "property_tax_rate": 0.01,
+        "electricity_tariff": 0.6,
+        "road_maintenance_budget": 8000000.0,
+        "water_sewer_capex": 6000000.0,
+        "transit_fare": 2.0,
+        "zoning_release": 0.0,
+        "power_contract_mode": 2
+      },
+      "components": {
+        "solvency": 0.3624009649436307,
+        "satisfaction": 0.6375990189556459,
+        "service": 0.7675842688247574,
+        "population": 0.6928548629793444,
+        "index": 0.6326061519187159
+      },
+      "index": 0.6326061519187159,
+      "green": true
+    },
+    {
+      "turn": 8,
+      "tick": 87,
+      "levers": {
+        "income_tax_rate": 0.1,
+        "property_tax_rate": 0.01,
+        "electricity_tariff": 0.8,
+        "road_maintenance_budget": 6000000.0,
+        "water_sewer_capex": 8000000.0,
+        "transit_fare": 2.0,
+        "zoning_release": 0.0,
+        "power_contract_mode": 2
+      },
+      "components": {
+        "solvency": 0.3710632677049948,
+        "satisfaction": 0.6019423138117537,
+        "service": 0.7892220380205063,
+        "population": 0.6914869363002143,
+        "index": 0.6298593463507198
+      },
+      "index": 0.6298593463507198,
+      "green": true
+    },
+    {
+      "turn": 9,
+      "tick": 90,
+      "levers": {
+        "income_tax_rate": 0.1,
+        "property_tax_rate": 0.01,
+        "electricity_tariff": 1.0,
+        "road_maintenance_budget": 8000000.0,
+        "water_sewer_capex": 8000000.0,
+        "transit_fare": 2.0,
+        "zoning_release": 0.2,
+        "power_contract_mode": 2
+      },
+      "components": {
+        "solvency": 0.3080313286262464,
+        "satisfaction": 0.5585543386059388,
+        "service": 0.8218954285130451,
+        "population": 0.6896630340613743,
+        "index": 0.6136738026732194
+      },
+      "index": 0.6136738026732194,
+      "green": false
+    },
+    {
+      "turn": 10,
+      "tick": 93,
+      "levers": {
+        "income_tax_rate": 0.08,
+        "property_tax_rate": 0.008,
+        "electricity_tariff": 0.65,
+        "road_maintenance_budget": 8000000.0,
+        "water_sewer_capex": 8000000.0,
+        "transit_fare": 2.0,
+        "zoning_release": 0.1,
+        "power_contract_mode": 2
+      },
+      "components": {
+        "solvency": 0.20542354020568465,
+        "satisfaction": 0.6164576490039446,
+        "service": 0.8436166751074424,
+        "population": 0.6933108385390544,
+        "index": 0.6177691729823639
+      },
+      "index": 0.6177691729823639,
+      "green": false
+    },
+    {
+      "turn": 11,
+      "tick": 96,
+      "levers": {
+        "income_tax_rate": 0.12,
+        "property_tax_rate": 0.012,
+        "electricity_tariff": 1.0,
+        "road_maintenance_budget": 8000000.0,
+        "water_sewer_capex": 8000000.0,
+        "transit_fare": 3.0,
+        "zoning_release": 0.05,
+        "power_contract_mode": 2
+      },
+      "components": {
+        "solvency": 0.3846689619125805,
+        "satisfaction": 0.5415697612014342,
+        "service": 0.8471271401058474,
+        "population": 0.6974146185764444,
+        "index": 0.6330257864899895
+      },
+      "index": 0.6330257864899895,
+      "green": true
+    }
+  ],
+  "meta": {
+    "crisis_months": 60,
+    "months_per_turn": 3,
+    "warehouse_run_id": 1,
+    "agent": {
+      "controller": "agent_raw",
+      "model": "gpt-5.6-luna",
+      "catalog": "none",
+      "monitor": "none",
+      "reasoning_sent": true,
+      "reasoning_effort": "low",
+      "tool_budget": 12,
+      "system_prompt_chars": 983,
+      "usage": {
+        "prompt_tokens": 172642,
+        "output_tokens": 4113,
+        "total_tokens": 176755,
+        "calls": 29,
+        "seconds": 94.5
+      },
+      "turns": [
+        {
+          "turn": 0,
+          "sql_calls": 12,
+          "queries": [
+            "SELECT table_name, column_name, data_type FROM information_schema.columns WHERE table_schema='public' ORDER BY table_name, ordinal_position",
+            "SELECT * FROM budget_monthly ORDER BY tick DESC LIMIT 12",
+            "SELECT tick, COUNT(*) n, AVG(condition_score) avg_condition, SUM((power_served)::int) powered, SUM(occupancy) occupancy, AVG(water_demand) avg_water FROM building_monthly GROUP BY tick ORDER BY tick DESC LIMIT 12",
+            "SELECT tick, AVG(satisfaction) satisfaction, AVG(disposable_income) disposable, AVG(income) income, AVG(travel_time) travel_time, AVG((uses_transit)::int) transit_use, AVG((employed)::int) employment FROM citizen_monthly c LEFT JOIN commute_monthly m USING(run_id,tick,citizen_id) GROUP BY tick ORDER BY tick DESC LIMIT 12",
+            "SELECT tick, AVG(satisfaction) sat, AVG(disposable_income) disp, AVG(income) inc, AVG((employed)::int) emp, AVG((uses_transit)::int) transit FROM citizen_monthly GROUP BY tick ORDER BY tick DESC LIMIT 12",
+            "SELECT tick, AVG(travel_time) travel, COUNT(*) n FROM commute_monthly GROUP BY tick ORDER BY tick DESC LIMIT 12",
+            "SELECT tick, COUNT(*) buildings, AVG(condition_score) cond, SUM(CASE WHEN power_served THEN 1 ELSE 0 END) powered, SUM(CASE WHEN condition_band='critical' THEN 1 ELSE 0 END) critical FROM building_monthly GROUP BY tick ORDER BY tick DESC LIMIT 5",
+            "SELECT tick, SUM(CASE WHEN power_served THEN 1 ELSE 0 END)::float/COUNT(*) power_rate, AVG(condition_score) cond, AVG(travel_time) travel FROM building_monthly b LEFT JOIN commute_monthly c USING(run_id,tick) WHERE tick IN (1,12,24,36,48,60) GROUP BY tick ORDER BY tick",
+            "SELECT table_name FROM information_schema.tables WHERE table_schema='public' ORDER BY table_name",
+            "SELECT * FROM power_monthly ORDER BY tick DESC LIMIT 6",
+            "SELECT * FROM water_monthly ORDER BY tick DESC LIMIT 6",
+            "SELECT * FROM road_monthly ORDER BY tick DESC LIMIT 6"
+          ],
+          "levers_set": {
+            "power_contract_mode": 1.0,
+            "road_maintenance_budget": 5000000.0,
+            "water_sewer_capex": 2000000.0,
+            "transit_fare": 4.0
+          },
+          "rationale": "",
+          "usage": {
+            "prompt_tokens": 23508,
+            "output_tokens": 1002,
+            "total_tokens": 24510,
+            "calls": 7,
+            "seconds": 17.44
+          },
+          "seconds": 18.45,
+          "tool_seconds": 1.0,
+          "unaccounted_seconds": 0.01,
+          "error": null,
+          "tool_errors": [
+            "column reference \"uses_transit\" is ambiguous"
+          ],
+          "timed_out_queries": [],
+          "infrastructure_errors": [],
+          "clamped": {},
+          "rejected": {}
+        },
+        {
+          "turn": 1,
+          "sql_calls": 5,
+          "queries": [
+            "SELECT * FROM budget_monthly ORDER BY tick DESC LIMIT 3",
+            "SELECT * FROM power_monthly ORDER BY tick DESC LIMIT 3",
+            "SELECT * FROM water_monthly ORDER BY tick DESC LIMIT 3",
+            "SELECT tick, AVG(wear) wear, AVG(congestion) congestion FROM road_monthly GROUP BY tick ORDER BY tick DESC LIMIT 3",
+            "SELECT tick, AVG(condition_score) cond, AVG((power_served)::int) power, AVG(satisfaction) sat FROM building_monthly b JOIN citizen_monthly c USING(run_id,tick) GROUP BY tick ORDER BY tick DESC LIMIT 3"
+          ],
+          "levers_set": {
+            "power_contract_mode": 2,
+            "water_sewer_capex": 8000000.0,
+            "income_tax_rate": 0.06,
+            "property_tax_rate": 0.006
+          },
+          "rationale": "",
+          "usage": {
+            "prompt_tokens": 12201,
+            "output_tokens": 445,
+            "total_tokens": 12646,
+            "calls": 2,
+            "seconds": 14.86
+          },
+          "seconds": 22.58,
+          "tool_seconds": 7.72,
+          "unaccounted_seconds": 0.0,
+          "error": null,
+          "tool_errors": [],
+          "timed_out_queries": [],
+          "infrastructure_errors": [],
+          "clamped": {},
+          "rejected": {}
+        },
+        {
+          "turn": 2,
+          "sql_calls": 4,
+          "queries": [
+            "SELECT * FROM power_monthly ORDER BY tick DESC LIMIT 2",
+            "SELECT * FROM water_monthly ORDER BY tick DESC LIMIT 2",
+            "SELECT * FROM budget_monthly ORDER BY tick DESC LIMIT 2",
+            "SELECT tick, AVG(condition_score) cond, AVG(satisfaction) sat FROM building_monthly b JOIN citizen_monthly c USING(run_id,tick) GROUP BY tick ORDER BY tick DESC LIMIT 2"
+          ],
+          "levers_set": {
+            "water_sewer_capex": 4000000.0,
+            "income_tax_rate": 0.08,
+            "property_tax_rate": 0.008,
+            "transit_fare": 2.0
+          },
+          "rationale": "",
+          "usage": {
+            "prompt_tokens": 7939,
+            "output_tokens": 280,
+            "total_tokens": 8219,
+            "calls": 2,
+            "seconds": 4.62
+          },
+          "seconds": 11.7,
+          "tool_seconds": 7.08,
+          "unaccounted_seconds": -0.0,
+          "error": null,
+          "tool_errors": [],
+          "timed_out_queries": [],
+          "infrastructure_errors": [],
+          "clamped": {},
+          "rejected": {}
+        },
+        {
+          "turn": 3,
+          "sql_calls": 5,
+          "queries": [
+            "SELECT * FROM power_monthly ORDER BY tick DESC LIMIT 1",
+            "SELECT * FROM water_monthly ORDER BY tick DESC LIMIT 1",
+            "SELECT * FROM budget_monthly ORDER BY tick DESC LIMIT 1",
+            "SELECT tick, AVG(wear) wear, AVG(congestion) congestion FROM road_monthly GROUP BY tick ORDER BY tick DESC LIMIT 1",
+            "SELECT tick, AVG(condition_score) cond, AVG(satisfaction) sat FROM building_monthly b JOIN citizen_monthly c USING(run_id,tick) GROUP BY tick ORDER BY tick DESC LIMIT 1"
+          ],
+          "levers_set": {
+            "water_sewer_capex": 8000000.0,
+            "electricity_tariff": 0.8,
+            "road_maintenance_budget": 3000000.0
+          },
+          "rationale": "",
+          "usage": {
+            "prompt_tokens": 8820,
+            "output_tokens": 299,
+            "total_tokens": 9119,
+            "calls": 2,
+            "seconds": 4.55
+          },
+          "seconds": 8.36,
+          "tool_seconds": 3.81,
+          "unaccounted_seconds": -0.0,
+          "error": null,
+          "tool_errors": [],
+          "timed_out_queries": [],
+          "infrastructure_errors": [],
+          "clamped": {},
+          "rejected": {}
+        },
+        {
+          "turn": 4,
+          "sql_calls": 4,
+          "queries": [
+            "SELECT * FROM power_monthly ORDER BY tick DESC LIMIT 1",
+            "SELECT * FROM water_monthly ORDER BY tick DESC LIMIT 1",
+            "SELECT * FROM budget_monthly ORDER BY tick DESC LIMIT 1",
+            "SELECT tick, AVG(condition_score) cond, AVG(satisfaction) sat FROM building_monthly b JOIN citizen_monthly c USING(run_id,tick) GROUP BY tick ORDER BY tick DESC LIMIT 1"
+          ],
+          "levers_set": {
+            "water_sewer_capex": 8000000.0,
+            "road_maintenance_budget": 5000000.0,
+            "electricity_tariff": 0.9
+          },
+          "rationale": "",
+          "usage": {
+            "prompt_tokens": 9967,
+            "output_tokens": 197,
+            "total_tokens": 10164,
+            "calls": 2,
+            "seconds": 4.92
+          },
+          "seconds": 9.0,
+          "tool_seconds": 4.05,
+          "unaccounted_seconds": 0.03,
+          "error": null,
+          "tool_errors": [],
+          "timed_out_queries": [],
+          "infrastructure_errors": [],
+          "clamped": {},
+          "rejected": {}
+        },
+        {
+          "turn": 5,
+          "sql_calls": 5,
+          "queries": [
+            "SELECT * FROM power_monthly ORDER BY tick DESC LIMIT 1",
+            "SELECT * FROM water_monthly ORDER BY tick DESC LIMIT 1",
+            "SELECT * FROM budget_monthly ORDER BY tick DESC LIMIT 1",
+            "SELECT tick, AVG(wear) wear, AVG(congestion) congestion FROM road_monthly GROUP BY tick ORDER BY tick DESC LIMIT 1",
+            "SELECT tick, AVG(condition_score) cond, AVG(satisfaction) sat FROM building_monthly b JOIN citizen_monthly c USING(run_id,tick) GROUP BY tick ORDER BY tick DESC LIMIT 1"
+          ],
+          "levers_set": {
+            "electricity_tariff": 0.7,
+            "road_maintenance_budget": 6000000.0,
+            "income_tax_rate": 0.1
+          },
+          "rationale": "",
+          "usage": {
+            "prompt_tokens": 11403,
+            "output_tokens": 236,
+            "total_tokens": 11639,
+            "calls": 2,
+            "seconds": 4.98
+          },
+          "seconds": 9.12,
+          "tool_seconds": 4.12,
+          "unaccounted_seconds": 0.02,
+          "error": null,
+          "tool_errors": [],
+          "timed_out_queries": [],
+          "infrastructure_errors": [],
+          "clamped": {},
+          "rejected": {}
+        },
+        {
+          "turn": 6,
+          "sql_calls": 4,
+          "queries": [
+            "SELECT * FROM power_monthly ORDER BY tick DESC LIMIT 1",
+            "SELECT * FROM water_monthly ORDER BY tick DESC LIMIT 1",
+            "SELECT * FROM budget_monthly ORDER BY tick DESC LIMIT 1",
+            "SELECT tick, AVG(condition_score) cond, AVG(satisfaction) sat FROM building_monthly b JOIN citizen_monthly c USING(run_id,tick) GROUP BY tick ORDER BY tick DESC LIMIT 1"
+          ],
+          "levers_set": {
+            "electricity_tariff": 0.55,
+            "road_maintenance_budget": 8000000.0,
+            "water_sewer_capex": 6000000.0,
+            "income_tax_rate": 0.09
+          },
+          "rationale": "",
+          "usage": {
+            "prompt_tokens": 12835,
+            "output_tokens": 205,
+            "total_tokens": 13040,
+            "calls": 2,
+            "seconds": 4.02
+          },
+          "seconds": 8.25,
+          "tool_seconds": 4.23,
+          "unaccounted_seconds": 0.0,
+          "error": null,
+          "tool_errors": [],
+          "timed_out_queries": [],
+          "infrastructure_errors": [],
+          "clamped": {},
+          "rejected": {}
+        },
+        {
+          "turn": 7,
+          "sql_calls": 4,
+          "queries": [
+            "SELECT * FROM power_monthly ORDER BY tick DESC LIMIT 1",
+            "SELECT * FROM water_monthly ORDER BY tick DESC LIMIT 1",
+            "SELECT * FROM budget_monthly ORDER BY tick DESC LIMIT 1",
+            "SELECT tick, AVG(condition_score) cond, AVG(satisfaction) sat FROM building_monthly b JOIN citizen_monthly c USING(run_id,tick) GROUP BY tick ORDER BY tick DESC LIMIT 1"
+          ],
+          "levers_set": {
+            "electricity_tariff": 0.6,
+            "income_tax_rate": 0.1,
+            "property_tax_rate": 0.01,
+            "road_maintenance_budget": 8000000.0,
+            "water_sewer_capex": 6000000.0
+          },
+          "rationale": "",
+          "usage": {
+            "prompt_tokens": 14231,
+            "output_tokens": 213,
+            "total_tokens": 14444,
+            "calls": 2,
+            "seconds": 7.61
+          },
+          "seconds": 12.08,
+          "tool_seconds": 4.47,
+          "unaccounted_seconds": 0.0,
+          "error": null,
+          "tool_errors": [],
+          "timed_out_queries": [],
+          "infrastructure_errors": [],
+          "clamped": {},
+          "rejected": {}
+        },
+        {
+          "turn": 8,
+          "sql_calls": 5,
+          "queries": [
+            "SELECT * FROM power_monthly ORDER BY tick DESC LIMIT 1",
+            "SELECT * FROM water_monthly ORDER BY tick DESC LIMIT 1",
+            "SELECT * FROM budget_monthly ORDER BY tick DESC LIMIT 1",
+            "SELECT tick, AVG(wear) wear, AVG(congestion) congestion FROM road_monthly GROUP BY tick ORDER BY tick DESC LIMIT 1",
+            "SELECT tick, AVG(condition_score) cond, AVG(satisfaction) sat FROM building_monthly b JOIN citizen_monthly c USING(run_id,tick) GROUP BY tick ORDER BY tick DESC LIMIT 1"
+          ],
+          "levers_set": {
+            "electricity_tariff": 0.8,
+            "water_sewer_capex": 8000000.0,
+            "road_maintenance_budget": 6000000.0
+          },
+          "rationale": "",
+          "usage": {
+            "prompt_tokens": 15785,
+            "output_tokens": 313,
+            "total_tokens": 16098,
+            "calls": 2,
+            "seconds": 11.28
+          },
+          "seconds": 16.2,
+          "tool_seconds": 4.92,
+          "unaccounted_seconds": 0.0,
+          "error": null,
+          "tool_errors": [],
+          "timed_out_queries": [],
+          "infrastructure_errors": [],
+          "clamped": {},
+          "rejected": {}
+        },
+        {
+          "turn": 9,
+          "sql_calls": 4,
+          "queries": [
+            "SELECT * FROM power_monthly ORDER BY tick DESC LIMIT 1",
+            "SELECT * FROM water_monthly ORDER BY tick DESC LIMIT 1",
+            "SELECT * FROM budget_monthly ORDER BY tick DESC LIMIT 1",
+            "SELECT tick, AVG(condition_score) cond, AVG(satisfaction) sat FROM building_monthly b JOIN citizen_monthly c USING(run_id,tick) GROUP BY tick ORDER BY tick DESC LIMIT 1"
+          ],
+          "levers_set": {
+            "electricity_tariff": 1.0,
+            "road_maintenance_budget": 8000000.0,
+            "water_sewer_capex": 8000000.0,
+            "zoning_release": 0.2
+          },
+          "rationale": "",
+          "usage": {
+            "prompt_tokens": 17235,
+            "output_tokens": 312,
+            "total_tokens": 17547,
+            "calls": 2,
+            "seconds": 7.19
+          },
+          "seconds": 12.38,
+          "tool_seconds": 5.19,
+          "unaccounted_seconds": 0.0,
+          "error": null,
+          "tool_errors": [],
+          "timed_out_queries": [],
+          "infrastructure_errors": [],
+          "clamped": {},
+          "rejected": {}
+        },
+        {
+          "turn": 10,
+          "sql_calls": 4,
+          "queries": [
+            "SELECT * FROM power_monthly ORDER BY tick DESC LIMIT 1",
+            "SELECT * FROM budget_monthly ORDER BY tick DESC LIMIT 1",
+            "SELECT tick, AVG(condition_score) cond, AVG(satisfaction) sat FROM building_monthly b JOIN citizen_monthly c USING(run_id,tick) GROUP BY tick ORDER BY tick DESC LIMIT 1",
+            "SELECT tick, AVG(wear) wear, AVG(congestion) congestion FROM road_monthly GROUP BY tick ORDER BY tick DESC LIMIT 1"
+          ],
+          "levers_set": {
+            "electricity_tariff": 0.65,
+            "income_tax_rate": 0.08,
+            "property_tax_rate": 0.008,
+            "road_maintenance_budget": 8000000.0,
+            "water_sewer_capex": 8000000.0,
+            "zoning_release": 0.1
+          },
+          "rationale": "",
+          "usage": {
+            "prompt_tokens": 18609,
+            "output_tokens": 319,
+            "total_tokens": 18928,
+            "calls": 2,
+            "seconds": 8.36
+          },
+          "seconds": 13.31,
+          "tool_seconds": 4.95,
+          "unaccounted_seconds": 0.0,
+          "error": null,
+          "tool_errors": [],
+          "timed_out_queries": [],
+          "infrastructure_errors": [],
+          "clamped": {},
+          "rejected": {}
+        },
+        {
+          "turn": 11,
+          "sql_calls": 4,
+          "queries": [
+            "SELECT * FROM power_monthly ORDER BY tick DESC LIMIT 1",
+            "SELECT * FROM water_monthly ORDER BY tick DESC LIMIT 1",
+            "SELECT * FROM budget_monthly ORDER BY tick DESC LIMIT 1",
+            "SELECT tick, AVG(condition_score) cond, AVG(satisfaction) sat FROM building_monthly b JOIN citizen_monthly c USING(run_id,tick) GROUP BY tick ORDER BY tick DESC LIMIT 1"
+          ],
+          "levers_set": {
+            "electricity_tariff": 1.0,
+            "income_tax_rate": 0.12,
+            "property_tax_rate": 0.012,
+            "road_maintenance_budget": 8000000.0,
+            "water_sewer_capex": 8000000.0,
+            "transit_fare": 3.0,
+            "zoning_release": 0.05,
+            "power_contract_mode": 2
+          },
+          "rationale": "",
+          "usage": {
+            "prompt_tokens": 20109,
+            "output_tokens": 292,
+            "total_tokens": 20401,
+            "calls": 2,
+            "seconds": 4.67
+          },
+          "seconds": 9.83,
+          "tool_seconds": 5.16,
+          "unaccounted_seconds": 0.0,
+          "error": null,
+          "tool_errors": [],
+          "timed_out_queries": [],
+          "infrastructure_errors": [],
+          "clamped": {},
+          "rejected": {}
+        }
+      ],
+      "tool_failures": 1,
+      "timeouts": 0,
+      "infrastructure_failures": 0,
+      "phases": {
+        "prepare_seconds": 7.9,
+        "play_seconds": 155.5
+      },
+      "write_back": {
+        "datasets": 0,
+        "tables": [],
+        "skipped": "control mode has no catalog by construction",
+        "failures": {}
+      },
+      "catalog_source": {
+        "applied": true,
+        "source": "snapshot",
+        "drift_items": 0
+      }
+    },
+    "wall_seconds": 163.4
+  }
+}

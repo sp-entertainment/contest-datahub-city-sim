@@ -10,9 +10,10 @@ DataHub's own analytics agent, pointed at the same warehouse, better at governin
 agent we wrote". Ours writes SQL and holds a plan across turns; theirs is a text-to-SQL analyst
 grounded in the catalog, with no memory of the city between questions except what we tell it.
 
-The advisor never actuates anything. It returns prose; the controller parses lever values out of
-it and applies them, exactly as a person would read an analyst's answer and then pull the levers
-themselves. Nothing the advisor says can move a lever the controller did not choose to move.
+The advisor never actuates anything. It returns prose ending in a decision block; the controller
+reads the block and applies it, exactly as a person would read an analyst's answer and then pull
+the levers themselves. Nothing the advisor says can move a lever the controller did not choose to
+move.
 """
 
 from __future__ import annotations
@@ -26,6 +27,7 @@ from typing import Any
 
 import httpx
 
+from blindcity.catalog.operational import GUIDANCE_PREFIX
 from blindcity.levers import LEVERS
 
 # The Analytics Agent answers over SSE and a real analysis runs to tens of seconds. This bounds one
@@ -44,11 +46,23 @@ RATE_LIMIT_ATTEMPTS = 4
 # because one advisor question costs ~114,000 tokens against a 200,000/minute ceiling -- 57% of the
 # whole minute in a single call, so two questions can never share one window.
 #
-# So the wait doubles per attempt from a floor, up to a full window. Nothing else is consuming this
-# budget, so 60 seconds is a guarantee rather than a guess.
+# So the first retry waits a full window rather than ramping up to one. A ramp from 8 seconds spends
+# its three sleeps on 14s, 16s and 32s -- none of which can clear a minute-long window, so all three
+# are refused and the turn is lost anyway. That is what happened: a turn asking for 59,141 tokens
+# against 187,999 already used was refused four times in 62 seconds and forfeited.
+#
+# Nothing else is consuming this budget, so one window is a guarantee rather than a guess. The
+# ceiling is per wait, not a total: three sleeps of 65-70s, about 3.5 minutes at worst for a turn
+# that would otherwise be lost outright.
+#
+# The ceiling bounds the *ramp*, never the provider's own number. These constants are tuned for a
+# per-minute bucket; a refusal citing an hourly or daily one says "try again in 300s", and clamping
+# that to 70 would spend all four attempts inside three minutes, be refused every time, and lose
+# the turn -- the exact failure this backoff exists to prevent, in a bucket it was not tuned for.
+# When the provider names a longer wait than our ramp, the provider is right.
 _RATE_LIMIT_DELAY = re.compile(r"try again in ([0-9.]+)\s*(ms|s)", re.IGNORECASE)
-_RATE_LIMIT_FLOOR = 8.0
-_RATE_LIMIT_CEILING = 65.0
+_RATE_LIMIT_FLOOR = 65.0
+_RATE_LIMIT_CEILING = 70.0
 
 
 def _rate_limit_delay(exc: Exception, attempt: int = 0) -> float | None:
@@ -62,7 +76,19 @@ def _rate_limit_delay(exc: Exception, attempt: int = 0) -> float | None:
         suggested = float(match.group(1))
         if match.group(2).lower() == "ms":
             suggested /= 1000.0
-    return min(max(suggested, _RATE_LIMIT_FLOOR * (2**attempt)), _RATE_LIMIT_CEILING)
+    return max(suggested, min(_RATE_LIMIT_FLOOR * (2**attempt), _RATE_LIMIT_CEILING))
+
+
+# The two Analytics Agent tools verified to return `datasetProperties.customProperties`, which is
+# where this project's operating guidance is published. `get_entities` selects them in its
+# `entityPreview` fragment and `search` in the shared `fragments.gql`; neither is stripped on the way
+# back. Every other tool it has -- lineage, schema fields, documents, assertions -- can reach the
+# catalog but cannot return a `blindcity.guidance.*` property, so a run that called only those has
+# still never seen the guidance.
+#
+# Their tool names, not ours, so this can drift with their package. All tool calls are counted
+# regardless; this set only decides which of them could possibly have carried the guidance.
+GUIDANCE_BEARING_TOOLS = frozenset({"get_entities", "search"})
 
 
 class LLMMismatch(RuntimeError):
@@ -75,50 +101,88 @@ class Advice:
 
     question: str
     answer: str
-    levers: dict[str, float] = field(default_factory=dict)
     seconds: float = 0.0
     error: str | None = None
     queries: list[str] = field(default_factory=list)
+    # Every tool call, in order, as `{"name": ..., "error": str | None}`. `queries` records only
+    # SQL, so without this there is no way to tell whether the advisor read the catalog or merely
+    # could have: the published guidance went unreferenced for twelve turns and nothing in any
+    # artifact said whether it had been fetched and ignored or never fetched at all.
+    #
+    # The error matters as much as the name. A first version recorded names alone and reported 25
+    # catalog reads on a run where every one of them failed -- `get_entities` returns null against
+    # DataHub Core -- so the metric intended to prove the guidance was read instead concealed that
+    # it never had been. A tool call is not a read.
+    tools: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "question": self.question,
             "answer": self.answer[:4000],
-            "levers": self.levers,
             "seconds": round(self.seconds, 2),
             "error": self.error,
             "queries": self.queries,
+            "tools": self.tools,
         }
 
 
-def parse_levers(text: str) -> dict[str, float]:
-    """Pull lever settings out of an analyst's prose.
+# Two patterns, and the difference matters. A block the advisor *labelled* `json` is held to it --
+# whatever is inside was offered as the decision, so garbage there is a broken contract rather than
+# an absent one. An unlabelled fence is only considered when it plainly contains an object, because
+# the advisor also emits SQL in fenced blocks and running `json.loads` over a SELECT would turn
+# ordinary output into a parse failure.
+#
+# Non-greedy so several blocks stay separate, and the *last* is taken: an analyst who shows a
+# worked example first and the recommendation last is answering with the last one.
+_LABELLED_BLOCK = re.compile(r"```json\s*(.*?)```", re.DOTALL | re.IGNORECASE)
+_BRACED_BLOCK = re.compile(r"```\s*(\{.*?\})\s*```", re.DOTALL)
 
-    Deliberately forgiving about formatting and strict about names and ranges: the advisor is a
-    third-party component answering in free text, and a brittle parser would silently score the
-    mode on the parser rather than on the advice. Anything not named as a real lever is ignored,
-    and every value goes through the same clamp the other modes' `set_levers` uses.
 
-    Accepts `income_tax_rate = 0.11`, `income_tax_rate: 0.11`, `**income_tax_rate**: 0.11`,
-    `- income_tax_rate → 0.11`, and the same with thousands separators or a currency prefix.
+class LeverBlockInvalid(ValueError):
+    """A JSON block was present but is not a usable set of lever values."""
+
+
+def extract_lever_block(text: str) -> dict[str, float] | None:
+    """The advisor's decision, read from the JSON block the brief asks it to emit.
+
+    This is the primary reader. It is deterministic, it cannot confuse `6e6` with `6`, and it
+    cannot read `11%` as `11`, because it never sees a number that was not written as one.
+
+    Three outcomes, and they must stay distinct:
+
+      * a dict -- the levers to change. `{}` is a real decision meaning "change nothing this turn",
+        not an absence.
+      * `None` -- no block at all. The contract was not followed and a reader that can cope with
+        prose has to look at it.
+      * `LeverBlockInvalid` -- a block exists but says something unusable.
+
+    Omission carries meaning: a lever absent from the block keeps its current value. That is why
+    words are refused rather than interpreted. "moderate" in a value position could mean the
+    advisor wants a change it failed to quantify, and guessing which would be us playing the game
+    on its behalf.
     """
-    found: dict[str, float] = {}
-    for name in LEVERS:
-        # Last occurrence wins: analysts frequently restate the recommendation in a summary at the
-        # end, and the summary is the considered answer.
-        pattern = re.compile(
-            rf"{re.escape(name)}\**\s*(?:=|:|->|→|to|at)\s*\**\s*\$?([0-9][0-9,_]*(?:\.[0-9]+)?)",
-            re.IGNORECASE,
-        )
-        matches = pattern.findall(text)
-        if not matches:
-            continue
-        raw = matches[-1].replace(",", "").replace("_", "")
-        try:
-            found[name] = LEVERS[name].clamp(float(raw))
-        except ValueError:
-            continue
-    return found
+    matches = _LABELLED_BLOCK.findall(text) or _BRACED_BLOCK.findall(text)
+    if not matches:
+        return None
+    try:
+        payload = json.loads(matches[-1].strip())
+    except (TypeError, ValueError) as exc:
+        raise LeverBlockInvalid(f"the JSON block does not parse: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise LeverBlockInvalid(f"expected an object, got {type(payload).__name__}")
+
+    out: dict[str, float] = {}
+    for name, value in payload.items():
+        if name not in LEVERS:
+            raise LeverBlockInvalid(f"{name!r} is not one of the eight levers")
+        # `bool` is an `int` in Python and `true` is not a lever value in any sense.
+        if isinstance(value, bool) or not isinstance(value, int | float):
+            raise LeverBlockInvalid(
+                f"{name} = {value!r} is not a number. Values must be plain decimals; a value the "
+                "advisor could not write as a number is not a decision."
+            )
+        out[name] = LEVERS[name].clamp(float(value))
+    return out
 
 
 class AnalyticsAgentAdvisor:
@@ -182,7 +246,7 @@ class AnalyticsAgentAdvisor:
             return self.conversation_id
         r = client.post(
             f"{self.base_url}/api/conversations",
-            json={"title": "Blind City", "engine_name": self.engine},
+            json={"title": "City Sim Agent Benchmark", "engine_name": self.engine},
         )
         r.raise_for_status()
         self.conversation_id = r.json()["id"]
@@ -203,11 +267,15 @@ class AnalyticsAgentAdvisor:
         over by trying again.
         """
         started = time.monotonic()
+        # Handed to `_send` so that whatever the advisor called before a stream died is still on
+        # record. A turn that fails halfway is the one whose tool calls are most worth having.
+        tools: list[dict[str, Any]] = []
         for attempt in range(RATE_LIMIT_ATTEMPTS):
+            tools.clear()
             try:
                 with self._client() as client:
                     conv = self.start(client)
-                    answer, statements = self._send(client, conv, question)
+                    answer, statements = self._send(client, conv, question, tools)
             except (httpx.HTTPError, KeyError, ValueError) as exc:
                 delay = _rate_limit_delay(exc, attempt)
                 if delay is not None and attempt < RATE_LIMIT_ATTEMPTS - 1:
@@ -221,22 +289,29 @@ class AnalyticsAgentAdvisor:
                     answer="",
                     seconds=time.monotonic() - started,
                     error=f"{type(exc).__name__}: {str(exc)[:300]}",
+                    tools=list(tools),
                 )
             break
         return Advice(
             question=question,
             answer=answer,
-            levers=parse_levers(answer),
             seconds=time.monotonic() - started,
             queries=statements,
+            tools=tools,
         )
 
-    def _send(self, client: httpx.Client, conv: str, question: str) -> tuple[str, list[str]]:
+    def _send(
+        self, client: httpx.Client, conv: str, question: str, tools: list[dict[str, Any]]
+    ) -> tuple[str, list[str]]:
         """Post the question and read the streamed reply to completion.
 
         Events arrive as `{"event": KIND, "payload": {...}}`. `TEXT` carries the answer a token at
-        a time, `SQL` the statements it ran, and `USAGE` its token counts -- which are recorded so
-        this mode's cost sits beside the others' rather than reading as free.
+        a time, `SQL` the statements it ran, `TOOL_RESULT` the name of every tool it called, and
+        `USAGE` its token counts -- which are recorded so this mode's cost sits beside the others'
+        rather than reading as free.
+
+        `tools` is appended to rather than returned, so a stream that dies partway still leaves the
+        caller holding everything the advisor had called up to that point.
         """
         text_parts: list[str] = []
         statements: list[str] = []
@@ -264,6 +339,23 @@ class AnalyticsAgentAdvisor:
                     sql = payload.get("sql") or payload.get("query")
                     if isinstance(sql, str):
                         statements.append(sql[:600])
+                elif kind == "TOOL_RESULT":
+                    name = payload.get("tool_name")
+                    if isinstance(name, str) and name:
+                        failed = bool(payload.get("is_error"))
+                        result = str(payload.get("result", ""))
+                        call: dict[str, Any] = {
+                            "name": name,
+                            "error": result[:300] if failed else None,
+                        }
+                        # Whether this call actually brought the guidance back. A `search` for the
+                        # wrong thing succeeds and returns nothing, and "did not fail" cannot tell
+                        # that apart from "returned all eight bands" -- which is the exact run this
+                        # metric exists to catch: the advisor searched for the concept, got an empty
+                        # result, and reported that the bands could not be verified.
+                        if name in GUIDANCE_BEARING_TOOLS and not failed:
+                            call["guidance"] = GUIDANCE_PREFIX in result
+                        tools.append(call)
                 elif kind == "USAGE":
                     for key in self.tokens:
                         self.tokens[key] += int(payload.get(key, 0) or 0)
